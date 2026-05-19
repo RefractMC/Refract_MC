@@ -1,18 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')({
-  component: Index,
+  component: Instances,
 })
 
-function Index() {
+function Instances() {
   return (
-    <div className="flex h-screen bg-bg-base text-text-primary">
-      <aside className="w-64 bg-bg-surface border-r border-border p-4">
-        <h1 className="text-xl font-bold text-accent">Refract</h1>
-      </aside>
-      <main className="flex-1 p-6">
-        <p className="text-text-secondary">Welcome to Refract</p>
-      </main>
+    <div className="p-6">
+      <h2 className="text-2xl font-bold text-text-primary mb-1">Instances</h2>
+      <p className="text-text-secondary">No instances yet. Create one to get started.</p>
     </div>
   )
 }

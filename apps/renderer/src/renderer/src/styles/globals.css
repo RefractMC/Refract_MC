@@ -2,21 +2,28 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-bg-base: var(--bg-base);
-  --color-bg-surface: var(--bg-surface);
-  --color-bg-overlay: var(--bg-overlay);
-  --color-bg-hover: var(--bg-hover);
-  --color-text-primary: var(--text-primary);
+  --color-bg-base:        var(--bg-base);
+  --color-bg-surface:     var(--bg-surface);
+  --color-bg-overlay:     var(--bg-overlay);
+  --color-bg-hover:       var(--bg-hover);
+  --color-text-primary:   var(--text-primary);
   --color-text-secondary: var(--text-secondary);
-  --color-text-muted: var(--text-muted);
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-fg: var(--accent-fg);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-error: var(--error);
-  --color-border: var(--border);
-  --radius: var(--radius);
+  --color-text-muted:     var(--text-muted);
+  --color-accent:         var(--accent);
+  --color-accent-hover:   var(--accent-hover);
+  --color-accent-fg:      var(--accent-fg);
+  --color-success:        var(--success);
+  --color-warning:        var(--warning);
+  --color-error:          var(--error);
+  --color-border:         var(--border);
+  --radius:               var(--radius);
+}
+
+:root {
+  --sidebar-width:           240px;
+  --sidebar-collapsed-width: 64px;
+  --titlebar-height:         40px;
+  --statusbar-height:        28px;
 }
 
 * {
@@ -29,3 +36,6 @@ html, body, #root {
   height: 100%;
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+.drag-region    { -webkit-app-region: drag; }
+.no-drag-region { -webkit-app-region: no-drag; }

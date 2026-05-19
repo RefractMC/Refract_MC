@@ -22,6 +22,11 @@ declare global {
         }>
         set: (key: string, value: unknown) => Promise<void>
       }
+      theme: {
+        list:    () => Promise<import('@/lib/theme-types').ThemeDefinition[]>
+        install: (sourcePath: string) => Promise<import('@/lib/theme-types').ThemeDefinition>
+        delete:  (fileName: string) => Promise<void>
+      }
       instance: {
         list:    () => Promise<Instance[]>
         getById: (id: string) => Promise<Instance | null>

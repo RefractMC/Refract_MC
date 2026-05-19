@@ -6,6 +6,11 @@ export const api = {
     get: () => ipcRenderer.invoke('config.get'),
     set: <K extends string>(key: K, value: unknown) => ipcRenderer.invoke('config.set', key, value),
   },
+  theme: {
+    list:    ()                         => ipcRenderer.invoke('theme.list'),
+    install: (sourcePath: string)       => ipcRenderer.invoke('theme.install', sourcePath),
+    delete:  (fileName: string)         => ipcRenderer.invoke('theme.delete', fileName),
+  },
   instance: {
     list:      ()                                              => ipcRenderer.invoke('instance.list'),
     getById:   (id: string)                                   => ipcRenderer.invoke('instance.getById', id),
