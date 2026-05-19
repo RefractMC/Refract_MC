@@ -6,6 +6,15 @@ export const api = {
     get: () => ipcRenderer.invoke('config.get'),
     set: <K extends string>(key: K, value: unknown) => ipcRenderer.invoke('config.set', key, value),
   },
+  auth: {
+    accounts:          ()                         => ipcRenderer.invoke('auth.accounts'),
+    active:            ()                         => ipcRenderer.invoke('auth.active'),
+    microsoftBegin:    ()                         => ipcRenderer.invoke('auth.microsoft.begin'),
+    microsoftComplete: (deviceCode: string)       => ipcRenderer.invoke('auth.microsoft.complete', deviceCode),
+    createOffline:     (username: string)         => ipcRenderer.invoke('auth.offline.create', username),
+    setActive:         (uuid: string)             => ipcRenderer.invoke('auth.setActive', uuid),
+    logout:            (uuid: string)             => ipcRenderer.invoke('auth.logout', uuid),
+  },
   theme: {
     list:    ()                         => ipcRenderer.invoke('theme.list'),
     install: (sourcePath: string)       => ipcRenderer.invoke('theme.install', sourcePath),

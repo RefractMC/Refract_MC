@@ -22,6 +22,52 @@ declare global {
         }>
         set: (key: string, value: unknown) => Promise<void>
       }
+      auth: {
+        accounts: () => Promise<Array<{
+          uuid: string
+          username: string
+          type: 'microsoft' | 'offline' | 'yggdrasil'
+          expiresAt?: number
+          yggdrasilServer?: string
+        }>>
+        active: () => Promise<{
+          uuid: string
+          username: string
+          type: 'microsoft' | 'offline' | 'yggdrasil'
+          expiresAt?: number
+          yggdrasilServer?: string
+        } | null>
+        microsoftBegin: () => Promise<{
+          deviceCode: string
+          userCode: string
+          verificationUri: string
+          expiresIn: number
+          interval: number
+          message: string
+        }>
+        microsoftComplete: (deviceCode: string) => Promise<{
+          uuid: string
+          username: string
+          type: 'microsoft' | 'offline' | 'yggdrasil'
+          expiresAt?: number
+          yggdrasilServer?: string
+        }>
+        createOffline: (username: string) => Promise<{
+          uuid: string
+          username: string
+          type: 'microsoft' | 'offline' | 'yggdrasil'
+          expiresAt?: number
+          yggdrasilServer?: string
+        }>
+        setActive: (uuid: string) => Promise<{
+          uuid: string
+          username: string
+          type: 'microsoft' | 'offline' | 'yggdrasil'
+          expiresAt?: number
+          yggdrasilServer?: string
+        }>
+        logout: (uuid: string) => Promise<void>
+      }
       theme: {
         list:    () => Promise<import('@/lib/theme-types').ThemeDefinition[]>
         install: (sourcePath: string) => Promise<import('@/lib/theme-types').ThemeDefinition>

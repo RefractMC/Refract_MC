@@ -14,7 +14,7 @@ const MC_VERSIONS = [
 ]
 
 const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
-  { value: '',         label: 'Vanilla'  },
+  { value: '',         label: 'No mods'  },
   { value: 'fabric',   label: 'Fabric'   },
   { value: 'forge',    label: 'Forge'    },
   { value: 'quilt',    label: 'Quilt'    },
@@ -136,7 +136,10 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave }: Pro
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-text-secondary">Mod Loader</label>
+              <div>
+                <label className="text-sm font-medium text-text-secondary">Mod Loader</label>
+                <p className="mt-1 text-xs text-text-muted">Choose “No mods” to keep this as a clean Vanilla Minecraft instance.</p>
+              </div>
               <div className="flex gap-2">
                 {MOD_LOADERS.map((l) => (
                   <button
