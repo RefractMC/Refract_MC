@@ -16,12 +16,32 @@ export const Route = createFileRoute('/')({
 
 type ActiveAccount = Awaited<ReturnType<typeof api.auth.active>>
 
-const WHATS_NEW = [
-  { version: '0.4.0', note: 'Activity log, live panels, full Microsoft OAuth flow' },
-  { version: '0.3.1', note: 'Minecraft pixel-style instance dialogs, PixelScene previews' },
-  { version: '0.3.0', note: 'Theme engine with Minecraft palette and Zustand store' },
-  { version: '0.2.0', note: 'App shell, sidebar, TitleBar, offline and Yggdrasil accounts' },
-  { version: '0.1.0', note: 'Core IPC, config service, and instance management' },
+const CHANGELOG_URL = 'https://raw.githubusercontent.com/ShevRuslan1/Refract_MC/main/CHANGELOG.md'
+
+interface ChangelogEntry { version: string; notes: string[] }
+
+function parseChangelog(text: string): ChangelogEntry[] {
+  const entries: ChangelogEntry[] = []
+  let current: ChangelogEntry | null = null
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    const vMatch = line.match(/^##\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)/)
+    if (vMatch) {
+      if (current) entries.push(current)
+      current = { version: vMatch[1], notes: [] }
+    } else if (current && line.startsWith('- ')) {
+      current.notes.push(line.slice(2).trim())
+    }
+  }
+  if (current) entries.push(current)
+  return entries
+}
+
+const FALLBACK_WHATS_NEW: ChangelogEntry[] = [
+  { version: '0.5.1', notes: ['All instance cards now uniform with PLAY, MODS, CONSOLE, Edit', 'Java detector scans Minecraft launcher bundled runtimes', 'Forge/NeoForge install and launch support'] },
+  { version: '0.4.0', notes: ['Activity log, live panels, full Microsoft OAuth flow'] },
+  { version: '0.3.0', notes: ['Avatar/cover image picker, PixelScene previews'] },
+  { version: '0.1.0', notes: ['Core IPC, config service, and instance management'] },
 ]
 
 type ActivityEntry = { id: string; label: string; ts: number }
@@ -298,6 +318,7 @@ function Library() {
   const [consoleLogs, setConsoleLogs] = useState<Map<string, string[]>>(new Map())
   const [consoleOpen, setConsoleOpen] = useState<string | null>(null)
   const [modsTarget, setModsTarget] = useState<Instance | null>(null)
+  const [whatsNew, setWhatsNew] = useState<ChangelogEntry[]>(FALLBACK_WHATS_NEW)
 
   const { data: instances = [], isLoading } = useInstances()
   const createInstance = useCreateInstance()
@@ -318,6 +339,17 @@ function Library() {
     api.activity.list()
       .then(setActivity)
       .catch(() => setActivity([]))
+  }, [])
+
+  // Fetch latest changelog from GitHub
+  useEffect(() => {
+    fetch(CHANGELOG_URL)
+      .then(r => r.ok ? r.text() : Promise.reject())
+      .then(text => {
+        const parsed = parseChangelog(text)
+        if (parsed.length) setWhatsNew(parsed)
+      })
+      .catch(() => { /* keep fallback */ })
   }, [])
 
   // Re-render relative timestamps every minute
@@ -533,10 +565,14 @@ function Library() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           {/* What's New */}
           <Panel title="What's New">
-            {WHATS_NEW.map(item => (
-              <div key={item.version} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '5px 0', borderBottom: '1px solid var(--line)' }}>
-                <span style={{ fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--accent)', letterSpacing: '.06em', flexShrink: 0 }}>v{item.version}</span>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{item.note}</span>
+            {whatsNew.slice(0, 4).map(item => (
+              <div key={item.version} style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
+                <span style={{ fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--accent)', letterSpacing: '.06em' }}>v{item.version}</span>
+                <ul style={{ margin: '3px 0 0', paddingLeft: 14, listStyle: 'disc' }}>
+                  {item.notes.slice(0, 3).map((n, i) => (
+                    <li key={i} style={{ fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.5 }}>{n}</li>
+                  ))}
+                </ul>
               </div>
             ))}
           </Panel>
