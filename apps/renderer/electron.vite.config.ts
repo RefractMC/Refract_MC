@@ -5,11 +5,13 @@ import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 
 const workspaceAlias = {
-  '@refract/core':       resolve('../../packages/core/src/index.ts'),
-  '@refract/plugin-api': resolve('../../packages/plugin-api/src/index.ts'),
+  '@refract/core/java-manager': resolve('../../packages/core/src/java-manager/index.ts'),
+  '@refract/core/launcher':     resolve('../../packages/core/src/launcher/index.ts'),
+  '@refract/core':              resolve('../../packages/core/src/index.ts'),
+  '@refract/plugin-api':        resolve('../../packages/plugin-api/src/index.ts'),
 }
 
-const workspaceExclude = ['@refract/core', '@refract/plugin-api']
+const workspaceExclude = ['@refract/core', '@refract/core/java-manager', '@refract/core/launcher', '@refract/plugin-api']
 
 export default defineConfig({
   main: {

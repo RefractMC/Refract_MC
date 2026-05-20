@@ -21,6 +21,30 @@ class ThemeEngine {
         root.style.setProperty(`--color-${key}`, value)
       }
     }
+
+    const directVars: Record<string, string> = {
+      'bg-base': 'bg',
+      'bg-surface': 'surface',
+      'bg-overlay': 'surface-2',
+      'bg-hover': 'surface-3',
+      'text-primary': 'ink',
+      'text-secondary': 'ink-2',
+      'text-muted': 'ink-3',
+      border: 'border-r',
+      accent: 'accent',
+      'accent-hover': 'accent-hi',
+      success: 'grass',
+      warning: 'gold',
+      error: 'redstone',
+    }
+
+    for (const [themeKey, cssVar] of Object.entries(directVars)) {
+      const mappedValue = (colors as Record<string, string>)[themeKey]
+      if (mappedValue) root.style.setProperty(`--${cssVar}`, mappedValue)
+    }
+
+    const accent = (colors as Record<string, string>).accent
+    if (accent) root.style.setProperty('--accent-tint', `color-mix(in srgb, ${accent} 18%, transparent)`)
   }
 
   private applyLayout(layout: LayoutConfig): void {

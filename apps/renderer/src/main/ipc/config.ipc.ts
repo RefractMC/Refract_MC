@@ -1,17 +1,18 @@
-import { ipcMain } from 'electron'
 import { getConfig, setConfig, type AppConfig } from '../services/config'
+import { listSafeAccounts } from '../services/auth'
+import { handleIpc } from './handle'
 
 export function registerConfigIpc(): void {
-  ipcMain.handle('config.get', () => {
+  handleIpc('config.get', () => {
     const config = getConfig()
     // strip encrypted token fields before sending to renderer
     return {
       ...config,
-      accounts: config.accounts.map(({ encryptedAccessToken: _, encryptedRefreshToken: __, ...safe }) => safe),
+      accounts: listSafeAccounts(),
     }
   })
 
-  ipcMain.handle('config.set', <K extends keyof AppConfig>(_event: Electron.IpcMainInvokeEvent, key: K, value: AppConfig[K]) => {
-    setConfig(key, value)
+  handleIpc('config.set', (_event, key, value) => {
+    setConfig(key as keyof AppConfig, value as AppConfig[keyof AppConfig])
   })
 }

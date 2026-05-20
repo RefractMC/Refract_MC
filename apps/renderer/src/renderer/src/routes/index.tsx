@@ -1,27 +1,43 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
-import type { Instance } from '@refract/core'
+import type { Instance, MinecraftVersion } from '@refract/core'
 import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
 import { ChevLeftIcon, ChevRightIcon } from '@/components/ui/BlockIcons'
 import { CreateInstanceDialog } from '@/components/instances/CreateInstanceDialog'
 import { EditInstanceDialog } from '@/components/instances/EditInstanceDialog'
-import { useInstances, useCreateInstance, useUpdateInstance, useDeleteInstance } from '@/hooks/use-instances'
+import { InstallProgress } from '@/components/minecraft/InstallProgress'
+import { useInstances, useCreateInstance, useUpdateInstance } from '@/hooks/use-instances'
+import { api } from '@/lib/api'
 
 export const Route = createFileRoute('/')({
   component: Library,
 })
 
+type ActiveAccount = Awaited<ReturnType<typeof api.auth.active>>
+
 const WHATS_NEW = [
-  { version: '0.3.1', note: 'Instance grid, create/edit dialogs, launch toast' },
-  { version: '0.3.0', note: 'Theme engine with Minecraft palette + Zustand store' },
-  { version: '0.2.0', note: 'App shell, sidebar, TitleBar with traffic lights' },
+  { version: '0.4.0', note: 'Activity log, live panels, full Microsoft OAuth flow' },
+  { version: '0.3.1', note: 'Minecraft pixel-style instance dialogs, PixelScene previews' },
+  { version: '0.3.0', note: 'Theme engine with Minecraft palette and Zustand store' },
+  { version: '0.2.0', note: 'App shell, sidebar, TitleBar, offline and Yggdrasil accounts' },
+  { version: '0.1.0', note: 'Core IPC, config service, and instance management' },
 ]
 
-const ACTIVITY = [
-  { label: 'Launched Vanilla 1.20.4', time: '2 min ago' },
-  { label: 'Edited "Fabric Dev"', time: '1 hr ago' },
-  { label: 'Installed Sodium 0.5.8', time: 'Yesterday' },
-]
+type ActivityEntry = { id: string; label: string; ts: number }
+
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts
+  const s = Math.floor(diff / 1000)
+  if (s < 60)  return 'Just now'
+  const m = Math.floor(s / 60)
+  if (m < 60)  return `${m} min ago`
+  const h = Math.floor(m / 60)
+  if (h < 24)  return `${h} hr ago`
+  const d = Math.floor(h / 24)
+  if (d === 1) return 'Yesterday'
+  if (d < 7)   return `${d} days ago`
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
 
 function greeting() {
   const h = new Date().getHours()
@@ -41,39 +57,44 @@ function useClock() {
   return t
 }
 
-function PlayButton({ onClick }: { onClick?: () => void }) {
+function PlayButton({ onClick, disabled = false, label = 'PLAY' }: { onClick?: () => void; disabled?: boolean; label?: string }) {
   const [down, setDown] = useState(false)
   return (
     <button
-      onMouseDown={() => setDown(true)}
-      onMouseUp={() => { setDown(false); onClick?.() }}
+      onMouseDown={() => { if (!disabled) setDown(true) }}
+      onMouseUp={() => { setDown(false); if (!disabled) onClick?.() }}
       onMouseLeave={() => setDown(false)}
+      disabled={disabled}
       style={{
         fontFamily: "'VT323',monospace",
         fontSize: 20,
         letterSpacing: '.12em',
-        color: '#fff',
+        color: disabled ? 'var(--ink-4)' : '#fff',
         padding: '0 28px',
         height: 40,
-        background: 'var(--accent)',
+        background: disabled ? 'var(--surface-3)' : 'var(--accent)',
         border: 'none',
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
         userSelect: 'none',
         outline: 'none',
         position: 'relative',
         top: down ? 2 : 0,
-        boxShadow: down
+        opacity: disabled ? .72 : 1,
+        boxShadow: disabled
+          ? 'inset 0 -3px 0 rgba(0,0,0,.28), inset 0 3px 0 rgba(255,255,255,.05)'
+          : down
           ? 'inset 0 2px 0 var(--accent-lo), inset 0 -2px 0 var(--accent-hi)'
           : 'inset 0 -4px 0 var(--accent-lo), inset 0 4px 0 var(--accent-hi), 0 4px 0 rgba(0,0,0,.5)',
         transition: 'box-shadow 60ms, top 60ms',
       }}
     >
-      PLAY
+      {label}
     </button>
   )
 }
 
-function HeroCard({ instance, onLaunch, onEdit }: { instance: Instance; onLaunch: () => void; onEdit: () => void }) {
+function HeroCard({ instance, onLaunch, onEdit, canLaunch, isRunning }: { instance: Instance; onLaunch: () => void; onEdit: () => void; canLaunch: boolean; isRunning: boolean }) {
+  const label = isRunning ? 'STOP' : instance.isInstalled ? 'PLAY' : 'INSTALL'
   return (
     <div style={{
       flex: '0 0 340px',
@@ -111,8 +132,18 @@ function HeroCard({ instance, onLaunch, onEdit }: { instance: Instance; onLaunch
         <div style={{ fontFamily: "'VT323',monospace", fontSize: 14, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
           MC {instance.minecraftVersion}
         </div>
+        {!instance.isInstalled && (
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.35 }}>
+            Minecraft not downloaded yet — click INSTALL to set up.
+          </div>
+        )}
+        {instance.isInstalled && !canLaunch && (
+          <div style={{ fontSize: 11, color: 'var(--gold)', lineHeight: 1.35 }}>
+            Microsoft account required to play online.
+          </div>
+        )}
         <div style={{ marginTop: 'auto', display: 'flex', gap: 8, paddingTop: 10 }}>
-          <PlayButton onClick={onLaunch} />
+          <PlayButton onClick={onLaunch} disabled={false} label={label} />
           <button
             onClick={onEdit}
             style={{
@@ -134,7 +165,8 @@ function HeroCard({ instance, onLaunch, onEdit }: { instance: Instance; onLaunch
   )
 }
 
-function PreviewCard({ instance, onLaunch, onEdit }: { instance: Instance; onLaunch: () => void; onEdit: () => void }) {
+function PreviewCard({ instance, onLaunch, onEdit, canLaunch, isRunning }: { instance: Instance; onLaunch: () => void; onEdit: () => void; canLaunch: boolean; isRunning: boolean }) {
+  const label = isRunning ? 'STOP' : instance.isInstalled ? 'PLAY' : 'INSTALL'
   return (
     <div style={{
       flex: '0 0 180px',
@@ -158,20 +190,17 @@ function PreviewCard({ instance, onLaunch, onEdit }: { instance: Instance; onLau
         <button
           onClick={(e) => { e.stopPropagation(); onLaunch() }}
           style={{
-            marginTop: 8,
-            width: '100%',
-            fontFamily: "'VT323',monospace",
-            fontSize: 15,
-            letterSpacing: '.1em',
-            color: '#fff',
-            height: 28,
-            background: 'var(--accent)',
-            border: 'none',
-            cursor: 'pointer',
-            boxShadow: 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
+            marginTop: 8, width: '100%',
+            fontFamily: "'VT323',monospace", fontSize: 15, letterSpacing: '.1em',
+            color: '#fff', height: 28,
+            background: isRunning ? 'var(--lava)' : 'var(--accent)',
+            border: 'none', cursor: 'pointer',
+            boxShadow: isRunning
+              ? 'inset 0 -3px 0 rgba(0,0,0,.3)'
+              : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
           }}
         >
-          PLAY
+          {label}
         </button>
       </div>
     </div>
@@ -221,19 +250,101 @@ function Library() {
   const [launchToast, setLaunchToast] = useState<string | null>(null)
   const [carouselTab, setCarouselTab] = useState<'recent' | 'pinned' | 'all'>('recent')
   const [carouselPage, setCarouselPage] = useState(0)
+  const [activeAccount, setActiveAccount] = useState<ActiveAccount>(null)
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [, setTick] = useState(0)
+  const [installing, setInstalling] = useState<{ instanceId: string; name: string } | null>(null)
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
+  const [mcVersions, setMcVersions] = useState<MinecraftVersion[]>([])
 
   const { data: instances = [], isLoading } = useInstances()
   const createInstance = useCreateInstance()
   const updateInstance = useUpdateInstance()
-  const deleteInstance = useDeleteInstance()
 
   const clock = useClock()
   const timeStr = clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const canLaunchMinecraft = activeAccount?.canPlayMinecraft === true
 
-  function handleLaunch(instance: Instance) {
-    setLaunchToast(`${instance.name} — launch engine coming soon!`)
-    setTimeout(() => setLaunchToast(null), 3000)
+  useEffect(() => {
+    api.auth.active()
+      .then(setActiveAccount)
+      .catch(() => setActiveAccount(null))
+  }, [])
+
+  useEffect(() => {
+    api.activity.list()
+      .then(setActivity)
+      .catch(() => setActivity([]))
+  }, [])
+
+  // Re-render relative timestamps every minute
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  async function recordActivity(label: string): Promise<void> {
+    try {
+      const entry = await api.activity.add(label)
+      setActivity(prev => [entry, ...prev].slice(0, 50))
+    } catch { /* non-critical */ }
   }
+
+  async function handleInstallMc(instance: Instance) {
+    const versionList = mcVersions.length ? mcVersions : await api.mc.versions().catch(() => [])
+    if (!mcVersions.length) setMcVersions(versionList)
+
+    const ver = versionList.find(v => v.id === instance.minecraftVersion)
+    if (!ver) {
+      setLaunchToast(`Minecraft version ${instance.minecraftVersion} not found in manifest.`)
+      setTimeout(() => setLaunchToast(null), 3500)
+      return
+    }
+    setInstalling({ instanceId: instance.id, name: instance.name })
+    try {
+      await api.mc.install(instance.id, ver.id, ver.url, instance.modLoader, instance.modLoaderVersion)
+    } catch (e) {
+      setLaunchToast(`Install failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      setTimeout(() => setLaunchToast(null), 4000)
+      setInstalling(null)
+    }
+  }
+
+  async function handleLaunch(instance: Instance) {
+    if (!canLaunchMinecraft) {
+      const message = activeAccount
+        ? `${activeAccount.username} — sign in with a licensed Microsoft account to play Minecraft.`
+        : 'Sign in with a licensed Microsoft account to play Minecraft.'
+      setLaunchToast(message)
+      setTimeout(() => setLaunchToast(null), 3600)
+      return
+    }
+    if (!instance.isInstalled) {
+      await handleInstallMc(instance)
+      return
+    }
+    if (runningIds.has(instance.id)) {
+      api.mc.stop(instance.id)
+      setRunningIds(prev => { const n = new Set(prev); n.delete(instance.id); return n })
+      return
+    }
+    try {
+      await api.mc.launch(instance.id)
+      setRunningIds(prev => new Set([...prev, instance.id]))
+      void recordActivity(`Launched "${instance.name}"`)
+    } catch (e) {
+      setLaunchToast(`Launch failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      setTimeout(() => setLaunchToast(null), 4000)
+    }
+  }
+
+  // Listen for MC exit events
+  useEffect(() => {
+    const unsub = api.mc.onExit(({ instanceId }) => {
+      setRunningIds(prev => { const n = new Set(prev); n.delete(instanceId); return n })
+    })
+    return () => { if (typeof unsub === 'function') unsub() }
+  }, [])
 
   const visibleInstances = instances.slice(carouselPage * 3, carouselPage * 3 + 3)
   const heroInstance = visibleInstances[0] ?? null
@@ -247,7 +358,10 @@ function Library() {
         <div>
           <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 2 }}>{greeting()}</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', lineHeight: 1 }}>
-            <span style={{ color: 'var(--accent)' }}>Steve</span>
+            <span style={{ color: 'var(--accent)' }}>{activeAccount?.username ?? 'Guest'}</span>
+          </div>
+          <div style={{ fontSize: 11, color: canLaunchMinecraft ? 'var(--grass)' : 'var(--gold)', marginTop: 5 }}>
+            {canLaunchMinecraft ? 'Minecraft play enabled' : 'Content access enabled'}
           </div>
         </div>
         <div style={{ fontFamily: "'VT323',monospace", fontSize: 22, color: 'var(--ink-4)', letterSpacing: '.08em', lineHeight: 1 }}>
@@ -323,6 +437,8 @@ function Library() {
                 instance={heroInstance}
                 onLaunch={() => handleLaunch(heroInstance)}
                 onEdit={() => setEditTarget(heroInstance)}
+                canLaunch={canLaunchMinecraft}
+                isRunning={runningIds.has(heroInstance.id)}
               />
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -332,6 +448,8 @@ function Library() {
                   instance={inst}
                   onLaunch={() => handleLaunch(inst)}
                   onEdit={() => setEditTarget(inst)}
+                  canLaunch={canLaunchMinecraft}
+                  isRunning={runningIds.has(inst.id)}
                 />
               ))}
             </div>
@@ -354,10 +472,14 @@ function Library() {
 
           {/* Activity */}
           <Panel title="Activity">
-            {ACTIVITY.map((item, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--line)' }}>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{item.label}</span>
-                <span style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>{item.time}</span>
+            {activity.length === 0 ? (
+              <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>
+                No recent activity
+              </div>
+            ) : activity.slice(0, 6).map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--line)' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 8 }}>{item.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>{timeAgo(item.ts)}</span>
               </div>
             ))}
           </Panel>
@@ -385,15 +507,37 @@ function Library() {
       <CreateInstanceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreate={async (input) => { await createInstance.mutateAsync(input) }}
+        onCreate={async (input) => {
+          const inst = await createInstance.mutateAsync(input)
+          void recordActivity(`Created instance "${inst.name}"`)
+        }}
       />
 
       <EditInstanceDialog
         instance={editTarget}
         open={editTarget !== null}
         onOpenChange={(v) => { if (!v) setEditTarget(null) }}
-        onSave={async (id, patch) => { await updateInstance.mutateAsync({ id, patch }) }}
+        onSave={async (id, patch) => {
+          const inst = await updateInstance.mutateAsync({ id, patch })
+          void recordActivity(`Edited "${inst.name}"`)
+        }}
       />
+
+      {installing && (
+        <InstallProgress
+          instanceId={installing.instanceId}
+          instanceName={installing.name}
+          onDone={() => {
+            setInstalling(null)
+            void recordActivity(`Installed MC for "${installing.name}"`)
+          }}
+          onError={(err) => {
+            setInstalling(null)
+            setLaunchToast(`Install failed: ${err}`)
+            setTimeout(() => setLaunchToast(null), 4000)
+          }}
+        />
+      )}
     </div>
   )
 }

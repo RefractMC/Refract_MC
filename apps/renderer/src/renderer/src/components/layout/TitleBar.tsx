@@ -1,4 +1,5 @@
 import { useRouterState } from '@tanstack/react-router'
+import { api } from '@/lib/api'
 import { BellIcon } from '../ui/BlockIcons'
 
 const CRUMBS: Record<string, string> = {
@@ -10,9 +11,9 @@ const CRUMBS: Record<string, string> = {
 }
 
 const traffic: Array<{ color: string; action: () => void }> = [
-  { color: '#ff5f57', action: () => window.api.window.close()    },
-  { color: '#febc2e', action: () => window.api.window.minimize() },
-  { color: '#28c840', action: () => window.api.window.maximize() },
+  { color: '#ff5f57', action: () => api.window.close()    },
+  { color: '#febc2e', action: () => api.window.minimize() },
+  { color: '#28c840', action: () => api.window.maximize() },
 ]
 
 export function TitleBar() {

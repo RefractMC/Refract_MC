@@ -10,6 +10,7 @@ const MC_AUTH_URL = 'https://api.minecraftservices.com/authentication/login_with
 const MC_PROFILE_URL = 'https://api.minecraftservices.com/minecraft/profile'
 
 const MS_SCOPE = 'XboxLive.signin offline_access'
+const DEFAULT_MICROSOFT_CLIENT_ID = '2ca3a07c-2fa0-433d-820a-e2f752f44415'
 
 export interface SafeAccount {
   uuid: string
@@ -17,6 +18,9 @@ export interface SafeAccount {
   type: 'microsoft' | 'offline' | 'yggdrasil'
   expiresAt?: number
   yggdrasilServer?: string
+  canManageContent: boolean
+  canPlayMinecraft: boolean
+  licenseStatus: 'verified' | 'guest'
 }
 
 export interface MicrosoftDeviceLogin {
@@ -41,7 +45,7 @@ interface MinecraftProfile {
 }
 
 function getMicrosoftClientId(): string {
-  const id = process.env.REFRACT_MICROSOFT_CLIENT_ID ?? process.env.MICROSOFT_CLIENT_ID
+  const id = process.env.REFRACT_MICROSOFT_CLIENT_ID ?? process.env.MICROSOFT_CLIENT_ID ?? DEFAULT_MICROSOFT_CLIENT_ID
   if (!id) {
     throw new Error(
       'Missing Microsoft OAuth client id. Set REFRACT_MICROSOFT_CLIENT_ID to an Azure public client app id.'
@@ -59,12 +63,13 @@ async function postForm<T>(url: string, body: Record<string, string>): Promise<T
 
   const json = await response.json().catch(() => ({}))
   if (!response.ok) {
+    const code = typeof json.error === 'string' ? json.error : null
     const message = typeof json.error_description === 'string'
       ? json.error_description
       : typeof json.error === 'string'
         ? json.error
         : `Request failed: ${response.status}`
-    throw new Error(message)
+    throw new Error(code ? `${code}: ${message}` : message)
   }
 
   return json as T
@@ -104,7 +109,12 @@ function encrypt(value: string): string {
 
 function toSafeAccount(account: AppConfig['accounts'][number]): SafeAccount {
   const { encryptedAccessToken: _access, encryptedRefreshToken: _refresh, ...safe } = account
-  return safe
+  return {
+    ...safe,
+    canManageContent: true,
+    canPlayMinecraft: account.type === 'microsoft',
+    licenseStatus: account.type === 'microsoft' ? 'verified' : 'guest',
+  }
 }
 
 export function listSafeAccounts(): SafeAccount[] {

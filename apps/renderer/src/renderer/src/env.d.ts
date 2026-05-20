@@ -18,9 +18,20 @@ declare global {
             type: 'microsoft' | 'offline' | 'yggdrasil'
             expiresAt?: number
             yggdrasilServer?: string
+            canManageContent: boolean
+            canPlayMinecraft: boolean
+            licenseStatus: 'verified' | 'guest'
           }>
         }>
         set: (key: string, value: unknown) => Promise<void>
+      }
+      log: {
+        write: (entry: {
+          level: 'info' | 'warn' | 'error'
+          source: string
+          message: string
+          stack?: string
+        }) => void
       }
       auth: {
         accounts: () => Promise<Array<{
@@ -29,6 +40,9 @@ declare global {
           type: 'microsoft' | 'offline' | 'yggdrasil'
           expiresAt?: number
           yggdrasilServer?: string
+          canManageContent: boolean
+          canPlayMinecraft: boolean
+          licenseStatus: 'verified' | 'guest'
         }>>
         active: () => Promise<{
           uuid: string
@@ -36,6 +50,9 @@ declare global {
           type: 'microsoft' | 'offline' | 'yggdrasil'
           expiresAt?: number
           yggdrasilServer?: string
+          canManageContent: boolean
+          canPlayMinecraft: boolean
+          licenseStatus: 'verified' | 'guest'
         } | null>
         microsoftBegin: () => Promise<{
           deviceCode: string
@@ -51,6 +68,9 @@ declare global {
           type: 'microsoft' | 'offline' | 'yggdrasil'
           expiresAt?: number
           yggdrasilServer?: string
+          canManageContent: boolean
+          canPlayMinecraft: boolean
+          licenseStatus: 'verified' | 'guest'
         }>
         createOffline: (username: string) => Promise<{
           uuid: string
@@ -58,6 +78,9 @@ declare global {
           type: 'microsoft' | 'offline' | 'yggdrasil'
           expiresAt?: number
           yggdrasilServer?: string
+          canManageContent: boolean
+          canPlayMinecraft: boolean
+          licenseStatus: 'verified' | 'guest'
         }>
         setActive: (uuid: string) => Promise<{
           uuid: string
@@ -65,6 +88,9 @@ declare global {
           type: 'microsoft' | 'offline' | 'yggdrasil'
           expiresAt?: number
           yggdrasilServer?: string
+          canManageContent: boolean
+          canPlayMinecraft: boolean
+          licenseStatus: 'verified' | 'guest'
         }>
         logout: (uuid: string) => Promise<void>
       }
@@ -86,6 +112,28 @@ declare global {
         close: () => void
         isMaximized: () => Promise<boolean>
         onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
+      }
+      activity: {
+        list: () => Promise<Array<{ id: string; label: string; ts: number }>>
+        add: (label: string) => Promise<{ id: string; label: string; ts: number }>
+      }
+      modrinth: {
+        search: (query: string, gameVersion?: string, loader?: string, category?: string, limit?: number, offset?: number) => Promise<import('@refract/core').ModrinthSearchResult>
+        versions: (projectId: string, gameVersion?: string, loader?: string) => Promise<import('@refract/core').ModrinthVersion[]>
+        install: (instanceId: string, projectId: string, projectName: string, versionId?: string) => Promise<import('@refract/core').InstalledMod>
+        uninstall: (instanceId: string, projectId: string) => Promise<void>
+        gameVersions: () => Promise<import('@refract/core').ModrinthGameVersion[]>
+      }
+      mc: {
+        versions: () => Promise<import('@refract/core').MinecraftVersion[]>
+        java: () => Promise<import('@refract/core').JavaInstallation[]>
+        isRunning: (instanceId: string) => Promise<boolean>
+        install: (instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) => Promise<void>
+        launch: (instanceId: string) => Promise<void>
+        stop: (instanceId: string) => Promise<void>
+        onProgress: (cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => () => void
+        onLog: (cb: (data: { instanceId: string; line: string; stream: string }) => void) => () => void
+        onExit: (cb: (data: { instanceId: string; code: number | null; error?: string }) => void) => () => void
       }
     }
   }

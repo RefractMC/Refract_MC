@@ -1,10 +1,10 @@
-import { ipcMain } from 'electron'
 import { join } from 'path'
 import { readdirSync, existsSync, copyFileSync, rmSync, readFileSync } from 'fs'
 import { paths } from '../services/paths'
+import { handleIpc } from './handle'
 
 export function registerThemeIpc(): void {
-  ipcMain.handle('theme.list', () => {
+  handleIpc('theme.list', () => {
     if (!existsSync(paths.themes)) return []
     return readdirSync(paths.themes)
       .filter((f) => f.endsWith('.json'))
@@ -17,15 +17,16 @@ export function registerThemeIpc(): void {
       })
   })
 
-  ipcMain.handle('theme.install', (_event, sourcePath: string) => {
-    const fileName = sourcePath.split(/[\\/]/).pop() ?? 'theme.json'
+  handleIpc('theme.install', (_event, sourcePath) => {
+    const source = String(sourcePath)
+    const fileName = source.split(/[\\/]/).pop() ?? 'theme.json'
     const dest = join(paths.themes, fileName)
-    copyFileSync(sourcePath, dest)
+    copyFileSync(source, dest)
     return JSON.parse(readFileSync(dest, 'utf-8'))
   })
 
-  ipcMain.handle('theme.delete', (_event, fileName: string) => {
-    const filePath = join(paths.themes, fileName)
+  handleIpc('theme.delete', (_event, fileName) => {
+    const filePath = join(paths.themes, String(fileName))
     if (existsSync(filePath)) rmSync(filePath)
   })
 }

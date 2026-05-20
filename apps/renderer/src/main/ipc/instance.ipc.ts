@@ -1,4 +1,3 @@
-import { ipcMain } from 'electron'
 import {
   listInstances,
   getInstanceById,
@@ -7,26 +6,27 @@ import {
   deleteInstance,
 } from '../services/instance-store'
 import type { CreateInstanceInput, Instance } from '@refract/core'
+import { handleIpc } from './handle'
 
 export function registerInstanceIpc(): void {
-  ipcMain.handle('instance.list', () => listInstances())
+  handleIpc('instance.list', () => listInstances())
 
-  ipcMain.handle('instance.getById', (_event, id: string) => getInstanceById(id))
+  handleIpc('instance.getById', (_event, id) => getInstanceById(String(id)))
 
-  ipcMain.handle('instance.create', (_event, input: CreateInstanceInput) =>
-    createAndSaveInstance(input)
+  handleIpc('instance.create', (_event, input) =>
+    createAndSaveInstance(input as CreateInstanceInput)
   )
 
-  ipcMain.handle(
+  handleIpc(
     'instance.update',
-    (_event, id: string, patch: Partial<Omit<Instance, 'id' | 'createdAt'>>) =>
-      updateInstance(id, patch)
+    (_event, id, patch) =>
+      updateInstance(String(id), patch as Partial<Omit<Instance, 'id' | 'createdAt'>>)
   )
 
-  ipcMain.handle(
+  handleIpc(
     'instance.delete',
-    (_event, id: string, deleteFiles: boolean) => {
-      deleteInstance(id, deleteFiles)
+    (_event, id, deleteFiles) => {
+      deleteInstance(String(id), Boolean(deleteFiles))
     }
   )
 }
