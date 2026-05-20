@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type React from 'react'
-import type { Instance, ModLoader } from '@refract/core'
+import type { Instance, ModLoader, JavaInstallation } from '@refract/core'
 import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
 import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
+import { api } from '@/lib/api'
 
 const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: '',         label: 'Vanilla'  },
@@ -42,21 +43,25 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const [memoryMb, setMemoryMb]   = useState(2048)
   const [coverImage, setCoverImage] = useState('')
   const [pinned, setPinned]       = useState(false)
+  const [javaPath, setJavaPath]   = useState('')
+  const [javas, setJavas]         = useState<JavaInstallation[]>([])
   const [loading, setLoading]     = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (instance) {
+    if (instance && open) {
       setName(instance.name)
       setMcVersion(instance.minecraftVersion)
       setModLoader(instance.modLoader ?? '')
       setMemoryMb(instance.memoryMb)
       setCoverImage(instance.iconPath ?? '')
       setPinned(instance.pinned ?? false)
+      setJavaPath(instance.javaPath ?? '')
       setConfirmDelete(false)
+      api.mc.java().then(setJavas).catch(() => setJavas([]))
     }
-  }, [instance])
+  }, [instance, open])
 
   function setMemory(mb: number) {
     setMemoryMb(Math.max(MEMORY_MIN_MB, Math.min(MEMORY_MAX_MB, mb)))
@@ -74,7 +79,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
     if (!instance || !name.trim()) return
     setLoading(true)
     try {
-      await onSave(instance.id, { name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb, iconPath: coverImage || undefined, pinned })
+      await onSave(instance.id, { name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb, iconPath: coverImage || undefined, pinned, javaPath: javaPath || undefined })
       onOpenChange(false)
     } finally {
       setLoading(false)
@@ -189,6 +194,21 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                     </button>
                   ))}
                 </div>
+              </Field>
+
+              <Field label="JAVA OVERRIDE">
+                <select
+                  value={javaPath}
+                  onChange={e => setJavaPath(e.target.value)}
+                  style={selectSt}
+                >
+                  <option value="">Auto-detect (recommended)</option>
+                  {javas.map(j => (
+                    <option key={j.path} value={j.path}>
+                      Java {j.version} — {j.vendor}
+                    </option>
+                  ))}
+                </select>
               </Field>
 
               {/* Pin toggle */}

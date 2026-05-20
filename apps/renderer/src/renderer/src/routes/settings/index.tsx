@@ -5,10 +5,18 @@ import { api, type AppConfig, type SafeAccount } from '@/lib/api'
 import { useThemeStore } from '@/stores/theme'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
+import type { JavaInstallation } from '@refract/core'
 
 export const Route = createFileRoute('/settings/')({
   component: Settings,
 })
+
+function javaVersionLabel(version: number): string {
+  if (version >= 21) return 'Recommended for MC 1.20.5+'
+  if (version >= 17) return 'Suitable for MC 1.18–1.20.4'
+  if (version === 16) return 'Suitable for MC 1.17'
+  return 'Suitable for MC ≤1.16.5'
+}
 
 const SIDEBAR_WIDTHS = [
   { label: 'Compact', value: '208px' },
@@ -28,6 +36,8 @@ function Settings() {
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [javas, setJavas] = useState<JavaInstallation[]>([])
+  const [javaLoading, setJavaLoading] = useState(true)
   const avatars = useAvatarStore((s) => s.avatars)
   const setAvatarStore = useAvatarStore((s) => s.setAvatar)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
@@ -47,6 +57,14 @@ function Settings() {
   useEffect(() => {
     refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
+
+  async function scanJava() {
+    setJavaLoading(true)
+    try { setJavas(await api.mc.java()) } catch { setJavas([]) }
+    finally { setJavaLoading(false) }
+  }
+
+  useEffect(() => { void scanJava() }, [])
 
   async function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -261,6 +279,80 @@ function Settings() {
                   )
                 })}
               </div>
+            </div>
+          </Panel>
+
+          <Panel title="Java Runtime">
+            <div style={{ display:'grid', gap:12 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                <div style={{ color:'var(--ink-3)', fontSize:12 }}>
+                  {javaLoading ? 'Scanning…' : javas.length === 0 ? 'No Java installations found.' : `${javas.length} installation${javas.length !== 1 ? 's' : ''} detected.`}
+                </div>
+                <button
+                  type="button"
+                  onClick={scanJava}
+                  disabled={javaLoading}
+                  style={{ ...smallButtonStyle(javaLoading), fontSize:11 }}
+                >
+                  {javaLoading ? 'Scanning…' : 'Re-scan'}
+                </button>
+              </div>
+
+              {!javaLoading && javas.length === 0 && (
+                <div style={{ padding:14, background:'rgba(217,59,59,.1)', border:'1px solid rgba(217,59,59,.35)', borderRadius:4 }}>
+                  <div style={{ color:'var(--redstone)', fontWeight:700, fontSize:13, marginBottom:6 }}>Java not found</div>
+                  <div style={{ color:'var(--ink-3)', fontSize:12, marginBottom:10, lineHeight:1.5 }}>
+                    Refract needs Java 21 to run modern Minecraft. Download Adoptium Temurin (free, open-source).
+                  </div>
+                  <a
+                    href="https://adoptium.net/temurin/releases/?version=21"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display:'inline-flex', alignItems:'center', gap:6,
+                      height:32, padding:'0 14px',
+                      background:'var(--accent)', color:'#fff',
+                      borderRadius:3, textDecoration:'none', fontSize:12, fontWeight:700,
+                      boxShadow:'inset 0 -2px 0 var(--accent-lo)',
+                    }}
+                  >
+                    Download Temurin 21 ↗
+                  </a>
+                </div>
+              )}
+
+              {javas.map((j, i) => {
+                const label = javaVersionLabel(j.version)
+                const isTop = i === 0
+                return (
+                  <div
+                    key={j.path}
+                    style={{
+                      padding:'10px 12px',
+                      background: isTop ? 'rgba(79,184,232,.07)' : 'var(--bg)',
+                      border:`1px solid ${isTop ? 'var(--diamond)' : 'var(--border-r)'}`,
+                      borderRadius:4,
+                      display:'grid', gap:3,
+                    }}
+                  >
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontFamily:"'VT323',monospace", fontSize:16, color: isTop ? 'var(--diamond)' : 'var(--ink)', letterSpacing:'.04em' }}>
+                        Java {j.version}
+                      </span>
+                      <span style={{ fontSize:11, color:'var(--ink-4)' }}>{j.vendor}</span>
+                      {isTop && (
+                        <span style={{ marginLeft:'auto', fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.06em', color:'var(--diamond)' }}>
+                          RECOMMENDED
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize:11, color:'var(--ink-4)', lineHeight:1.3 }}>{label}</div>
+                    <div style={{ fontSize:10, color:'var(--ink-4)', fontFamily:'monospace', opacity:.7, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {j.path}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </Panel>
         </div>
