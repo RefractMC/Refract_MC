@@ -85,6 +85,8 @@ function createBrowserApi(): RefractAPI {
         else if (entry.level === 'warn') logger.warn(entry.source, entry.message)
         else logger.info(entry.source, entry.message)
       },
+      read:  async () => [],
+      clear: async () => undefined,
     },
     auth: {
       accounts: async () => getConfig().accounts,

@@ -9,6 +9,8 @@ export const api = {
   log: {
     write: (entry: { level: 'info' | 'warn' | 'error'; source: string; message: string; stack?: string }) =>
       ipcRenderer.send('log.write', entry),
+    read:  (limit?: number) => ipcRenderer.invoke('logs.read', limit),
+    clear: () => ipcRenderer.invoke('logs.clear'),
   },
   auth: {
     accounts:          ()                         => ipcRenderer.invoke('auth.accounts'),

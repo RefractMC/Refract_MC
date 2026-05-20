@@ -32,6 +32,8 @@ declare global {
           message: string
           stack?: string
         }) => void
+        read:  (limit?: number) => Promise<Array<{ time: string; level: 'info' | 'warn' | 'error'; source: string; message: string; stack?: string }>>
+        clear: () => Promise<void>
       }
       auth: {
         accounts: () => Promise<Array<{

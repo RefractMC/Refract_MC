@@ -38,10 +38,23 @@ function Settings() {
   const [busy, setBusy] = useState<string | null>(null)
   const [javas, setJavas] = useState<JavaInstallation[]>([])
   const [javaLoading, setJavaLoading] = useState(true)
+  const [logs, setLogs] = useState<Array<{ time: string; level: 'info' | 'warn' | 'error'; source: string; message: string }>>([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  const logsEndRef = useRef<HTMLDivElement>(null)
   const avatars = useAvatarStore((s) => s.avatars)
   const setAvatarStore = useAvatarStore((s) => s.setAvatar)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  async function loadLogs() {
+    setLogsLoading(true)
+    try { setLogs(await api.log.read(150)) } catch { /* ignore */ } finally { setLogsLoading(false) }
+  }
+
+  async function clearLogs() {
+    await api.log.clear().catch(() => {})
+    setLogs([])
+  }
 
   async function refresh() {
     const [nextConfig, nextAccounts, nextActive] = await Promise.all([
@@ -65,6 +78,7 @@ function Settings() {
   }
 
   useEffect(() => { void scanJava() }, [])
+  useEffect(() => { void loadLogs() }, [])
 
   async function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -371,6 +385,60 @@ function Settings() {
           </Panel>
         </aside>
       </div>
+
+      {/* Log Viewer */}
+      <Panel title="Application Logs">
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <span style={{ fontSize:12, color:'var(--ink-4)' }}>
+            {logs.length === 0 ? 'No entries' : `${logs.length} recent entries (newest first)`}
+          </span>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={loadLogs} style={smallButtonStyle(logsLoading)}>
+              {logsLoading ? 'Loading…' : 'Refresh'}
+            </button>
+            <button
+              onClick={clearLogs}
+              style={{ ...smallButtonStyle(false), color:'var(--lava)', borderColor:'rgba(217,59,59,.4)' }}
+            >
+              Clear Logs
+            </button>
+          </div>
+        </div>
+        <div style={{
+          background:'var(--bg)', border:'1px solid var(--border-r)', borderRadius:3,
+          height:300, overflowY:'auto', fontFamily:'monospace', fontSize:11,
+        }}>
+          {logs.length === 0 ? (
+            <div style={{ padding:'20px 12px', color:'var(--ink-4)', textAlign:'center' }}>
+              {logsLoading ? 'Loading…' : 'No log entries yet.'}
+            </div>
+          ) : logs.map((entry, i) => (
+            <div
+              key={i}
+              style={{
+                padding:'4px 10px',
+                borderBottom:'1px solid rgba(255,255,255,.04)',
+                color: entry.level === 'error' ? '#ff6b6b' : entry.level === 'warn' ? '#ffd93d' : 'var(--ink-3)',
+                lineHeight:1.5,
+              }}
+            >
+              <span style={{ color:'var(--ink-4)', marginRight:6 }}>
+                {entry.time ? new Date(entry.time).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) : ''}
+              </span>
+              <span style={{
+                display:'inline-block', minWidth:56, marginRight:6,
+                color: entry.level === 'error' ? '#ff6b6b' : entry.level === 'warn' ? '#ffd93d' : 'var(--ink-4)',
+                textTransform:'uppercase', fontSize:10,
+              }}>
+                [{entry.level}]
+              </span>
+              <span style={{ color:'var(--accent)', marginRight:6 }}>{entry.source}</span>
+              <span style={{ wordBreak:'break-all' }}>{entry.message}</span>
+            </div>
+          ))}
+          <div ref={logsEndRef} />
+        </div>
+      </Panel>
 
       {error && (
         <div style={{ padding:12, color:'#fff', background:'rgba(217,59,59,.18)', border:'1px solid var(--redstone)', borderRadius:4, fontSize:13 }}>

@@ -24,7 +24,14 @@ function readFabricJson(versionId: string): VersionJson | null {
 }
 
 async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Promise<string> {
-  if (instanceJavaPath && existsSync(instanceJavaPath)) return instanceJavaPath
+  if (instanceJavaPath) {
+    // Accept full exe path or JDK home dir
+    if (existsSync(instanceJavaPath)) return instanceJavaPath
+    const exeWin  = join(instanceJavaPath, 'bin', 'java.exe')
+    if (existsSync(exeWin)) return exeWin
+    const exeUnix = join(instanceJavaPath, 'bin', 'java')
+    if (existsSync(exeUnix)) return exeUnix
+  }
 
   const installs = await detectJavaInstallations()
 
