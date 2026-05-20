@@ -1,5 +1,5 @@
 import { join, relative, resolve } from 'path'
-import { existsSync, createWriteStream, mkdirSync, rmSync, copyFileSync, readdirSync } from 'fs'
+import { existsSync, createWriteStream, mkdirSync, rmSync, copyFileSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { createUnzip } from 'zlib'
 import { pipeline } from 'stream/promises'
 import https from 'https'
@@ -157,6 +157,177 @@ export async function fetchFabricLoaderVersions(mcVersion: string): Promise<Arra
   )
 }
 
+interface ForgeInstallProfile {
+  libraries?: Library[]
+  processors?: Array<{ jar: string; classpath: string[]; args: string[]; outputs?: Record<string, string> }>
+  data?: Record<string, { client: string; server: string }>
+}
+
+async function runForgeProcessors(
+  installProfile: ForgeInstallProfile,
+  versionId: string,
+  instanceId: string,
+  javaExe: string,
+  onProgress?: ProgressCallback
+): Promise<void> {
+  const { execFile } = require('child_process') as typeof import('child_process')
+  const processors = installProfile.processors?.filter(p => !p.outputs || Object.keys(p.outputs).length > 0) ?? []
+  const total = processors.length
+  let done = 0
+
+  for (const proc of processors) {
+    done++
+    onProgress?.({ step: `Running Forge processor (${done}/${total})`, current: done, total, percent: (done / total) * 100 })
+
+    // Skip if all outputs already exist
+    if (proc.outputs && Object.entries(proc.outputs).every(([k]) => {
+      const out = resolveForgeData(k, installProfile.data ?? {}, versionId, instanceId)
+      return out && existsSync(out)
+    })) continue
+
+    const jarPath = resolveLibPath(proc.jar)
+    if (!existsSync(jarPath)) continue
+
+    const sep = process.platform === 'win32' ? ';' : ':'
+    const cp = [jarPath, ...proc.classpath.map(resolveLibPath)].join(sep)
+    const args = proc.args.map(a => resolveForgeData(a, installProfile.data ?? {}, versionId, instanceId) ?? a)
+
+    await new Promise<void>(res => {
+      execFile(javaExe, ['-cp', cp, ...args], { timeout: 120_000 }, () => res())
+    })
+  }
+}
+
+function resolveLibPath(coord: string): string {
+  // Maven coord format: group:artifact:version or group:artifact:version:classifier
+  const clean = coord.startsWith('[') ? coord.slice(1, -1) : coord
+  const parts = clean.split(':')
+  const [group, artifact, version, classifier] = parts
+  const groupPath = group.replace(/\./g, '/')
+  const fname = classifier
+    ? `${artifact}-${version}-${classifier}.jar`
+    : `${artifact}-${version}.jar`
+  return join(paths.libraries, groupPath, artifact, version, fname)
+}
+
+function resolveForgeData(
+  value: string,
+  data: Record<string, { client: string; server: string }>,
+  versionId: string,
+  instanceId: string
+): string | undefined {
+  if (value.startsWith('{') && value.endsWith('}')) {
+    const key = value.slice(1, -1)
+    const entry = data[key]?.client ?? data[key]?.server
+    if (entry) return resolveForgeData(entry, data, versionId, instanceId)
+    return undefined
+  }
+  if (value.startsWith('[') && value.endsWith(']')) return resolveLibPath(value)
+  if (value === '{MINECRAFT_JAR}') return clientJarPath(versionId)
+  if (value === '{SIDE}') return 'client'
+  return value
+}
+
+async function installForge(
+  instanceId: string,
+  versionId: string,
+  forgeVersion: string,
+  isNeoForge: boolean,
+  onProgress?: ProgressCallback
+): Promise<void> {
+  const report = (step: string, pct: number) =>
+    onProgress?.({ step, current: pct, total: 100, percent: pct })
+
+  const forgeId = `${versionId}-${forgeVersion}`
+  const mavenBase = isNeoForge
+    ? 'https://maven.neoforged.net/releases/net/neoforged/neoforge'
+    : 'https://maven.minecraftforge.net/net/minecraftforge/forge'
+  const installerUrl = isNeoForge
+    ? `${mavenBase}/${forgeVersion}/neoforge-${forgeVersion}-installer.jar`
+    : `${mavenBase}/${forgeId}/forge-${forgeId}-installer.jar`
+
+  const installerPath = join(paths.cache, `forge-installer-${forgeId}.jar`)
+  const extractDir   = join(paths.cache, `forge-extract-${forgeId}`)
+
+  report('Downloading Forge installer', 0)
+  await downloadFile(installerUrl, installerPath, ({ percent: p }) => report('Downloading Forge installer', p * 0.3))
+
+  // Extract installer (it's a ZIP/JAR)
+  report('Extracting Forge installer', 30)
+  if (existsSync(extractDir)) rmSync(extractDir, { recursive: true, force: true })
+  mkdirSync(extractDir, { recursive: true })
+  const { execFile } = require('child_process') as typeof import('child_process')
+  if (process.platform === 'win32') {
+    const ps = [
+      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+      `[System.IO.Compression.ZipFile]::ExtractToDirectory('${installerPath.replace(/'/g, "''")}', '${extractDir.replace(/'/g, "''")}')`,
+    ].join('; ')
+    await new Promise<void>(res => {
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 60_000 }, () => res())
+    })
+  } else {
+    await new Promise<void>(res => {
+      execFile('unzip', ['-o', installerPath, '-d', extractDir], { timeout: 60_000 }, () => res())
+    })
+  }
+
+  // Read version.json and install_profile.json from installer
+  const versionJsonSrc = join(extractDir, 'version.json')
+  const profileSrc     = join(extractDir, 'install_profile.json')
+  if (!existsSync(versionJsonSrc)) throw new Error('Forge version.json not found in installer. Forge may not support this MC version.')
+
+  const forgeJson = JSON.parse(readFileSync(versionJsonSrc, 'utf-8')) as VersionJson
+
+  // Save forge version JSON (used by launcher to build classpath/mainClass)
+  const forgeJsonDir  = join(paths.versions, `${versionId}-forge`)
+  const forgeJsonPath = join(forgeJsonDir, `${versionId}-forge.json`)
+  mkdirSync(forgeJsonDir, { recursive: true })
+  writeFileSync(forgeJsonPath, JSON.stringify(forgeJson, null, 2))
+
+  // Download Forge libraries
+  report('Downloading Forge libraries', 35)
+  await downloadLibraries(forgeJson.libraries, onProgress, 'Downloading Forge libraries')
+
+  // Also download install_profile libraries (the processor tools)
+  if (existsSync(profileSrc)) {
+    const profile = JSON.parse(readFileSync(profileSrc, 'utf-8')) as ForgeInstallProfile
+    if (profile.libraries?.length) {
+      report('Downloading Forge tools', 55)
+      await downloadLibraries(profile.libraries, onProgress, 'Downloading Forge tools')
+    }
+
+    // Copy embedded maven libraries from installer into our libraries dir
+    const mavenDir = join(extractDir, 'maven')
+    if (existsSync(mavenDir)) copyMavenLibs(mavenDir, paths.libraries)
+
+    // Run Forge processors (patch the Minecraft client JAR)
+    report('Running Forge processors', 70)
+    const { detectJavaInstallations } = await import('@refract/core/java-manager')
+    const javas = await detectJavaInstallations()
+    const javaExe = javas[0] ? join(javas[0].path, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : 'java'
+    await runForgeProcessors(profile, versionId, instanceId, javaExe, onProgress)
+  }
+
+  // Cleanup
+  try { rmSync(installerPath) } catch { /* ignore */ }
+  try { rmSync(extractDir, { recursive: true, force: true }) } catch { /* ignore */ }
+
+  report('Forge installed', 100)
+}
+
+function copyMavenLibs(src: string, dst: string): void {
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const srcPath = join(src, entry.name)
+    const dstPath = join(dst, entry.name)
+    if (entry.isDirectory()) {
+      mkdirSync(dstPath, { recursive: true })
+      copyMavenLibs(srcPath, dstPath)
+    } else if (!existsSync(dstPath)) {
+      try { copyFileSync(srcPath, dstPath) } catch { /* ignore */ }
+    }
+  }
+}
+
 export async function installMinecraft(
   instanceId: string,
   versionId: string,
@@ -209,6 +380,12 @@ export async function installMinecraft(
 
     await downloadLibraries(fabricJson.libraries, report, 'Downloading Fabric libraries')
     report({ step: 'Installing Fabric loader', current: 1, total: 1, percent: 100 })
+  }
+
+  // 7. Forge / NeoForge
+  if (modLoader === 'forge' || modLoader === 'neoforge') {
+    if (!modLoaderVersion) throw new Error(`${modLoader} version not specified.`)
+    await installForge(instanceId, versionId, modLoaderVersion, modLoader === 'neoforge', onProgress)
   }
 
   report({ step: 'Done', current: 1, total: 1, percent: 100 })

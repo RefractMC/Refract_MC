@@ -23,6 +23,12 @@ function readFabricJson(versionId: string): VersionJson | null {
   try { return JSON.parse(readFileSync(p, 'utf-8')) as VersionJson } catch { return null }
 }
 
+function readForgeJson(versionId: string): VersionJson | null {
+  const p = join(paths.versions, `${versionId}-forge`, `${versionId}-forge.json`)
+  if (!existsSync(p)) return null
+  try { return JSON.parse(readFileSync(p, 'utf-8')) as VersionJson } catch { return null }
+}
+
 async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Promise<string> {
   if (instanceJavaPath) {
     // Accept full exe path or JDK home dir
@@ -67,7 +73,12 @@ export async function launchInstance(
   const versionJson = readVersionJson(instance.minecraftVersion)
   if (!versionJson) throw new Error('Version JSON missing. Please reinstall.')
 
-  const fabricJson = instance.modLoader === 'fabric' ? readFabricJson(instance.minecraftVersion) : undefined
+  const isForge = instance.modLoader === 'forge' || instance.modLoader === 'neoforge'
+  const fabricJson = instance.modLoader === 'fabric'
+    ? readFabricJson(instance.minecraftVersion)
+    : isForge
+      ? readForgeJson(instance.minecraftVersion)
+      : undefined
 
   const requiredJava = versionJson.javaVersion?.majorVersion ?? 8
   const javaExe = await resolveJava(requiredJava, instance.javaPath)

@@ -423,8 +423,15 @@ function Library() {
 
   // Listen for MC exit events
   useEffect(() => {
-    const unsub = api.mc.onExit(({ instanceId }) => {
+    const unsub = api.mc.onExit(({ instanceId, code, error }) => {
       setRunningIds(prev => { const n = new Set(prev); n.delete(instanceId); return n })
+      if (error) {
+        setLaunchToast(`Minecraft crashed: ${error}`)
+        setTimeout(() => setLaunchToast(null), 6000)
+      } else if (typeof code === 'number' && code !== 0) {
+        setLaunchToast(`Minecraft exited with code ${code}. Check the Console for details.`)
+        setTimeout(() => setLaunchToast(null), 6000)
+      }
     })
     return () => { if (typeof unsub === 'function') unsub() }
   }, [])
