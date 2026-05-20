@@ -94,11 +94,12 @@ function PlayButton({ onClick, disabled = false, label = 'PLAY' }: { onClick?: (
   )
 }
 
-function HeroCard({ instance, onLaunch, onEdit, onConsole, onMods, canLaunch, isRunning }: { instance: Instance; onLaunch: () => void; onEdit: () => void; onConsole: () => void; onMods: () => void; canLaunch: boolean; isRunning: boolean }) {
+function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, canLaunch, isRunning }: { instance: Instance; onLaunch: () => void; onEdit: () => void; onConsole: () => void; onMods: () => void; canLaunch: boolean; isRunning: boolean }) {
   const label = isRunning ? 'STOP' : instance.isInstalled ? 'PLAY' : 'INSTALL'
   return (
     <div style={{
-      flex: '0 0 340px',
+      flex: '1 1 0',
+      minWidth: 0,
       background: 'var(--surface)',
       border: '1px solid var(--border-r)',
       borderRadius: 'var(--radius)',
@@ -198,50 +199,6 @@ function HeroCard({ instance, onLaunch, onEdit, onConsole, onMods, canLaunch, is
   )
 }
 
-function PreviewCard({ instance, onLaunch, onEdit, canLaunch, isRunning }: { instance: Instance; onLaunch: () => void; onEdit: () => void; canLaunch: boolean; isRunning: boolean }) {
-  const label = isRunning ? 'STOP' : instance.isInstalled ? 'PLAY' : 'INSTALL'
-  return (
-    <div style={{
-      flex: '0 0 180px',
-      background: 'var(--surface)',
-      border: '1px solid var(--border-r)',
-      borderRadius: 'var(--radius)',
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      cursor: 'pointer',
-      opacity: 0.85,
-    }}
-    onClick={onEdit}
-    >
-      <div style={{ height: 90, position: 'relative', overflow: 'hidden' }}>
-        {instance.iconPath
-          ? <img src={instance.iconPath} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-          : <PixelScene name={loaderToScene(instance.modLoader)} style={{ width: '100%', height: '100%' }} />
-        }
-      </div>
-      <div style={{ padding: '8px 10px' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{instance.name}</div>
-        <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, color: 'var(--ink-4)', letterSpacing: '.04em', marginTop: 2 }}>MC {instance.minecraftVersion}</div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onLaunch() }}
-          style={{
-            marginTop: 8, width: '100%',
-            fontFamily: "'VT323',monospace", fontSize: 15, letterSpacing: '.1em',
-            color: '#fff', height: 28,
-            background: isRunning ? 'var(--lava)' : 'var(--accent)',
-            border: 'none', cursor: 'pointer',
-            boxShadow: isRunning
-              ? 'inset 0 -3px 0 rgba(0,0,0,.3)'
-              : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
-          }}
-        >
-          {label}
-        </button>
-      </div>
-    </div>
-  )
-}
 
 function EmptyState({ onOpen }: { onOpen: () => void }) {
   return (
@@ -460,8 +417,6 @@ function Library() {
     return instances
   })()
   const visibleInstances = tabInstances.slice(carouselPage * 3, carouselPage * 3 + 3)
-  const heroInstance = visibleInstances[0] ?? null
-  const previewInstances = visibleInstances.slice(1, 3)
   const totalPages = Math.max(1, Math.ceil(tabInstances.length / 3))
 
   return (
@@ -556,30 +511,19 @@ function Library() {
             )}
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            {heroInstance && (
-              <HeroCard
-                instance={heroInstance}
-                onLaunch={() => handleLaunch(heroInstance)}
-                onEdit={() => setEditTarget(heroInstance)}
-                onConsole={() => setConsoleOpen(heroInstance.id)}
-                onMods={() => setModsTarget(heroInstance)}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+            {visibleInstances.map(inst => (
+              <InstanceCard
+                key={inst.id}
+                instance={inst}
+                onLaunch={() => handleLaunch(inst)}
+                onEdit={() => setEditTarget(inst)}
+                onConsole={() => setConsoleOpen(inst.id)}
+                onMods={() => setModsTarget(inst)}
                 canLaunch={canLaunchMinecraft}
-                isRunning={runningIds.has(heroInstance.id)}
+                isRunning={runningIds.has(inst.id)}
               />
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {previewInstances.map(inst => (
-                <PreviewCard
-                  key={inst.id}
-                  instance={inst}
-                  onLaunch={() => handleLaunch(inst)}
-                  onEdit={() => setEditTarget(inst)}
-                  canLaunch={canLaunchMinecraft}
-                  isRunning={runningIds.has(inst.id)}
-                />
-              ))}
-            </div>
+            ))}
           </div>
         )}
       </div>

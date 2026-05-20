@@ -50,7 +50,16 @@ async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Pr
     if (existsSync(exeUnix)) return exeUnix
   }
 
-  return 'java' // fall back to PATH
+  // Last resort: check PATH explicitly
+  try {
+    const { execSync } = await import('child_process')
+    const which = execSync('where java', { timeout: 3000 }).toString().trim().split(/\r?\n/)[0]?.trim()
+    if (which && existsSync(which)) return which
+  } catch { /* not in PATH */ }
+
+  throw new Error(
+    `Java ${requiredMajor}+ not found. Install Java from https://adoptium.net or set a Java path in instance settings.`
+  )
 }
 
 export async function launchInstance(

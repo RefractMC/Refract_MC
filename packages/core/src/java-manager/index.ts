@@ -88,9 +88,31 @@ export async function detectJavaInstallations(): Promise<JavaInstallation[]> {
     'C:\\Program Files\\BellSoft',
     'C:\\Program Files\\Zulu',
     'C:\\Program Files (x86)\\Java',
+    'C:\\Program Files\\Amazon Corretto',
+    'C:\\Program Files\\Semeru Runtime',
   ]
   for (const dir of commonDirs) {
     for (const j of scanDir(dir)) add(j)
+  }
+
+  // 5. Minecraft launcher bundled runtimes
+  const mcRuntime = join(process.env.APPDATA ?? '', '.minecraft', 'runtime')
+  if (existsSync(mcRuntime)) {
+    try {
+      for (const runtimeEntry of readdirSync(mcRuntime, { withFileTypes: true })) {
+        if (!runtimeEntry.isDirectory()) continue
+        const runtimeDir = join(mcRuntime, runtimeEntry.name)
+        for (const platformEntry of readdirSync(runtimeDir, { withFileTypes: true })) {
+          if (!platformEntry.isDirectory()) continue
+          const platformDir = join(runtimeDir, platformEntry.name)
+          for (const jreEntry of readdirSync(platformDir, { withFileTypes: true })) {
+            if (!jreEntry.isDirectory()) continue
+            const exe = join(platformDir, jreEntry.name, 'bin', 'java.exe')
+            if (existsSync(exe)) add(probeJava(exe))
+          }
+        }
+      }
+    } catch { /* skip */ }
   }
 
   return found.sort((a, b) => b.version - a.version)
