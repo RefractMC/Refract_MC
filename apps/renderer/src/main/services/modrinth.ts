@@ -1,4 +1,4 @@
-import { join } from 'path'
+import { join, basename, relative, resolve } from 'path'
 import { paths } from './paths'
 import { downloadFile } from './download'
 import { updateInstance, getInstanceById } from './instance-store'
@@ -32,7 +32,11 @@ export async function installMod(
   if (!file) throw new Error(`No download file found for ${projectName} ${targetVersion.version_number}`)
 
   const modsDir = join(paths.instances, instanceId, 'minecraft', 'mods')
-  const dest = join(modsDir, file.filename)
+  const safeName = basename(file.filename)
+  const dest = resolve(modsDir, safeName)
+  if (relative(modsDir, dest).startsWith('..')) {
+    throw new Error(`Unsafe mod filename rejected: ${file.filename}`)
+  }
   await downloadFile(file.url, dest)
 
   const mod: InstalledMod = {
@@ -60,7 +64,9 @@ export async function uninstallMod(instanceId: string, projectId: string): Promi
   const mod = instance.mods?.find(m => m.projectId === projectId)
   if (!mod) return
 
-  const modPath = join(paths.instances, instanceId, 'minecraft', 'mods', mod.fileName)
+  const modsDir = join(paths.instances, instanceId, 'minecraft', 'mods')
+  const modPath = resolve(modsDir, basename(mod.fileName))
+  if (relative(modsDir, modPath).startsWith('..')) return
   try {
     const { unlinkSync, existsSync } = await import('fs')
     if (existsSync(modPath)) unlinkSync(modPath)

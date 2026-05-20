@@ -1,4 +1,4 @@
-import { join } from 'path'
+import { join, relative, resolve } from 'path'
 import { existsSync, createWriteStream, mkdirSync } from 'fs'
 import { createUnzip } from 'zlib'
 import { pipeline } from 'stream/promises'
@@ -52,7 +52,8 @@ async function downloadLibraries(
     onProgress({ step, current, total, percent: (current / total) * 100 })
 
     if (lib.downloads?.artifact) {
-      const dest = libraryPath(lib.downloads.artifact.path)
+      const dest = resolve(paths.libraries, lib.downloads.artifact.path)
+      if (relative(paths.libraries, dest).startsWith('..')) continue
       await downloadFile(lib.downloads.artifact.url, dest)
     }
   }
@@ -77,32 +78,37 @@ async function extractNatives(libs: Library[], instanceId: string): Promise<void
 async function extractJar(jarPath: string, destDir: string, exclude: string[]): Promise<void> {
   if (!existsSync(jarPath)) return
 
-  return new Promise((resolve, reject) => {
-    const proto = jarPath.startsWith('https') ? https : http
-    const unzip = createUnzip()
-    const fs = require('fs') as typeof import('fs')
+  const { execFile } = require('child_process') as typeof import('child_process')
+  const fs = require('fs') as typeof import('fs')
+  const javaHome = process.env.JAVA_HOME ?? ''
+  const jarExe = javaHome ? join(javaHome, 'bin', 'jar') : 'jar'
 
-    // Use yauzl-style reading — but we only have built-ins
-    // Use zlib + manual ZIP parsing is complex; instead use child_process jar extract
-    const { execFile } = require('child_process') as typeof import('child_process')
-    const javaHome = process.env.JAVA_HOME ?? ''
-    const jarExe = javaHome ? join(javaHome, 'bin', 'jar.exe') : 'jar'
-
-    execFile(jarExe, ['xf', jarPath], { cwd: destDir }, (err) => {
-      if (err) {
-        // If jar tool fails, skip natives extraction silently (modern MC handles this differently)
-        resolve()
-        return
+  // First list entries and reject any that would escape destDir (Zip Slip guard)
+  await new Promise<void>((res, rej) => {
+    execFile(jarExe, ['tf', jarPath], (err, stdout) => {
+      if (err) { res(); return }
+      const entries = stdout.split('\n').map(e => e.trim()).filter(Boolean)
+      for (const entry of entries) {
+        const dest = resolve(destDir, entry)
+        if (relative(destDir, dest).startsWith('..')) {
+          rej(new Error(`Zip Slip rejected: entry '${entry}' escapes destination`))
+          return
+        }
       }
+      res()
+    })
+  }).catch(() => { return })
 
-      // Remove excluded files
+  await new Promise<void>((res) => {
+    execFile(jarExe, ['xf', jarPath], { cwd: destDir }, (err) => {
+      if (err) { res(); return }
       for (const ex of exclude) {
         const p = join(destDir, ex)
         if (existsSync(p)) {
           try { fs.rmSync(p, { recursive: true }) } catch { /* ignore */ }
         }
       }
-      resolve()
+      res()
     })
   })
 }

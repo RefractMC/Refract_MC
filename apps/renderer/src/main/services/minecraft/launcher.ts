@@ -73,10 +73,11 @@ export async function launchInstance(
   let accessToken = 'offline'
   if (account.encryptedAccessToken) {
     try {
-      if (safeStorage.isEncryptionAvailable()) {
-        accessToken = safeStorage.decryptString(Buffer.from(account.encryptedAccessToken, 'base64'))
-      } else {
-        accessToken = Buffer.from(account.encryptedAccessToken, 'base64').toString('utf8')
+      const raw = account.encryptedAccessToken
+      if (raw.startsWith('b64:')) {
+        accessToken = Buffer.from(raw.slice(4), 'base64').toString('utf8')
+      } else if (safeStorage.isEncryptionAvailable()) {
+        accessToken = safeStorage.decryptString(Buffer.from(raw, 'base64'))
       }
     } catch { /* use offline */ }
   }

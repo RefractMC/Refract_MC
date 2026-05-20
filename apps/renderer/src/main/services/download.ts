@@ -20,7 +20,12 @@ async function follow(url: string, depth = 0): Promise<http.IncomingMessage> {
   const res = await get(url)
   if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location && depth < 5) {
     res.resume()
-    return follow(res.headers.location, depth + 1)
+    const next = res.headers.location
+    // Reject http-downgrade redirects from https origins
+    if (url.startsWith('https://') && next.startsWith('http://')) {
+      throw new Error(`Redirect from https to http rejected: ${next}`)
+    }
+    return follow(next, depth + 1)
   }
   return res
 }

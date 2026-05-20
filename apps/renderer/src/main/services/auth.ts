@@ -102,7 +102,10 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 
 function encrypt(value: string): string {
   if (!safeStorage.isEncryptionAvailable()) {
-    return Buffer.from(value, 'utf8').toString('base64')
+    // OS encryption unavailable — token stored as base64 only (not encrypted).
+    // This should not happen on normal desktop installs; warn loudly.
+    console.warn('[auth] safeStorage unavailable — token persisted without OS encryption')
+    return 'b64:' + Buffer.from(value, 'utf8').toString('base64')
   }
   return safeStorage.encryptString(value).toString('base64')
 }
