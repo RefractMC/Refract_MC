@@ -34,9 +34,10 @@ interface Props {
   onOpenChange: (open: boolean) => void
   onSave: (id: string, patch: Partial<Instance>) => Promise<void>
   onDelete?: (id: string) => Promise<void>
+  onRepair?: (id: string) => void
 }
 
-export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDelete }: Props) {
+export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDelete, onRepair }: Props) {
   const [name, setName]           = useState('')
   const [mcVersion, setMcVersion] = useState('1.21.1')
   const [modLoader, setModLoader] = useState<ModLoader | ''>('')
@@ -239,6 +240,21 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                     }}
                   >
                     {confirmDelete ? 'CONFIRM DELETE?' : 'Delete'}
+                  </button>
+                )}
+                {onRepair && instance?.isInstalled && (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => { if (instance) { onOpenChange(false); onRepair(instance.id) } }}
+                    style={{
+                      height:38, padding:'0 12px', borderRadius:3, border:'1px solid var(--border-r)',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      background:'var(--surface-2)', color:'var(--ink-3)',
+                      fontSize:12, fontWeight:600, flexShrink:0,
+                    }}
+                  >
+                    Repair
                   </button>
                 )}
                 <Dialog.Close asChild>

@@ -94,6 +94,7 @@ export const api = {
     isRunning: (instanceId: string): Promise<boolean> => ipcRenderer.invoke('mc.isRunning', instanceId),
     install:   (instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) =>
       ipcRenderer.invoke('mc.install', instanceId, versionId, versionUrl, modLoader, modLoaderVersion),
+    repair:    (instanceId: string) => ipcRenderer.invoke('mc.repair', instanceId),
     launch:    (instanceId: string) => ipcRenderer.invoke('mc.launch', instanceId),
     stop:      (instanceId: string) => ipcRenderer.invoke('mc.stop', instanceId),
     onProgress: (cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => {

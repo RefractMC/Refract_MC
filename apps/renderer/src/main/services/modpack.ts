@@ -44,17 +44,15 @@ async function extractZip(zipPath: string, destDir: string): Promise<void> {
 
   await new Promise<void>((res, rej) => {
     if (process.platform === 'win32') {
-      // Use .NET ZipFile directly — unlike Expand-Archive it accepts any file extension
-      const cmd = [
-        'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-        `[System.IO.Compression.ZipFile]::ExtractToDirectory('${zipPath.replace(/'/g, "''")}', '${destDir.replace(/'/g, "''")}')`,
-      ].join('; ')
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 120_000 }, (err) => {
+      // Pass paths via env vars — avoids all PowerShell quoting/splatting issues
+      // (paths with @, spaces, parens, etc. are unsafe as string literals in -Command)
+      const cmd = 'Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:_ZIP_SRC, $env:_ZIP_DST)'
+      const env = { ...process.env, _ZIP_SRC: zipPath, _ZIP_DST: destDir }
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 120_000, env }, (err) => {
         if (err) rej(new Error(`ZIP extraction failed: ${err.message}`))
         else res()
       })
     } else {
-      // unzip is available on macOS and most Linux distros
       execFile('unzip', ['-o', zipPath, '-d', destDir], { timeout: 120_000 }, (err) => {
         if (err) rej(new Error(`ZIP extraction failed: ${err.message}`))
         else res()

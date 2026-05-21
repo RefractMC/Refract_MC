@@ -116,14 +116,11 @@ async function extractJar(jarPath: string, destDir: string, _exclude: string[]):
   const { execFile } = require('child_process') as typeof import('child_process')
 
   if (process.platform === 'win32') {
-    // Extract to a temp dir via .NET ZipFile (works with any extension, no JDK needed)
     const tmpDir = `${destDir}_tmp_${Date.now()}`
-    const ps = [
-      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-      `[System.IO.Compression.ZipFile]::ExtractToDirectory('${jarPath.replace(/'/g, "''")}', '${tmpDir.replace(/'/g, "''")}')`,
-    ].join('; ')
+    const ps = 'Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:_ZIP_SRC, $env:_ZIP_DST)'
+    const env = { ...process.env, _ZIP_SRC: jarPath, _ZIP_DST: tmpDir }
     await new Promise<void>(res => {
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 60_000 }, () => res())
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 60_000, env }, () => res())
     })
     if (existsSync(tmpDir)) {
       copyNativeFiles(tmpDir, destDir)
@@ -278,12 +275,10 @@ async function installForge(
   mkdirSync(extractDir, { recursive: true })
   const { execFile } = require('child_process') as typeof import('child_process')
   if (process.platform === 'win32') {
-    const ps = [
-      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-      `[System.IO.Compression.ZipFile]::ExtractToDirectory('${installerPath.replace(/'/g, "''")}', '${extractDir.replace(/'/g, "''")}')`,
-    ].join('; ')
+    const ps = 'Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:_ZIP_SRC, $env:_ZIP_DST)'
+    const env = { ...process.env, _ZIP_SRC: installerPath, _ZIP_DST: extractDir }
     await new Promise<void>(res => {
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 60_000 }, () => res())
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 60_000, env }, () => res())
     })
   } else {
     await new Promise<void>(res => {

@@ -673,6 +673,17 @@ function Library() {
           setEditTarget(null)
           if (inst) void recordActivity(`Deleted "${inst.name}"`)
         }}
+        onRepair={(id) => {
+          const inst = instances.find(i => i.id === id)
+          if (!inst) return
+          setEditTarget(null)
+          setInstalling({ instanceId: id, name: inst.name })
+          api.mc.repair(id).catch((e: unknown) => {
+            setInstalling(null)
+            setLaunchToast(`Repair failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+            setTimeout(() => setLaunchToast(null), 4000)
+          })
+        }}
       />
 
       {installing && (

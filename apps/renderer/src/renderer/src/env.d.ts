@@ -155,6 +155,7 @@ declare global {
         java: () => Promise<import('@refract/core').JavaInstallation[]>
         isRunning: (instanceId: string) => Promise<boolean>
         install: (instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) => Promise<void>
+        repair: (instanceId: string) => Promise<void>
         launch: (instanceId: string) => Promise<void>
         stop: (instanceId: string) => Promise<void>
         onProgress: (cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => () => void
