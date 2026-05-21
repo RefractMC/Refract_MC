@@ -68,6 +68,10 @@ export const api = {
   modpack: {
     install: (name: string, projectId: string, versionId?: string): Promise<import('@refract/core').Instance> =>
       ipcRenderer.invoke('modpack.install', name, projectId, versionId),
+    openFileDialog: (): Promise<string | null> =>
+      ipcRenderer.invoke('modpack.openFileDialog'),
+    installFromFile: (filePath: string, name?: string, importId?: string): Promise<import('@refract/core').Instance> =>
+      ipcRenderer.invoke('modpack.installFromFile', filePath, name, importId),
     onProgress: (cb: (data: { projectId: string; step: string; percent: number }) => void) => {
       const handler = (_e: IpcRendererEvent, data: Parameters<typeof cb>[0]) => cb(data)
       ipcRenderer.on('modpack:progress', handler)

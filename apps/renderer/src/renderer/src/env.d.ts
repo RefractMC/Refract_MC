@@ -140,6 +140,8 @@ declare global {
       }
       modpack: {
         install: (name: string, projectId: string, versionId?: string) => Promise<import('@refract/core').Instance>
+        openFileDialog: () => Promise<string | null>
+        installFromFile: (filePath: string, name?: string, importId?: string) => Promise<import('@refract/core').Instance>
         onProgress: (cb: (data: { projectId: string; step: string; percent: number }) => void) => () => void
         onDone: (cb: (data: { projectId: string; instanceId?: string; error?: string }) => void) => () => void
       }

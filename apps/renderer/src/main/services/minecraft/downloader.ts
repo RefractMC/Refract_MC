@@ -22,6 +22,20 @@ const OS = process.platform === 'win32' ? 'windows' : process.platform === 'darw
 const RESOURCES_URL = 'https://resources.download.minecraft.net'
 const FABRIC_META_URL = 'https://meta.fabricmc.net/v2'
 
+function mavenCoordToPath(name: string): string {
+  const parts = name.split(':')
+  const [group, artifact, version, classifierExt] = parts
+  const groupPath = group.replace(/\./g, '/')
+  let fname: string
+  if (classifierExt) {
+    const [classifier, ext] = classifierExt.split('@')
+    fname = `${artifact}-${version}-${classifier}.${ext ?? 'jar'}`
+  } else {
+    fname = `${artifact}-${version}.jar`
+  }
+  return join(groupPath, artifact, version, fname)
+}
+
 export function versionJsonPath(versionId: string): string {
   return join(paths.versions, versionId, `${versionId}.json`)
 }
@@ -55,6 +69,12 @@ async function downloadLibraries(
       const dest = resolve(paths.libraries, lib.downloads.artifact.path)
       if (relative(paths.libraries, dest).startsWith('..')) continue
       await downloadFile(lib.downloads.artifact.url, dest)
+    } else if (lib.name && lib.url) {
+      const relPath = mavenCoordToPath(lib.name)
+      const dest = resolve(paths.libraries, relPath)
+      if (relative(paths.libraries, dest).startsWith('..')) continue
+      const baseUrl = lib.url.endsWith('/') ? lib.url : lib.url + '/'
+      await downloadFile(baseUrl + relPath.replace(/\\/g, '/'), dest)
     }
   }
 }

@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useRef } from 'react'
 import type { Instance, MinecraftVersion } from '@refract/core'
 import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
@@ -319,7 +320,9 @@ function Library() {
   const [consoleOpen, setConsoleOpen] = useState<string | null>(null)
   const [modsTarget, setModsTarget] = useState<Instance | null>(null)
   const [whatsNew, setWhatsNew] = useState<ChangelogEntry[]>(FALLBACK_WHATS_NEW)
+  const [fileImport, setFileImport] = useState<{ importId: string; step: string; percent: number; name: string } | null>(null)
 
+  const queryClient = useQueryClient()
   const { data: instances = [], isLoading } = useInstances()
   const createInstance = useCreateInstance()
   const updateInstance = useUpdateInstance()
@@ -363,6 +366,40 @@ function Library() {
       const entry = await api.activity.add(label)
       setActivity(prev => [entry, ...prev].slice(0, 50))
     } catch { /* non-critical */ }
+  }
+
+  useEffect(() => {
+    const unsubProg = api.modpack.onProgress(({ projectId, step, percent }) => {
+      setFileImport(prev => prev?.importId === projectId ? { ...prev, step, percent } : prev)
+    })
+    const unsubDone = api.modpack.onDone(({ projectId, instanceId, error }) => {
+      setFileImport(prev => {
+        if (prev?.importId !== projectId) return prev
+        return null
+      })
+      if (instanceId) {
+        void queryClient.invalidateQueries({ queryKey: ['instances'] })
+        void recordActivity('Imported modpack from file')
+      }
+      if (error) {
+        setLaunchToast(`Import failed: ${error}`)
+        setTimeout(() => setLaunchToast(null), 5000)
+      }
+    })
+    return () => { unsubProg(); unsubDone() }
+  }, [])
+
+  async function handleImportFile(filePath: string): Promise<void> {
+    const importId = `file-import-${Date.now()}`
+    const name = filePath.replace(/\\/g, '/').split('/').pop()?.replace(/\.(mrpack|zip)$/i, '') ?? 'Imported Pack'
+    setFileImport({ importId, step: 'Starting…', percent: 0, name })
+    try {
+      await api.modpack.installFromFile(filePath, name, importId)
+    } catch (e) {
+      setFileImport(null)
+      setLaunchToast(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      setTimeout(() => setLaunchToast(null), 5000)
+    }
   }
 
   async function handleInstallMc(instance: Instance) {
@@ -619,6 +656,7 @@ function Library() {
           const inst = await createInstance.mutateAsync(input)
           void recordActivity(`Created instance "${inst.name}"`)
         }}
+        onImportFile={handleImportFile}
       />
 
       <EditInstanceDialog
@@ -651,6 +689,23 @@ function Library() {
             setTimeout(() => setLaunchToast(null), 4000)
           }}
         />
+      )}
+
+      {fileImport && (
+        <div style={{ position:'fixed', inset:0, zIndex:100, background:'rgba(0,0,0,.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:'var(--surface)', border:'1px solid var(--border-r)', borderRadius:'var(--radius)', padding:'28px 32px', width:360, display:'flex', flexDirection:'column', gap:16 }}>
+            <div style={{ fontFamily:"'VT323',monospace", fontSize:20, color:'var(--accent)', letterSpacing:'.1em' }}>IMPORTING MODPACK</div>
+            <div style={{ fontSize:13, color:'var(--ink-2)', fontWeight:600 }}>{fileImport.name}</div>
+            <div>
+              <div style={{ fontSize:12, color:'var(--ink-3)', marginBottom:8 }}>{fileImport.step}</div>
+              <div style={{ height:8, background:'var(--surface-2)', border:'1px solid var(--border-r)' }}>
+                <div style={{ height:'100%', width:`${fileImport.percent}%`, background:'var(--accent)', transition:'width 200ms linear', boxShadow:'inset 0 -2px 0 var(--accent-lo), inset 0 2px 0 var(--accent-hi)' }} />
+              </div>
+              <div style={{ fontFamily:"'VT323',monospace", fontSize:13, color:'var(--ink-4)', marginTop:4, textAlign:'right' }}>{Math.round(fileImport.percent)}%</div>
+            </div>
+            <div style={{ fontSize:11, color:'var(--ink-4)', textAlign:'center', lineHeight:1.4 }}>Downloading and installing modpack files…</div>
+          </div>
+        </div>
       )}
 
       <InstanceModsDialog

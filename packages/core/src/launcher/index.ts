@@ -24,6 +24,20 @@ export interface LaunchContext {
 
 const OS_NAME = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux'
 
+function mavenCoordToPath(name: string): string {
+  const parts = name.split(':')
+  const [group, artifact, version, classifierExt] = parts
+  const groupPath = group.replace(/\./g, '/')
+  let fname: string
+  if (classifierExt) {
+    const [classifier, ext] = classifierExt.split('@')
+    fname = `${artifact}-${version}-${classifier}.${ext ?? 'jar'}`
+  } else {
+    fname = `${artifact}-${version}.jar`
+  }
+  return join(groupPath, artifact, version, fname)
+}
+
 // Features we support — anything not listed here defaults to false
 const LAUNCHER_FEATURES: Record<string, boolean> = {
   is_demo_user: false,
@@ -77,6 +91,8 @@ function buildClasspath(ctx: LaunchContext): string {
     if (lib.rules && !ruleApplies(lib.rules)) continue
     if (lib.downloads?.artifact) {
       jars.push(join(ctx.librariesDir, lib.downloads.artifact.path))
+    } else if (lib.name && lib.url) {
+      jars.push(join(ctx.librariesDir, mavenCoordToPath(lib.name)))
     }
   }
 

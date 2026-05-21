@@ -1,6 +1,6 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, dialog } from 'electron'
 import { handleIpc } from './handle'
-import { installModpack, installContentPack } from '../services/modpack'
+import { installModpack, installContentPack, installModpackFromFile } from '../services/modpack'
 
 export function registerModpackIpc(mainWindow: BrowserWindow): void {
   handleIpc('modpack.install', async (_event, name, projectId, versionId) =>
@@ -20,5 +20,21 @@ export function registerModpackIpc(mainWindow: BrowserWindow): void {
       String(contentType) as 'resourcepack' | 'shader' | 'datapack',
       versionId ? String(versionId) : undefined
     )
+  )
+
+  handleIpc('modpack.openFileDialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Modpack',
+      filters: [
+        { name: 'Modpack files', extensions: ['mrpack', 'zip'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    })
+    return result.canceled ? null : result.filePaths[0] ?? null
+  })
+
+  handleIpc('modpack.installFromFile', async (_event, filePath, name, importId) =>
+    installModpackFromFile(String(filePath), name ? String(name) : '', mainWindow, importId ? String(importId) : undefined)
   )
 }

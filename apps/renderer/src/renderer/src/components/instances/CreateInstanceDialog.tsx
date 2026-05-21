@@ -39,9 +39,10 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (input: CreateInput) => Promise<void>
+  onImportFile?: (filePath: string) => void
 }
 
-export function CreateInstanceDialog({ open, onOpenChange, onCreate }: Props) {
+export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFile }: Props) {
   const [name, setName]           = useState('')
   const [mcVersion, setMcVersion] = useState('1.21.1')
   const [modLoader, setModLoader] = useState<ModLoader | ''>('')
@@ -187,6 +188,21 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate }: Props) {
                 <Dialog.Close asChild>
                   <button type="button" disabled={loading} style={cancelSt}>Cancel</button>
                 </Dialog.Close>
+                {onImportFile && (
+                  <button type="button" disabled={loading} onClick={async () => {
+                    const filePath = await window.api.modpack.openFileDialog()
+                    if (filePath) { onOpenChange(false); reset(); onImportFile(filePath) }
+                  }} style={{
+                    flex:1, height:38,
+                    fontFamily:"'VT323',monospace", fontSize:15, letterSpacing:'.1em',
+                    color: loading ? 'var(--ink-4)' : 'var(--ink)',
+                    background:'var(--surface-2)', border:'1px solid var(--border-r)',
+                    borderRadius:3, cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.55 : 1,
+                  }}>
+                    IMPORT ZIP
+                  </button>
+                )}
                 <button type="submit" disabled={!name.trim() || loading} style={{
                   flex:1,
                   fontFamily:"'VT323',monospace", fontSize:18, letterSpacing:'.12em', color:'#fff',
