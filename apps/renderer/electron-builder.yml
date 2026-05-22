@@ -33,5 +33,6 @@ linux:
   maintainer: electronjs.org
   category: Utility
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: ShevRuslan1
+  repo: Refract_MC

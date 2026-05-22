@@ -1,8 +1,11 @@
 import { resolve } from 'path'
+import { readFileSync } from 'fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
+
+const appVersion: string = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).version
 
 const workspaceAlias = {
   '@refract/core/java-manager': resolve('../../packages/core/src/java-manager/index.ts'),
@@ -28,6 +31,9 @@ export default defineConfig({
         '@': resolve('src/renderer/src'),
         ...workspaceAlias,
       },
+    },
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
     },
     plugins: [tailwindcss(), react(), TanStackRouterVite()],
   },

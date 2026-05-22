@@ -438,6 +438,15 @@ export function Sidebar() {
           <div style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center' }}><CogIcon /></div>
           <span>Settings</span>
         </Link>
+        <button
+          onClick={() => window.open('https://discord.gg/refract')}
+          style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:4, color:'var(--ink-2)', fontSize:13, fontWeight:500, background:'none', border:'1px solid transparent', cursor:'pointer', textAlign:'left' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#5865F2'; e.currentTarget.style.background = 'rgba(88,101,242,.1)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-2)'; e.currentTarget.style.background = 'none' }}
+        >
+          <div style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>💬</div>
+          <span>Discord</span>
+        </button>
       </div>
     </aside>
   )

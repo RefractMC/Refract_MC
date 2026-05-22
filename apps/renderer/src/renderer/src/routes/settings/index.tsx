@@ -498,6 +498,53 @@ function Settings() {
         </div>
       </Panel>
 
+      {/* About */}
+      <Panel title="About Refract">
+        <div style={{ display:'flex', alignItems:'center', gap:18 }}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="-110 -110 220 220" width={48} height={48} style={{ flexShrink:0 }}>
+            <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4"/>
+            <polygon points="0,-92 14,0 0,92 -14,0" fill="#3D0FA3" transform="rotate(30)"/>
+            <polygon points="0,-92 14,0 0,92 -14,0" fill="#8A52FF" transform="rotate(60)"/>
+            <polygon points="0,-92 14,0 0,92 -14,0" fill="#3D0FA3" transform="rotate(90)"/>
+            <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4" transform="rotate(120)"/>
+            <polygon points="0,-92 14,0 0,92 -14,0" fill="#8A52FF" transform="rotate(150)"/>
+            <circle r="24" fill="#1B044F"/>
+            <circle r="6" fill="#ECE4FF"/>
+          </svg>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+              <span style={{ fontFamily:"'VT323',monospace", fontSize:22, letterSpacing:'.1em', color:'var(--ink)' }}>REFRACT</span>
+              <span style={{ fontFamily:"'VT323',monospace", fontSize:14, letterSpacing:'.06em', color:'var(--accent)', background:'var(--accent-tint)', border:'1px solid var(--accent)', borderRadius:3, padding:'1px 8px' }}>
+                v{__APP_VERSION__} · Early Access
+              </span>
+            </div>
+            <p style={{ margin:'0 0 12px', fontSize:12, color:'var(--ink-4)', lineHeight:1.5 }}>
+              Open-source Minecraft launcher. Built for players who want full control over their game.
+            </p>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button
+                onClick={() => window.open('https://discord.gg/refract')}
+                style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'#5865F2', color:'#fff', border:'none', borderRadius:4, cursor:'pointer' }}
+              >
+                💬 Join Discord ↗
+              </button>
+              <button
+                onClick={() => window.open('https://github.com/ShevRuslan1/Refract_MC/issues')}
+                style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:4, cursor:'pointer' }}
+              >
+                🐛 Report a Bug ↗
+              </button>
+              <button
+                onClick={() => window.open('https://github.com/ShevRuslan1/Refract_MC')}
+                style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:4, cursor:'pointer' }}
+              >
+                ⭐ GitHub ↗
+              </button>
+            </div>
+          </div>
+        </div>
+      </Panel>
+
       {error && (
         <div style={{ padding:12, color:'#fff', background:'rgba(217,59,59,.18)', border:'1px solid var(--redstone)', borderRadius:4, fontSize:13 }}>
           {error}

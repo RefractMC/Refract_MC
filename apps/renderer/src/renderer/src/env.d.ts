@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+declare const __APP_VERSION__: string
+
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { Instance, CreateInstanceInput } from '@refract/core'
 

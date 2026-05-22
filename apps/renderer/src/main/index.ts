@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
+import { autoUpdater } from 'electron-updater'
 import { registerAllIpcHandlers } from './ipc'
 import { ensureAppDirs } from './services/paths'
 import { loadConfig } from './services/config'
@@ -55,6 +56,10 @@ app.whenReady().then(() => {
 
   const mainWindow = createWindow()
   registerAllIpcHandlers(mainWindow)
+
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
