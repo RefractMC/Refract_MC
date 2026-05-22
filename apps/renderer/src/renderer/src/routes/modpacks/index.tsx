@@ -304,7 +304,7 @@ function ContentCard({ project, tab, onInstall, onDetail, installing }: {
       </div>
 
       {/* Description */}
-      <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: '0 14px 10px', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+      <p style={{ fontSize: 12, color: 'var(--ink)', margin: '0 14px 10px', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
         {project.description}
       </p>
 
@@ -317,11 +317,11 @@ function ContentCard({ project, tab, onInstall, onDetail, installing }: {
           onClick={e => { e.stopPropagation(); onInstall() }}
           disabled={installing}
           style={{
-            fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.08em',
+            fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.08em',
             color: installing ? 'var(--ink-4)' : '#fff',
             background: installing ? 'var(--surface-3)' : accent,
             border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
-            padding: '0 18px', height: 32, borderRadius: 3, flexShrink: 0,
+            padding: '0 22px', height: 36, borderRadius: 3, flexShrink: 0,
             boxShadow: installing ? 'none' : isModpack
               ? 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)'
               : 'inset 0 -2px 0 var(--accent-lo), inset 0 2px 0 var(--accent-hi)',
