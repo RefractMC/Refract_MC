@@ -1,8 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
+import type React from 'react'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { api } from '@/lib/api'
 import type { ModrinthProject, ModrinthVersion, Instance } from '@refract/core'
+import { useT } from '@/i18n'
 
 export const Route = createFileRoute('/browse/')({
   component: Browse,
@@ -91,6 +93,7 @@ function versionCompatibility(v: ModrinthVersion, instance: Instance | null): 'c
 // ─── VersionDropdown ──────────────────────────────────────────────────────────
 
 function VersionDropdown({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [versions, setVersions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -132,7 +135,7 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
           borderRadius: 3, padding: '3px 10px', cursor: 'pointer',
         } as React.CSSProperties}
       >
-        {active ? `MC ${value}` : 'All versions'}
+        {active ? `MC ${value}` : t.browse.allVersions}
         <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
@@ -151,10 +154,10 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
               border: 'none', borderBottom: '1px solid var(--line)', cursor: 'pointer',
             }}
           >
-            All versions
+            {t.browse.allVersions}
           </button>
           {loading ? (
-            <div style={{ padding: '12px', fontSize: 11, color: 'var(--ink-4)', textAlign: 'center' }}>Loading…</div>
+            <div style={{ padding: '12px', fontSize: 11, color: 'var(--ink-4)', textAlign: 'center' }}>{t.browse.loading}</div>
           ) : (
             versions.map(ver => (
               <button
@@ -188,6 +191,7 @@ interface InstallModalProps {
 }
 
 function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps) {
+  const t = useT()
   const [versions, setVersions] = useState<ModrinthVersion[]>([])
   const [loadingVersions, setLoadingVersions] = useState(true)
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
@@ -225,7 +229,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
             <img src={mod.icon_url} alt="" style={{ width: 32, height: 32, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 18, color: 'var(--accent)', letterSpacing: '.1em' }}>INSTALL MOD</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 18, color: 'var(--accent)', letterSpacing: '.1em' }}>{t.browse.installMod}</div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{mod.title}</div>
           </div>
           <button onClick={onClose} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
@@ -234,11 +238,11 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '10px 14px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>
-              1. Select Instance
+              {t.browse.selectInstance}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {instances.length === 0 ? (
-                <div style={{ padding: '20px 8px', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>No instances yet.</div>
+                <div style={{ padding: '20px 8px', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>{t.browse.noInstances}</div>
               ) : instances.map(inst => {
                 const active = selectedInstance?.id === inst.id
                 const alreadyHas = inst.mods?.some(m => m.projectId === mod.project_id)
@@ -259,18 +263,18 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
-              2. Select Version
+              {t.browse.selectVersion}
               {selectedInstance && (
                 <span style={{ fontFamily: "'VT323',monospace", fontSize: 12, color: 'var(--ink-3)', letterSpacing: '.04em', textTransform: 'none', fontWeight: 400 }}>
-                  — for {selectedInstance.minecraftVersion} {selectedInstance.modLoader?.toUpperCase() ?? 'VANILLA'}
+                  {t.browse.forInstance(selectedInstance.minecraftVersion, selectedInstance.modLoader?.toUpperCase() ?? 'VANILLA')}
                 </span>
               )}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {loadingVersions ? (
-                <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>Loading versions…</div>
+                <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.loadingVersions}</div>
               ) : versions.length === 0 ? (
-                <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>No versions found.</div>
+                <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.noVersions}</div>
               ) : versions.map(v => {
                 const compat = versionCompatibility(v, selectedInstance)
                 const isBest = selectedInstance ? bestVersionForInstance(versions, selectedInstance)?.id === v.id : false
@@ -281,9 +285,9 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{v.version_number}</span>
-                        {isBest && <span style={{ fontFamily: "'VT323',monospace", fontSize: 11, letterSpacing: '.06em', color: '#fff', background: 'var(--grass)', padding: '0 5px', borderRadius: 2 }}>RECOMMENDED</span>}
-                        {compat === 'partial' && !isBest && <span style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 2, padding: '0 4px' }}>loader mismatch</span>}
-                        {compat === 'incompatible' && <span style={{ fontSize: 10, color: 'var(--redstone)', border: '1px solid var(--redstone)', borderRadius: 2, padding: '0 4px' }}>incompatible</span>}
+                        {isBest && <span style={{ fontFamily: "'VT323',monospace", fontSize: 11, letterSpacing: '.06em', color: '#fff', background: 'var(--grass)', padding: '0 5px', borderRadius: 2 }}>{t.browse.recommended}</span>}
+                        {compat === 'partial' && !isBest && <span style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 2, padding: '0 4px' }}>{t.browse.loaderMismatch}</span>}
+                        {compat === 'incompatible' && <span style={{ fontSize: 10, color: 'var(--redstone)', border: '1px solid var(--redstone)', borderRadius: 2, padding: '0 4px' }}>{t.browse.incompatible}</span>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 3, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <span>{v.game_versions.slice(0, 3).join(', ')}{v.game_versions.length > 3 ? '…' : ''}</span>
@@ -304,16 +308,16 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-            {!selectedInstance && 'Select an instance'}
-            {selectedInstance && !selectedVersionId && 'Select a version'}
-            {canInstall && `Installing to "${selectedInstance!.name}"`}
+            {!selectedInstance && t.browse.selectInstanceHint}
+            {selectedInstance && !selectedVersionId && t.browse.selectVersionHint}
+            {canInstall && t.browse.installingTo(selectedInstance!.name)}
           </div>
           <button
             disabled={!canInstall}
             onClick={() => canInstall && onInstall(selectedInstance!.id, selectedVersionId!)}
             style={{ fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: canInstall ? '#fff' : 'var(--ink-4)', background: canInstall ? 'var(--accent)' : 'var(--surface-3)', border: 'none', cursor: canInstall ? 'pointer' : 'not-allowed', padding: '0 28px', height: 36, boxShadow: canInstall ? 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)' : 'none' }}
           >
-            INSTALL
+            {t.browse.install}
           </button>
         </div>
       </div>
@@ -328,6 +332,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
   onClose: () => void
   onInstall: () => void
 }) {
+  const t = useT()
   const [detail, setDetail] = useState<ModrinthProjectDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
@@ -398,7 +403,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
               onClick={() => window.open(modrinthUrl)}
               style={{ height: 32, padding: '0 14px', fontSize: 12, fontWeight: 600, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 3, cursor: 'pointer' }}
             >
-              Modrinth ↗
+              {t.browse.modrinth}
             </button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 4 }}>✕</button>
           </div>
@@ -428,7 +433,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
           {/* Description */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px' }}>
             {loading ? (
-              <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>Loading details…</div>
+              <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.loadingDetails}</div>
             ) : (
               <p style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
                 {bodyText}
@@ -441,7 +446,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
             {/* Categories */}
             {mod.categories.length > 0 && (
               <div>
-                <SideLabel>Categories</SideLabel>
+                <SideLabel>{t.browse.categories}</SideLabel>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                   {mod.categories.map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
                 </div>
@@ -451,16 +456,16 @@ function ModDetailModal({ mod, onClose, onInstall }: {
             {/* Environment */}
             {detail && (
               <div>
-                <SideLabel>Environment</SideLabel>
+                <SideLabel>{t.browse.environment}</SideLabel>
                 <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Client</span>
+                    <span>{t.browse.client}</span>
                     <span style={{ color: detail.client_side === 'required' ? 'var(--grass)' : detail.client_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
                       {detail.client_side}
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Server</span>
+                    <span>{t.browse.server}</span>
                     <span style={{ color: detail.server_side === 'required' ? 'var(--grass)' : detail.server_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
                       {detail.server_side}
                     </span>
@@ -472,16 +477,16 @@ function ModDetailModal({ mod, onClose, onInstall }: {
             {/* Dates */}
             {detail?.published && (
               <div>
-                <SideLabel>Published</SideLabel>
+                <SideLabel>{t.browse.published}</SideLabel>
                 <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>{formatDate(detail.published)}</div>
-                {detail.updated && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>Updated {formatDate(detail.updated)}</div>}
+                {detail.updated && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{t.browse.updatedOn(formatDate(detail.updated))}</div>}
               </div>
             )}
 
             {/* Links */}
             {detail && (detail.issues_url || detail.source_url || detail.discord_url) && (
               <div>
-                <SideLabel>Links</SideLabel>
+                <SideLabel>{t.browse.links}</SideLabel>
                 <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {detail.issues_url && (
                     <button onClick={() => window.open(detail.issues_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
@@ -508,7 +513,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
                 onClick={onInstall}
                 style={{ width: '100%', height: 36, fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: '#fff', background: 'var(--accent)', border: 'none', cursor: 'pointer', boxShadow: 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)' }}
               >
-                INSTALL
+                {t.browse.install}
               </button>
             </div>
           </div>
@@ -566,6 +571,7 @@ function SideLabel({ children }: { children: React.ReactNode }) {
 // ─── Browse ───────────────────────────────────────────────────────────────────
 
 function Browse() {
+  const t = useT()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [loader, setLoader] = useState('All')
@@ -637,8 +643,8 @@ function Browse() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>Browse Mods</h1>
-        <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>Discover and install mods from Modrinth</p>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>{t.browse.title}</h1>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>{t.browse.subtitle}</p>
       </div>
 
       {/* Search */}
@@ -647,7 +653,7 @@ function Browse() {
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Search mods, authors…"
+          placeholder={t.browse.searchPlaceholder}
           style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--ink)' }}
         />
         {query && <button onClick={() => setQuery('')} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✕</button>}
@@ -673,13 +679,13 @@ function Browse() {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
-        {loading ? 'Searching…' : `${total.toLocaleString()} mods found`}
+        {loading ? t.browse.searching : t.browse.modsFound(total)}
       </div>
 
       {loading ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>Loading…</div>
+        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.loading}</div>
       ) : results.length === 0 ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>No mods found. Try a different search.</div>
+        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.noMods}</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
           {results.map(mod => (
@@ -747,6 +753,7 @@ function ModTile({ mod, installing, installedInInstances, onInstall, onDetail }:
   onInstall: () => void
   onDetail: () => void
 }) {
+  const t = useT()
   const [hovered, setHovered] = useState(false)
   const loaders = mod.loaders ?? []
 
@@ -819,7 +826,7 @@ function ModTile({ mod, installing, installedInInstances, onInstall, onDetail }:
             boxShadow: installing ? 'none' : 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)',
           }}
         >
-          {installing ? '…' : 'INSTALL'}
+          {installing ? t.browse.installing : t.browse.install}
         </button>
       </div>
     </div>

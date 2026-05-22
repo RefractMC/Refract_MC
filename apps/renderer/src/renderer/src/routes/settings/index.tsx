@@ -6,25 +6,19 @@ import { useThemeStore } from '@/stores/theme'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import type { JavaInstallation } from '@refract/core'
+import { useT } from '@/i18n'
+import { useLanguageStore } from '@/stores/language'
 
 export const Route = createFileRoute('/settings/')({
   component: Settings,
 })
 
-function javaVersionLabel(version: number): string {
-  if (version >= 21) return 'Recommended for MC 1.20.5+'
-  if (version >= 17) return 'Suitable for MC 1.18–1.20.4'
-  if (version === 16) return 'Suitable for MC 1.17'
-  return 'Suitable for MC ≤1.16.5'
-}
-
-const SIDEBAR_WIDTHS = [
-  { label: 'Compact', value: '208px' },
-  { label: 'Default', value: '232px' },
-  { label: 'Wide', value: '268px' },
-]
+const SIDEBAR_WIDTHS_VALUES = ['208px', '232px', '268px'] as const
 
 function Settings() {
+  const t = useT()
+  const lang = useLanguageStore((s) => s.lang)
+  const setLang = useLanguageStore((s) => s.setLang)
   const activeThemeId = useThemeStore((state) => state.activeThemeId)
   const applyBuiltin = useThemeStore((state) => state.applyBuiltin)
   const layoutOverrides = useThemeStore((state) => state.layoutOverrides)
@@ -95,9 +89,9 @@ function Settings() {
     try {
       await api.java.download(major)
       await scanJava()
-      showToast(`Java ${major} installed successfully.`)
+      showToast(t.settings.javaInstalled(major))
     } catch (e) {
-      showToast(`Java ${major} download failed: ${e instanceof Error ? e.message : String(e)}`)
+      showToast(t.settings.javaFailed(major, e instanceof Error ? e.message : String(e)))
     } finally {
       setJavaDownloading(prev => { const n = new Map(prev); n.delete(major); return n })
     }
@@ -142,7 +136,7 @@ function Settings() {
       applyBuiltin(id)
       await api.config.set('activeThemeId', id)
       await refresh()
-      showToast(`${id === 'dark' ? 'Dark' : 'Light'} theme applied.`)
+      showToast(id === 'dark' ? t.settings.themeDark : t.settings.themeLight)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -152,7 +146,7 @@ function Settings() {
 
   function chooseSidebarWidth(width: string) {
     setLayoutOverride({ sidebarWidth: width })
-    showToast('Layout updated.')
+    showToast(t.settings.layoutUpdated)
   }
 
   async function setActive(uuid: string) {
@@ -161,7 +155,7 @@ function Settings() {
     try {
       await api.auth.setActive(uuid)
       await refresh()
-      showToast('Active profile updated.')
+      showToast(t.settings.activeProfileUpdated)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -175,7 +169,7 @@ function Settings() {
     try {
       await api.auth.logout(uuid)
       await refresh()
-      showToast('Profile removed.')
+      showToast(t.settings.profileRemoved)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -184,15 +178,16 @@ function Settings() {
   }
 
   const sidebarWidth = layoutOverrides.sidebarWidth ?? '232px'
-  const activeAccess = activeAccount?.canPlayMinecraft ? 'Minecraft play enabled' : activeAccount ? 'Offline play enabled' : 'No active profile'
+  const activeAccess = activeAccount?.canPlayMinecraft ? t.settings.playEnabled : activeAccount ? t.settings.offlineEnabled : t.settings.noActiveProfile
+  const sidebarWidthLabels = [t.settings.compact, t.settings.sidebarDefault, t.settings.wide]
 
   return (
     <div style={{ display:'grid', gap:18 }}>
       <div style={{ display:'flex', alignItems:'end', justifyContent:'space-between', gap:16 }}>
         <div>
-          <h1 style={{ margin:0, color:'var(--ink)', fontSize:24, lineHeight:1.1 }}>Settings</h1>
+          <h1 style={{ margin:0, color:'var(--ink)', fontSize:24, lineHeight:1.1 }}>{t.settings.title}</h1>
           <p style={{ margin:'6px 0 0', color:'var(--ink-3)', fontSize:13 }}>
-            Tune Refract, manage profiles, and keep guest content access separate from licensed play.
+            {t.settings.subtitle}
           </p>
         </div>
         <div style={{ color: activeAccount?.canPlayMinecraft ? 'var(--grass)' : 'var(--gold)', fontSize:12, fontWeight:700 }}>
@@ -202,20 +197,20 @@ function Settings() {
 
       <div style={{ display:'grid', gridTemplateColumns:'minmax(0, 1fr) 360px', gap:18 }}>
         <div style={{ display:'grid', gap:14 }}>
-          <Panel title="Appearance">
+          <Panel title={t.settings.appearance}>
             <div style={{ display:'grid', gap:12 }}>
-              <Field label="Theme" note="Changes apply immediately and are saved for the app.">
+              <Field label={t.settings.theme} note={t.settings.themeNote}>
                 <Segmented>
                   <SegmentButton active={activeThemeId === 'dark'} disabled={!!busy} onClick={() => chooseTheme('dark')}>
-                    Dark
+                    {t.settings.dark}
                   </SegmentButton>
                   <SegmentButton active={activeThemeId === 'light'} disabled={!!busy} onClick={() => chooseTheme('light')}>
-                    Light
+                    {t.settings.light}
                   </SegmentButton>
                 </Segmented>
               </Field>
 
-              <Field label="Default memory" note="RAM given to Minecraft. Individual instances can override this.">
+              <Field label={t.settings.memory} note={t.settings.memoryNote}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <input
                     type="range"
@@ -230,24 +225,35 @@ function Settings() {
                 </div>
               </Field>
 
-              <Field label="Sidebar width" note="Adjusts the main navigation width.">
+              <Field label={t.settings.sidebarWidth} note={t.settings.sidebarNote}>
                 <Segmented>
-                  {SIDEBAR_WIDTHS.map((option) => (
+                  {SIDEBAR_WIDTHS_VALUES.map((value, i) => (
                     <SegmentButton
-                      key={option.value}
-                      active={sidebarWidth === option.value}
+                      key={value}
+                      active={sidebarWidth === value}
                       disabled={!!busy}
-                      onClick={() => chooseSidebarWidth(option.value)}
+                      onClick={() => chooseSidebarWidth(value)}
                     >
-                      {option.label}
+                      {sidebarWidthLabels[i]}
                     </SegmentButton>
                   ))}
+                </Segmented>
+              </Field>
+
+              <Field label={t.settings.language} note={t.settings.languageNote}>
+                <Segmented>
+                  <SegmentButton active={lang === 'en'} disabled={false} onClick={() => setLang('en')}>
+                    {t.settings.langEn}
+                  </SegmentButton>
+                  <SegmentButton active={lang === 'uk'} disabled={false} onClick={() => setLang('uk')}>
+                    {t.settings.langUk}
+                  </SegmentButton>
                 </Segmented>
               </Field>
             </div>
           </Panel>
 
-          <Panel title="Account Access">
+          <Panel title={t.settings.accountAccess}>
             <input ref={avatarInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleAvatarPick} />
             <div style={{ display:'grid', gap:14 }}>
 
@@ -262,17 +268,17 @@ function Settings() {
                 />
                 <div style={{ minWidth:0, flex:1 }}>
                   <div style={{ color:'var(--ink)', fontWeight:700, fontSize:15 }}>
-                    {activeAccount ? activeAccount.username : 'No active profile'}
+                    {activeAccount ? activeAccount.username : t.settings.noActiveProfile}
                   </div>
                   <div style={{ color:'var(--ink-3)', fontSize:12, marginTop:3 }}>
                     {activeAccount
                       ? activeAccount.canPlayMinecraft
-                        ? 'Java license verified through Microsoft.'
-                        : 'Offline profile — play in offline mode. Multiplayer servers need a licensed account.'
-                      : 'Create an offline profile or sign in with Microsoft.'}
+                        ? t.settings.licenseVerified
+                        : t.settings.offlineProfile
+                      : t.settings.noProfileCreate}
                   </div>
                   {activeAccount && (
-                    <div style={{ fontSize:11, color:'var(--ink-4)', marginTop:4 }}>Click avatar to change profile picture</div>
+                    <div style={{ fontSize:11, color:'var(--ink-4)', marginTop:4 }}>{t.settings.clickAvatarChange}</div>
                   )}
                 </div>
                 <Link
@@ -283,14 +289,14 @@ function Settings() {
                     borderRadius:4, textDecoration:'none', fontSize:12, fontWeight:700, flexShrink:0,
                   }}
                 >
-                  Manage
+                  {t.settings.manage}
                 </Link>
               </div>
 
               {/* Account list */}
               <div style={{ display:'grid', gap:8 }}>
                 {accounts.length === 0 ? (
-                  <div style={{ color:'var(--ink-4)', fontSize:12 }}>No saved profiles.</div>
+                  <div style={{ color:'var(--ink-4)', fontSize:12 }}>{t.settings.noSavedProfiles}</div>
                 ) : accounts.map((account) => {
                   const isActive = activeAccount?.uuid === account.uuid
                   return (
@@ -313,11 +319,11 @@ function Settings() {
                           {account.username}
                         </div>
                         <div style={{ color:account.canPlayMinecraft ? 'var(--diamond)' : 'var(--gold)', fontSize:11, marginTop:2 }}>
-                          {account.canPlayMinecraft ? 'Licensed Microsoft' : 'Offline play'}
+                          {account.canPlayMinecraft ? t.settings.microsoftLicensed : t.settings.offlinePlay}
                         </div>
                       </div>
                       {isActive && (
-                        <div style={{ fontSize:11, fontFamily:"'VT323',monospace", letterSpacing:'.06em', color:'var(--accent)', flexShrink:0 }}>ACTIVE</div>
+                        <div style={{ fontSize:11, fontFamily:"'VT323',monospace", letterSpacing:'.06em', color:'var(--accent)', flexShrink:0 }}>{t.settings.activeLabel}</div>
                       )}
                       {!isActive && (
                         <button
@@ -326,7 +332,7 @@ function Settings() {
                           disabled={!!busy}
                           style={smallButtonStyle(!!busy)}
                         >
-                          Use
+                          {t.settings.use}
                         </button>
                       )}
                       <button
@@ -335,7 +341,7 @@ function Settings() {
                         disabled={!!busy}
                         style={{ ...smallButtonStyle(!!busy), color:'var(--redstone)', background:'transparent', border:'1px solid rgba(217,59,59,.4)' }}
                       >
-                        Sign out
+                        {t.settings.signOut}
                       </button>
                     </div>
                   )
@@ -344,11 +350,11 @@ function Settings() {
             </div>
           </Panel>
 
-          <Panel title="Java Runtime">
+          <Panel title={t.settings.javaRuntime}>
             <div style={{ display:'grid', gap:12 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
                 <div style={{ color:'var(--ink-3)', fontSize:12 }}>
-                  {javaLoading ? 'Scanning…' : javas.length === 0 ? 'No Java installations found.' : `${javas.length} installation${javas.length !== 1 ? 's' : ''} detected.`}
+                  {javaLoading ? t.settings.scanning : javas.length === 0 ? t.settings.noJava : t.settings.javaDetected(javas.length)}
                 </div>
                 <button
                   type="button"
@@ -356,7 +362,7 @@ function Settings() {
                   disabled={javaLoading}
                   style={{ ...smallButtonStyle(javaLoading), fontSize:11 }}
                 >
-                  {javaLoading ? 'Scanning…' : 'Re-scan'}
+                  {javaLoading ? t.settings.scanning : t.settings.rescan}
                 </button>
               </div>
 
@@ -370,7 +376,7 @@ function Settings() {
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
                       <div>
                         <div style={{ fontFamily:"'VT323',monospace", fontSize:14, color:'var(--ink)', letterSpacing:'.04em' }}>Java {major}</div>
-                        <div style={{ fontSize:11, color:'var(--ink-4)', marginTop:2 }}>{javaVersionLabel(major)}</div>
+                        <div style={{ fontSize:11, color:'var(--ink-4)', marginTop:2 }}>{t.settings.javaVersionLabel(major)}</div>
                       </div>
                       {downloading ? (
                         <div style={{ fontSize:11, color:'var(--ink-3)', textAlign:'right', minWidth:100 }}>{downloading.step}</div>
@@ -380,7 +386,7 @@ function Settings() {
                           onClick={() => downloadJava(major)}
                           style={{ ...smallButtonStyle(false), background:'var(--accent)', color:'#fff', border:'none', fontSize:11 }}
                         >
-                          Download
+                          {t.settings.download}
                         </button>
                       )}
                     </div>
@@ -394,7 +400,7 @@ function Settings() {
               })}
 
               {javas.map((j, i) => {
-                const label = javaVersionLabel(j.version)
+                const label = t.settings.javaVersionLabel(j.version)
                 const isTop = i === 0
                 return (
                   <div
@@ -414,7 +420,7 @@ function Settings() {
                       <span style={{ fontSize:11, color:'var(--ink-4)' }}>{j.vendor}</span>
                       {isTop && (
                         <span style={{ marginLeft:'auto', fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.06em', color:'var(--diamond)' }}>
-                          BEST MATCH
+                          {t.settings.bestMatch}
                         </span>
                       )}
                     </div>
@@ -430,35 +436,35 @@ function Settings() {
         </div>
 
         <aside style={{ display:'grid', gap:14, alignContent:'start' }}>
-          <Panel title="Launcher State">
-            <Stat label="Active theme" value={activeThemeId} />
-            <Stat label="Profiles" value={String(accounts.length)} />
-            <Stat label="Window" value={config ? `${config.windowBounds.width} x ${config.windowBounds.height}` : 'Loading'} />
+          <Panel title={t.settings.launcherState}>
+            <Stat label={t.settings.activeTheme} value={activeThemeId} />
+            <Stat label={t.settings.profiles} value={String(accounts.length)} />
+            <Stat label={t.settings.window} value={config ? `${config.windowBounds.width} x ${config.windowBounds.height}` : t.settings.loading} />
           </Panel>
 
-          <Panel title="Play Rules">
+          <Panel title={t.settings.playRules}>
             <div style={{ color:'var(--ink-3)', fontSize:12, lineHeight:1.55 }}>
-              Guest profiles can browse and stage mods, create instances, and manage local content. Minecraft play is enabled only after Microsoft login verifies Java Edition ownership.
+              {t.settings.playRulesText}
             </div>
           </Panel>
         </aside>
       </div>
 
       {/* Log Viewer */}
-      <Panel title="Application Logs">
+      <Panel title={t.settings.appLogs}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
           <span style={{ fontSize:12, color:'var(--ink-4)' }}>
-            {logs.length === 0 ? 'No entries' : `${logs.length} recent entries (newest first)`}
+            {logs.length === 0 ? t.settings.noEntries : t.settings.recentEntries(logs.length)}
           </span>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={loadLogs} style={smallButtonStyle(logsLoading)}>
-              {logsLoading ? 'Loading…' : 'Refresh'}
+              {logsLoading ? t.settings.loading : t.settings.refresh}
             </button>
             <button
               onClick={clearLogs}
               style={{ ...smallButtonStyle(false), color:'var(--lava)', borderColor:'rgba(217,59,59,.4)' }}
             >
-              Clear Logs
+              {t.settings.clearLogs}
             </button>
           </div>
         </div>
@@ -468,7 +474,7 @@ function Settings() {
         }}>
           {logs.length === 0 ? (
             <div style={{ padding:'20px 12px', color:'var(--ink-4)', textAlign:'center' }}>
-              {logsLoading ? 'Loading…' : 'No log entries yet.'}
+              {logsLoading ? t.settings.loading : t.settings.noLogEntries}
             </div>
           ) : logs.map((entry, i) => (
             <div
@@ -499,7 +505,7 @@ function Settings() {
       </Panel>
 
       {/* About */}
-      <Panel title="About Refract">
+      <Panel title={t.settings.about}>
         <div style={{ display:'flex', alignItems:'center', gap:18 }}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="-110 -110 220 220" width={48} height={48} style={{ flexShrink:0 }}>
             <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4"/>
@@ -515,30 +521,30 @@ function Settings() {
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
               <span style={{ fontFamily:"'VT323',monospace", fontSize:22, letterSpacing:'.1em', color:'var(--ink)' }}>REFRACT</span>
               <span style={{ fontFamily:"'VT323',monospace", fontSize:14, letterSpacing:'.06em', color:'var(--accent)', background:'var(--accent-tint)', border:'1px solid var(--accent)', borderRadius:3, padding:'1px 8px' }}>
-                v{__APP_VERSION__} · Early Access
+                v{__APP_VERSION__} · {t.settings.earlyAccess}
               </span>
             </div>
             <p style={{ margin:'0 0 12px', fontSize:12, color:'var(--ink-4)', lineHeight:1.5 }}>
-              Open-source Minecraft launcher. Built for players who want full control over their game.
+              {t.settings.aboutDesc}
             </p>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               <button
                 onClick={() => window.open('https://discord.gg/7Q5sGzhUQJ')}
                 style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'#5865F2', color:'#fff', border:'none', borderRadius:4, cursor:'pointer' }}
               >
-                Join Discord ↗
+                {t.settings.joinDiscord}
               </button>
               <button
                 onClick={() => window.open('https://github.com/ShevRuslan1/Refract_MC/issues')}
                 style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:4, cursor:'pointer' }}
               >
-                Report a Bug ↗
+                {t.settings.reportBug}
               </button>
               <button
                 onClick={() => window.open('https://github.com/ShevRuslan1/Refract_MC')}
                 style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:4, cursor:'pointer' }}
               >
-                GitHub ↗
+                {t.settings.github}
               </button>
             </div>
           </div>

@@ -4,6 +4,7 @@ import type React from 'react'
 import { api, type DeviceLogin, type SafeAccount } from '@/lib/api'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
+import { useT, type T } from '@/i18n'
 
 export const Route = createFileRoute('/account/')({
   component: Account,
@@ -15,9 +16,9 @@ function accountBadge(type: SafeAccount['type']) {
   return { label: 'YGGDRASIL', color: 'var(--ender)' }
 }
 
-function accessText(account: SafeAccount) {
-  if (account.canPlayMinecraft) return 'Java license verified. Online multiplayer enabled.'
-  return 'Offline play enabled. No Microsoft login required — multiplayer servers need a licensed account.'
+function accessText(account: SafeAccount, t: T) {
+  if (account.canPlayMinecraft) return t.account.licenseVerified
+  return t.account.offlineAccess
 }
 
 function isPendingDeviceLogin(message: string) {
@@ -36,6 +37,7 @@ function isDeclinedDeviceLogin(message: string) {
 }
 
 function Account() {
+  const t = useT()
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
   const [active, setActive] = useState<SafeAccount | null>(null)
   const [device, setDevice] = useState<DeviceLogin | null>(null)
@@ -225,23 +227,23 @@ function Account() {
       <section style={{ background:'var(--surface)', border:'1px solid var(--border-r)', borderRadius:'var(--radius)', overflow:'hidden' }}>
         <div style={{ padding:'18px 20px', borderBottom:'1px solid var(--line)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
           <div>
-            <h1 style={{ margin:0, color:'var(--ink)', fontSize:24, lineHeight:1.1 }}>Accounts</h1>
+            <h1 style={{ margin:0, color:'var(--ink)', fontSize:24, lineHeight:1.1 }}>{t.account.title}</h1>
             <p style={{ margin:'6px 0 0', color:'var(--ink-3)', fontSize:13 }}>
-              Use a guest profile for content setup, or sign in with Microsoft to verify Minecraft: Java Edition.
+              {t.account.subtitle}
             </p>
           </div>
           {active && (
             <div style={{ fontFamily:"'VT323',monospace", color:'var(--accent)', fontSize:18, letterSpacing:'.08em' }}>
-              ACTIVE: {active.username}
+              {t.account.activeHeader(active.username)}
             </div>
           )}
         </div>
 
         <div style={{ padding:20, display:'grid', gap:14 }}>
           <div style={{ background:'var(--surface-2)', border:'1px solid var(--border-r)', borderRadius:4, padding:16 }}>
-            <h2 style={{ margin:'0 0 8px', color:'var(--ink)', fontSize:16 }}>Microsoft Minecraft Account</h2>
+            <h2 style={{ margin:'0 0 8px', color:'var(--ink)', fontSize:16 }}>{t.account.microsoftSection}</h2>
             <p style={{ margin:'0 0 14px', color:'var(--ink-3)', fontSize:13, lineHeight:1.5 }}>
-              Refract uses Microsoft device login to verify Java Edition ownership. Tokens are saved only in the Electron main process config and encrypted when OS encryption is available.
+              {t.account.microsoftDesc}
             </p>
             <button
               type="button"
@@ -256,14 +258,14 @@ function Account() {
                 opacity: busy ? .6 : 1,
               }}
             >
-              SIGN IN WITH MICROSOFT
+              {t.account.signInMicrosoft}
             </button>
 
             {device && (
               <div style={{ marginTop:16, padding:14, background:'var(--bg)', border:'1px solid var(--accent)', borderRadius:4 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'center', color:'var(--ink-3)', fontSize:12, marginBottom:8 }}>
-                  <span>Enter this code at Microsoft:</span>
-                  <span style={{ color:'var(--gold)' }}>{secondsRemaining > 0 ? `${secondsRemaining}s left` : 'Expired'}</span>
+                  <span>{t.account.enterCodeAt}</span>
+                  <span style={{ color:'var(--gold)' }}>{secondsRemaining > 0 ? `${secondsRemaining}s left` : t.account.codeExpired}</span>
                 </div>
                 <div style={{ fontFamily:"'VT323',monospace", color:'var(--ink)', fontSize:34, letterSpacing:'.18em', lineHeight:1 }}>
                   {device.userCode}
@@ -283,7 +285,7 @@ function Account() {
                     disabled={!!busy}
                     style={{ height:34, padding:'0 14px', background:'var(--surface-2)', color:'var(--ink)', border:'1px solid var(--border-r)', cursor:'pointer' }}
                   >
-                    Copy code
+                    {t.account.copyCode}
                   </button>
                   <button
                     type="button"
@@ -291,7 +293,7 @@ function Account() {
                     disabled={!!busy}
                     style={{ height:34, padding:'0 14px', background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', cursor:'pointer' }}
                   >
-                    I finished login
+                    {t.account.iFinishedLogin}
                   </button>
                   <button
                     type="button"
@@ -299,7 +301,7 @@ function Account() {
                     disabled={!!busy}
                     style={{ height:34, padding:'0 14px', background:'transparent', color:'var(--redstone)', border:'1px solid rgba(217,59,59,.45)', cursor:'pointer' }}
                   >
-                    Cancel
+                    {t.account.cancel}
                   </button>
                 </div>
               </div>
@@ -312,9 +314,9 @@ function Account() {
           </div>
 
           <div style={{ background:'var(--surface-2)', border:'1px solid var(--border-r)', borderRadius:4, padding:16 }}>
-            <h2 style={{ margin:'0 0 8px', color:'var(--ink)', fontSize:16 }}>Offline Profile</h2>
+            <h2 style={{ margin:'0 0 8px', color:'var(--ink)', fontSize:16 }}>{t.account.offlineSection}</h2>
             <p style={{ margin:'0 0 12px', color:'var(--ink-3)', fontSize:13, lineHeight:1.5 }}>
-              Play Minecraft in offline mode without a Microsoft account. Set any in-game nickname you like. Multiplayer servers that require authentication still need a licensed account.
+              {t.account.offlineDesc}
             </p>
             <div style={{ display:'flex', gap:8 }}>
               <input
@@ -328,7 +330,7 @@ function Account() {
                 disabled={!!busy || !offlineName.trim()}
                 style={{ height:36, padding:'0 12px', background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', cursor:'pointer', opacity:busy ? .6 : 1 }}
               >
-                Add
+                {t.account.add}
               </button>
             </div>
           </div>
@@ -342,10 +344,10 @@ function Account() {
       </section>
 
       <aside style={{ background:'var(--surface)', border:'1px solid var(--border-r)', borderRadius:'var(--radius)', overflow:'hidden' }}>
-        <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--line)', color:'var(--ink)', fontWeight:700 }}>Saved Profiles</div>
+        <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--line)', color:'var(--ink)', fontWeight:700 }}>{t.account.savedProfiles}</div>
         <div style={{ padding:12, display:'grid', gap:8 }}>
           {accounts.length === 0 ? (
-            <p style={{ color:'var(--ink-3)', fontSize:13, margin:4 }}>No accounts yet.</p>
+            <p style={{ color:'var(--ink-3)', fontSize:13, margin:4 }}>{t.account.noAccounts}</p>
           ) : accounts.map((account) => {
             const badge = accountBadge(account.type)
             const isActive = active?.uuid === account.uuid
@@ -389,7 +391,7 @@ function Account() {
                             onKeyDown={e => { if (e.key === 'Enter') void commitRename(account.uuid); if (e.key === 'Escape') cancelRename() }}
                             style={{ flex:1, minWidth:0, height:28, background:'var(--bg)', border:'1px solid var(--accent)', color:'var(--ink)', padding:'0 8px', outline:'none', fontSize:13, borderRadius:3 }}
                           />
-                          <button type="button" onClick={() => void commitRename(account.uuid)} disabled={!renameValue.trim() || !!busy} style={{ height:28, padding:'0 10px', background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontSize:12, fontWeight:700, borderRadius:3 }}>Save</button>
+                          <button type="button" onClick={() => void commitRename(account.uuid)} disabled={!renameValue.trim() || !!busy} style={{ height:28, padding:'0 10px', background:'var(--accent)', color:'#fff', border:'none', cursor:'pointer', fontSize:12, fontWeight:700, borderRadius:3 }}>{t.account.save}</button>
                           <button type="button" onClick={cancelRename} style={{ height:28, padding:'0 8px', background:'transparent', color:'var(--ink-3)', border:'1px solid var(--border-r)', cursor:'pointer', fontSize:12, borderRadius:3 }}>✕</button>
                         </div>
                       ) : (
@@ -401,10 +403,10 @@ function Account() {
                         </div>
                       )}
                       <div style={{ color:badge.color, fontFamily:"'VT323',monospace", fontSize:15, letterSpacing:'.08em', marginTop:2 }}>{badge.label}</div>
-                      <div style={{ color:'var(--ink-4)', fontSize:11, lineHeight:1.35, marginTop:4 }}>{accessText(account)}</div>
+                      <div style={{ color:'var(--ink-4)', fontSize:11, lineHeight:1.35, marginTop:4 }}>{accessText(account, t)}</div>
                     </div>
                   </div>
-                  {isActive && <div style={{ color:'var(--accent)', fontFamily:"'VT323',monospace", fontSize:15, flexShrink:0 }}>ACTIVE</div>}
+                  {isActive && <div style={{ color:'var(--accent)', fontFamily:"'VT323',monospace", fontSize:15, flexShrink:0 }}>{t.account.activeLabel}</div>}
                 </div>
                 <div style={{ display:'flex', gap:8 }}>
                   <button
@@ -413,7 +415,7 @@ function Account() {
                     disabled={isActive || !!busy}
                     style={{ flex:1, height:30, background:'var(--bg)', color:'var(--ink-2)', border:'1px solid var(--border-r)', cursor:'pointer', opacity:isActive ? .5 : 1 }}
                   >
-                    Use
+                    {t.account.use}
                   </button>
                   <button
                     type="button"
@@ -421,7 +423,7 @@ function Account() {
                     disabled={!!busy}
                     style={{ height:30, padding:'0 10px', background:'transparent', color:'var(--redstone)', border:'1px solid rgba(217,59,59,.45)', cursor:'pointer' }}
                   >
-                    Sign out
+                    {t.account.signOut}
                   </button>
                 </div>
               </div>

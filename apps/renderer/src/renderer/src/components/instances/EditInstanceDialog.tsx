@@ -6,6 +6,7 @@ import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
 import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
 import { api } from '@/lib/api'
+import { useT } from '@/i18n'
 
 const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: '',         label: 'Vanilla'  },
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDelete, onRepair, onDuplicate }: Props) {
+  const t = useT()
   const [name, setName]           = useState('')
   const [mcVersion, setMcVersion] = useState('1.21.1')
   const [modLoader, setModLoader] = useState<ModLoader | ''>('')
@@ -118,7 +120,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
 
           {/* Title bar */}
           <div style={{ background:'var(--surface-2)', borderBottom:'1px solid var(--line)', padding:'0 16px', height:38, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.14em', color:'var(--ink)', lineHeight:1 }}>EDIT INSTANCE</span>
+            <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.14em', color:'var(--ink)', lineHeight:1 }}>{t.editInst.title}</span>
             <Dialog.Close disabled={loading} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--ink-4)', fontSize:18, lineHeight:1, padding:'4px 6px', opacity:loading ? 0.5 : 1 }}>✕</Dialog.Close>
           </div>
 
@@ -142,7 +144,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                   fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.08em',
                   color: modLoader ? 'var(--accent)' : 'var(--ink-4)',
                 }}>
-                  {modLoader ? modLoader.toUpperCase() : 'VANILLA'}
+                  {modLoader ? modLoader.toUpperCase() : t.editInst.vanilla}
                 </div>
                 <div style={{ fontFamily:"'VT323',monospace", fontSize:12, color:'var(--ink-4)', letterSpacing:'.04em' }}>
                   {mbLabel(memoryMb)} RAM
@@ -153,18 +155,18 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
             {/* Form column */}
             <form onSubmit={handleSubmit} style={{ flex:1, padding:'16px 18px', display:'flex', flexDirection:'column', gap:14 }}>
 
-              <Field label="NAME">
+              <Field label={t.editInst.name}>
                 <input
                   type="text" value={name} onChange={e => setName(e.target.value)}
                   autoFocus style={inputSt}
                 />
               </Field>
 
-              <Field label="MC VERSION">
+              <Field label={t.editInst.mcVersion}>
                 <McVersionSelect value={mcVersion} onChange={setMcVersion} selectStyle={selectSt} />
               </Field>
 
-              <Field label="MOD LOADER">
+              <Field label={t.editInst.modLoader}>
                 <div style={{ display:'flex', gap:4 }}>
                   {MOD_LOADERS.map(l => (
                     <button key={l.value} type="button" onClick={() => setModLoader(l.value)} style={{
@@ -180,7 +182,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 </div>
               </Field>
 
-              <Field label={`MEMORY — ${mbToGb(memoryMb)} GB`}>
+              <Field label={t.editInst.memory(mbToGb(memoryMb))}>
                 <input
                   type="range" min={MEMORY_MIN_MB} max={MEMORY_MAX_MB} step={MEMORY_STEP}
                   value={memoryMb} onChange={e => setMemory(Number(e.target.value))}
@@ -202,37 +204,37 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 </div>
               </Field>
 
-              <Field label="GROUP">
+              <Field label={t.editInst.group}>
                 <input
                   type="text"
                   value={groupId}
                   onChange={e => setGroupId(e.target.value)}
-                  placeholder="e.g. Modded, Vanilla, Survival…"
+                  placeholder={t.editInst.groupPlaceholder}
                   style={inputSt}
                 />
               </Field>
 
-              <Field label="JAVA OVERRIDE">
+              <Field label={t.editInst.javaOverride}>
                 <select
                   value={javaPath}
                   onChange={e => setJavaPath(e.target.value)}
                   style={selectSt}
                 >
-                  <option value="">Auto-detect (recommended)</option>
+                  <option value="">{t.editInst.javaAuto}</option>
                   {javas.map(j => (
                     <option key={j.path} value={j.path}>
-                      Java {j.version} — {j.vendor}
+                      {t.editInst.javaVersion(j.version, j.vendor)}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              <Field label="JVM ARGS">
+              <Field label={t.editInst.jvmArgs}>
                 <input
                   type="text"
                   value={javaArgs}
                   onChange={e => setJavaArgs(e.target.value)}
-                  placeholder="-XX:+UseG1GC -Dfml.ignoreInvalidMinecraftCertificates=true"
+                  placeholder={t.editInst.jvmArgsPlaceholder}
                   style={inputSt}
                 />
               </Field>
@@ -244,7 +246,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                   style={{ cursor:'pointer', accentColor:'var(--accent)' }}
                 />
                 <span style={{ fontFamily:"'VT323',monospace", fontSize:13, letterSpacing:'.08em', color: pinned ? 'var(--accent)' : 'var(--ink-4)' }}>
-                  📌 PIN THIS INSTANCE
+                  {t.editInst.pin}
                 </span>
               </label>
 
@@ -264,7 +266,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                       fontSize:12, fontWeight:700, flexShrink:0, transition:'background .15s',
                     }}
                   >
-                    {confirmDelete ? 'CONFIRM DELETE?' : 'Delete'}
+                    {confirmDelete ? t.editInst.confirmDelete : t.editInst.delete}
                   </button>
                 )}
                 {onRepair && instance?.isInstalled && (
@@ -279,7 +281,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                       fontSize:12, fontWeight:600, flexShrink:0,
                     }}
                   >
-                    Repair
+                    {t.editInst.repair}
                   </button>
                 )}
                 {onDuplicate && (
@@ -299,11 +301,11 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                       fontSize:12, fontWeight:600, flexShrink:0,
                     }}
                   >
-                    Duplicate
+                    {t.editInst.duplicate}
                   </button>
                 )}
                 <Dialog.Close asChild>
-                  <button type="button" disabled={loading} style={cancelSt}>Cancel</button>
+                  <button type="button" disabled={loading} style={cancelSt}>{t.editInst.cancel}</button>
                 </Dialog.Close>
                 <button type="submit" disabled={!name.trim() || loading} style={{
                   flex:1,
@@ -314,7 +316,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                   boxShadow: (!name.trim() || loading) ? 'none' : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
                   opacity: (!name.trim() || loading) ? 0.55 : 1,
                 }}>
-                  {loading ? 'SAVING...' : 'SAVE CHANGES'}
+                  {loading ? t.editInst.saving : t.editInst.save}
                 </button>
               </div>
 

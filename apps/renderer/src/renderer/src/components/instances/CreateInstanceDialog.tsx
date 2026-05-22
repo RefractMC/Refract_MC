@@ -5,6 +5,7 @@ import type { ModLoader } from '@refract/core'
 import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
 import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
+import { useT } from '@/i18n'
 
 const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: '',         label: 'Vanilla'  },
@@ -44,6 +45,7 @@ interface Props {
 }
 
 export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFile }: Props) {
+  const t = useT()
   const [name, setName]           = useState('')
   const [mcVersion, setMcVersion] = useState('1.21.1')
   const [modLoader, setModLoader] = useState<ModLoader | ''>('')
@@ -100,7 +102,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
 
           {/* Title bar */}
           <div style={{ background:'var(--surface-2)', borderBottom:'1px solid var(--line)', padding:'0 16px', height:38, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.14em', color:'var(--ink)', lineHeight:1 }}>NEW INSTANCE</span>
+            <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.14em', color:'var(--ink)', lineHeight:1 }}>{t.createInst.title}</span>
             <Dialog.Close disabled={loading} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--ink-4)', fontSize:18, lineHeight:1, padding:'4px 6px', opacity:loading ? 0.5 : 1 }}>✕</Dialog.Close>
           </div>
 
@@ -124,7 +126,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                   fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.08em',
                   color: modLoader ? 'var(--accent)' : 'var(--ink-4)',
                 }}>
-                  {modLoader ? modLoader.toUpperCase() : 'VANILLA'}
+                  {modLoader ? modLoader.toUpperCase() : t.createInst.vanilla}
                 </div>
                 <div style={{ fontFamily:"'VT323',monospace", fontSize:12, color:'var(--ink-4)', letterSpacing:'.04em' }}>
                   {mbLabel(memoryMb)} RAM
@@ -135,7 +137,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
             {/* Form column */}
             <form onSubmit={handleSubmit} style={{ flex:1, padding:'16px 18px', display:'flex', flexDirection:'column', gap:14 }}>
 
-              <Field label="NAME">
+              <Field label={t.createInst.name}>
                 <input
                   type="text" value={name} onChange={e => setName(e.target.value)}
                   placeholder="My Instance" autoFocus
@@ -143,11 +145,11 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                 />
               </Field>
 
-              <Field label="MC VERSION">
+              <Field label={t.createInst.mcVersion}>
                 <McVersionSelect value={mcVersion} onChange={setMcVersion} selectStyle={selectSt} />
               </Field>
 
-              <Field label="MOD LOADER">
+              <Field label={t.createInst.modLoader}>
                 <div style={{ display:'flex', gap:4 }}>
                   {MOD_LOADERS.map(l => (
                     <button key={l.value} type="button" onClick={() => setModLoader(l.value)} style={{
@@ -163,7 +165,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                 </div>
               </Field>
 
-              <Field label={`MEMORY — ${mbToGb(memoryMb)} GB`}>
+              <Field label={t.createInst.memory(mbToGb(memoryMb))}>
                 <input
                   type="range" min={MEMORY_MIN_MB} max={MEMORY_MAX_MB} step={MEMORY_STEP}
                   value={memoryMb} onChange={e => setMemory(Number(e.target.value))}
@@ -185,12 +187,12 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                 </div>
               </Field>
 
-              <Field label="GROUP">
+              <Field label={t.createInst.group}>
                 <input
                   type="text"
                   value={groupId}
                   onChange={e => setGroupId(e.target.value)}
-                  placeholder="e.g. Modded, Vanilla, Survival…"
+                  placeholder={t.createInst.groupPlaceholder}
                   style={inputSt}
                 />
               </Field>
@@ -199,7 +201,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
 
               <div style={{ display:'flex', gap:8, paddingTop:12, borderTop:'1px solid var(--line)' }}>
                 <Dialog.Close asChild>
-                  <button type="button" disabled={loading} style={cancelSt}>Cancel</button>
+                  <button type="button" disabled={loading} style={cancelSt}>{t.createInst.cancel}</button>
                 </Dialog.Close>
                 {onImportFile && (
                   <button type="button" disabled={loading} onClick={async () => {
@@ -213,7 +215,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                     borderRadius:3, cursor: loading ? 'not-allowed' : 'pointer',
                     opacity: loading ? 0.55 : 1,
                   }}>
-                    IMPORT ZIP
+                    {t.createInst.importZip}
                   </button>
                 )}
                 <button type="submit" disabled={!name.trim() || loading} style={{
@@ -225,7 +227,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                   boxShadow: (!name.trim() || loading) ? 'none' : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
                   opacity: (!name.trim() || loading) ? 0.55 : 1,
                 }}>
-                  {loading ? 'CREATING...' : 'CREATE'}
+                  {loading ? t.createInst.creating : t.createInst.create}
                 </button>
               </div>
 

@@ -4,13 +4,7 @@ import { LibraryIcon, ModsIcon, ModpacksIcon, AccountIcon, CogIcon, SignOutIcon 
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import { api, type SafeAccount } from '@/lib/api'
-
-const NAV: Array<{ to: string; label: string; Icon: ComponentType; exact: boolean }> = [
-  { to: '/',          label: 'Instance Library', Icon: LibraryIcon,  exact: true  },
-  { to: '/browse/',   label: 'Browse Mods',      Icon: ModsIcon,     exact: false },
-  { to: '/modpacks/', label: 'Modpacks',          Icon: ModpacksIcon, exact: false },
-  { to: '/account/',  label: 'Account',           Icon: AccountIcon,  exact: false },
-]
+import { useT } from '@/i18n'
 
 interface Friend {
   uuid: string
@@ -22,7 +16,8 @@ function crafatarUrl(uuid: string): string {
   return `https://crafatar.com/avatars/${uuid}?size=32&overlay=true&default=MHF_Steve`
 }
 
-function NavItem({ to, label, Icon, exact }: typeof NAV[number]) {
+interface NavItemProps { to: string; label: string; Icon: ComponentType; exact: boolean }
+function NavItem({ to, label, Icon, exact }: NavItemProps) {
   const matchRoute = useMatchRoute()
   const active = !!matchRoute({ to: to as '/', fuzzy: !exact })
 
@@ -47,6 +42,12 @@ function NavItem({ to, label, Icon, exact }: typeof NAV[number]) {
       <span>{label}</span>
     </Link>
   )
+}
+
+function AvatarStatus({ account }: { account: SafeAccount | null }) {
+  const t = useT()
+  if (!account) return <>{t.sidebar.notSignedIn}</>
+  return <>{account.canPlayMinecraft ? t.sidebar.playEnabled : t.sidebar.offline}</>
 }
 
 function AvatarBlock() {
@@ -133,7 +134,7 @@ function AvatarBlock() {
           {account ? account.username.toUpperCase() : 'GUEST'}
         </div>
         <div style={{ fontFamily:"'VT323',monospace", fontSize:12, color: account?.canPlayMinecraft ? 'var(--grass)' : 'var(--gold)', letterSpacing:'.04em', lineHeight:1.4 }}>
-          {account ? (account.canPlayMinecraft ? 'PLAY ENABLED' : 'OFFLINE') : 'NOT SIGNED IN'}
+          <AvatarStatus account={account} />
         </div>
       </div>
 
@@ -152,6 +153,7 @@ function AvatarBlock() {
 }
 
 function FriendsPanel() {
+  const t = useT()
   const [friends, setFriends] = useState<Friend[]>([])
   const [adding, setAdding] = useState(false)
   const [input, setInput] = useState('')
@@ -206,7 +208,7 @@ function FriendsPanel() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px 6px' }}>
         <h5 style={{ margin: 0, fontSize: 10, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          Friends{friends.length > 0 && ` · ${friends.length}`}
+          {t.sidebar.friends}{friends.length > 0 && ` · ${friends.length}`}
         </h5>
         {!adding && (
           <button
@@ -244,7 +246,7 @@ function FriendsPanel() {
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder="Minecraft username"
+              placeholder={t.sidebar.usernamePlaceholder}
               disabled={loading}
               style={{
                 flex: 1, height: 26, fontSize: 11, padding: '0 7px',
@@ -264,7 +266,7 @@ function FriendsPanel() {
                 cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
               }}
             >
-              {loading ? '…' : 'Add'}
+              {loading ? '…' : t.sidebar.addFriend}
             </button>
             <button
               type="button"
@@ -289,12 +291,12 @@ function FriendsPanel() {
       {/* Friend list */}
       {friends.length === 0 && !adding ? (
         <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
-          No friends added yet.{' '}
+          {t.sidebar.noFriends}{' '}
           <button
             onClick={startAdd}
             style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, padding: 0 }}
           >
-            Add one!
+            {t.sidebar.addOne}
           </button>
         </div>
       ) : (
@@ -307,11 +309,12 @@ function FriendsPanel() {
 }
 
 function FriendRow({ friend, onRemove }: { friend: Friend; onRemove: () => void }) {
+  const t = useT()
   const [hovered, setHovered] = useState(false)
   const [imgFailed, setImgFailed] = useState(false)
 
   const addedDaysAgo = Math.floor((Date.now() - friend.addedAt) / (1000 * 60 * 60 * 24))
-  const timeLabel = addedDaysAgo === 0 ? 'Added today' : addedDaysAgo === 1 ? 'Added yesterday' : `Added ${addedDaysAgo}d ago`
+  const timeLabel = addedDaysAgo === 0 ? t.sidebar.addedToday : addedDaysAgo === 1 ? t.sidebar.addedYesterday : t.sidebar.addedDaysAgo(addedDaysAgo)
 
   return (
     <div
@@ -408,6 +411,13 @@ function RefractLogo({ size = 32 }: { size?: number }) {
 }
 
 export function Sidebar() {
+  const t = useT()
+  const navItems: NavItemProps[] = [
+    { to: '/',          label: t.nav.library, Icon: LibraryIcon,  exact: true  },
+    { to: '/browse/',   label: t.nav.browse,  Icon: ModsIcon,     exact: false },
+    { to: '/modpacks/', label: t.nav.content, Icon: ModpacksIcon, exact: false },
+    { to: '/account/',  label: t.nav.account, Icon: AccountIcon,  exact: false },
+  ]
   return (
     <aside style={{
       gridRow:'2/3', gridColumn:'1/2',
@@ -424,9 +434,9 @@ export function Sidebar() {
       <AvatarBlock />
 
       {/* Nav */}
-      <div style={{ fontSize:10, fontWeight:600, letterSpacing:'.16em', textTransform:'uppercase', color:'var(--ink-4)', padding:'10px 8px 6px' }}>Navigate</div>
+      <div style={{ fontSize:10, fontWeight:600, letterSpacing:'.16em', textTransform:'uppercase', color:'var(--ink-4)', padding:'10px 8px 6px' }}>{t.nav.header}</div>
       <nav style={{ display:'flex', flexDirection:'column', gap:2 }}>
-        {NAV.map(n => <NavItem key={n.to} {...n} />)}
+        {navItems.map(n => <NavItem key={n.to} {...n} />)}
       </nav>
 
       {/* Friends */}
@@ -436,7 +446,7 @@ export function Sidebar() {
       <div style={{ marginTop:'auto', display:'flex', flexDirection:'column', gap:2, paddingTop:10, borderTop:'1px solid var(--sb-line)' }}>
         <Link to="/settings" style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:4, color:'var(--ink-2)', fontSize:13, fontWeight:500, textDecoration:'none', border:'1px solid transparent' }}>
           <div style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center' }}><CogIcon /></div>
-          <span>Settings</span>
+          <span>{t.nav.settings}</span>
         </Link>
         <button
           onClick={() => window.open('https://discord.gg/7Q5sGzhUQJ')}
@@ -445,7 +455,7 @@ export function Sidebar() {
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-2)'; e.currentTarget.style.background = 'none' }}
         >
           <div style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>💬</div>
-          <span>Discord</span>
+          <span>{t.nav.discord}</span>
         </button>
       </div>
     </aside>

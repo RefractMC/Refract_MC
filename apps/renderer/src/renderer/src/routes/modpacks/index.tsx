@@ -4,6 +4,7 @@ import type React from 'react'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { api } from '@/lib/api'
 import type { ModrinthProject, ModrinthVersion, ModrinthSortIndex, ModrinthProjectType, Instance } from '@refract/core'
+import { useT } from '@/i18n'
 
 export const Route = createFileRoute('/modpacks/')({ component: ContentBrowser })
 
@@ -121,6 +122,7 @@ function PageBtn({ disabled, onClick, children }: { disabled: boolean; onClick: 
 // ─── MC Version picker ────────────────────────────────────────────────────────
 
 function VersionDropdown({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const t = useT()
   const [open, setOpen]         = useState(false)
   const [versions, setVersions] = useState<string[]>([])
   const [loading, setLoading]   = useState(false)
@@ -158,7 +160,7 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
         border: `1px solid ${active ? 'var(--diamond)' : 'var(--border-r)'}`,
         borderRadius: 3, padding: '3px 10px', cursor: 'pointer',
       } as React.CSSProperties}>
-        {active ? `MC ${value}` : 'All versions'}
+        {active ? `MC ${value}` : t.content.allVersions}
         <span style={{ fontSize: 9, opacity: .7, marginLeft: 2 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
@@ -173,9 +175,9 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
             color: value === null ? 'var(--accent)' : 'var(--ink-3)',
             background: value === null ? 'var(--accent-tint)' : 'transparent',
             borderBottom: '1px solid var(--line)', cursor: 'pointer',
-          }}>All versions</button>
+          }}>{t.content.allVersions}</button>
           {loading
-            ? <div style={{ padding: 12, fontSize: 11, color: 'var(--ink-4)', textAlign: 'center' }}>Loading…</div>
+            ? <div style={{ padding: 12, fontSize: 11, color: 'var(--ink-4)', textAlign: 'center' }}>{t.content.loading}</div>
             : versions.map(ver => (
                 <button key={ver} onClick={() => { onChange(ver); setOpen(false) }} style={{
                   padding: '6px 12px', textAlign: 'left', border: 'none',
@@ -195,6 +197,14 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
 // ─── Sort dropdown ────────────────────────────────────────────────────────────
 
 function SortDropdown({ value, onChange }: { value: ModrinthSortIndex; onChange: (v: ModrinthSortIndex) => void }) {
+  const t = useT()
+  const sortLabels: Record<string, string> = {
+    downloads: t.content.sortDownloads,
+    follows: t.content.sortFollows,
+    newest: t.content.sortNewest,
+    updated: t.content.sortUpdated,
+    relevance: t.content.sortRelevance,
+  }
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -216,7 +226,7 @@ function SortDropdown({ value, onChange }: { value: ModrinthSortIndex; onChange:
         background: 'var(--surface)', border: '1px solid var(--border-r)',
         borderRadius: 3, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
       }}>
-        {current.label}
+        {sortLabels[current.value]}
         <span style={{ fontSize: 9, opacity: .7 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
@@ -233,7 +243,7 @@ function SortDropdown({ value, onChange }: { value: ModrinthSortIndex; onChange:
               color: value === opt.value ? 'var(--accent)' : 'var(--ink-2)',
               background: value === opt.value ? 'var(--accent-tint)' : 'transparent',
               cursor: 'pointer',
-            }}>{opt.label}</button>
+            }}>{sortLabels[opt.value]}</button>
           ))}
         </div>
       )}
@@ -250,6 +260,7 @@ function ContentCard({ project, tab, onInstall, onDetail, installing }: {
   onDetail: () => void
   installing: boolean
 }) {
+  const t = useT()
   const [hovered, setHovered] = useState(false)
   const loaders = project.loaders ?? []
   const isModpack = tab === 'modpack'
@@ -325,7 +336,7 @@ function ContentCard({ project, tab, onInstall, onDetail, installing }: {
             boxShadow: installing ? 'none' : 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)',
           }}
         >
-          {installing ? '…' : isModpack ? 'INSTALL' : 'ADD'}
+          {installing ? '…' : isModpack ? t.content.install : t.content.add}
         </button>
       </div>
     </div>
@@ -340,13 +351,20 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
   onClose: () => void
   onInstall: () => void
 }) {
+  const t = useT()
+  const tabLabelMap: Record<ContentTab, string> = {
+    modpack: t.content.tabModpack,
+    resourcepack: t.content.tabResourcepack,
+    shader: t.content.tabShader,
+    datapack: t.content.tabDatapack,
+  }
   const [detail, setDetail]         = useState<ModrinthProjectDetail | null>(null)
   const [loading, setLoading]       = useState(true)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
 
   const isModpack = tab === 'modpack'
   const accent    = tabColor(tab)
-  const tabInfo   = TABS.find(t => t.type === tab)!
+  const tabInfo   = TABS.find(ti => ti.type === tab)!
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -376,7 +394,7 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
   const modrinthUrl = `https://modrinth.com/${tab}/${project.slug ?? project.project_id}`
   const bodyText    = detail?.body ? stripMarkdown(detail.body) : project.description
 
-  const btnLabel = isModpack ? 'INSTALL AS INSTANCE' : `ADD TO INSTANCE`
+  const btnLabel = isModpack ? t.content.installAsInstance : t.content.addToInstance
 
   return (
     <div
@@ -420,7 +438,7 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
               onClick={() => window.open(modrinthUrl)}
               style={{ height: 32, padding: '0 14px', fontSize: 12, fontWeight: 600, background: 'transparent', color: accent, border: `1px solid ${accent}`, borderRadius: 3, cursor: 'pointer' }}
             >
-              Modrinth ↗
+              {t.content.modrinth}
             </button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 4 }}>✕</button>
           </div>
@@ -446,7 +464,7 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
           {/* Description text */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px' }}>
             {loading ? (
-              <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>Loading details…</div>
+              <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>{t.content.loading}</div>
             ) : (
               <p style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
                 {bodyText}
@@ -459,7 +477,7 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
             {/* Categories */}
             {project.categories.length > 0 && (
               <div>
-                <SideLabel>Categories</SideLabel>
+                <SideLabel>{t.browse.categories}</SideLabel>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                   {project.categories.map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
                 </div>
@@ -469,16 +487,16 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
             {/* Environment */}
             {detail && (
               <div>
-                <SideLabel>Environment</SideLabel>
+                <SideLabel>{t.browse.environment}</SideLabel>
                 <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Client</span>
+                    <span>{t.browse.client}</span>
                     <span style={{ color: detail.client_side === 'required' ? 'var(--grass)' : detail.client_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
                       {detail.client_side}
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Server</span>
+                    <span>{t.browse.server}</span>
                     <span style={{ color: detail.server_side === 'required' ? 'var(--grass)' : detail.server_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
                       {detail.server_side}
                     </span>
@@ -490,16 +508,16 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
             {/* Dates */}
             {detail?.published && (
               <div>
-                <SideLabel>Published</SideLabel>
+                <SideLabel>{t.browse.published}</SideLabel>
                 <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(detail.published)}</div>
-                {detail.updated && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>Updated {fmtDate(detail.updated)}</div>}
+                {detail.updated && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{t.browse.updatedOn(fmtDate(detail.updated))}</div>}
               </div>
             )}
 
             {/* Links */}
             {detail && (detail.issues_url || detail.source_url || detail.discord_url) && (
               <div>
-                <SideLabel>Links</SideLabel>
+                <SideLabel>{t.browse.links}</SideLabel>
                 <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {detail.issues_url && (
                     <button onClick={() => window.open(detail.issues_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
@@ -584,6 +602,13 @@ interface ContentInstallModalProps {
 }
 
 function ContentInstallModal({ project, tab, instances, onClose, onInstall }: ContentInstallModalProps) {
+  const t = useT()
+  const tabLabelMap: Record<ContentTab, string> = {
+    modpack: t.content.tabModpack,
+    resourcepack: t.content.tabResourcepack,
+    shader: t.content.tabShader,
+    datapack: t.content.tabDatapack,
+  }
   const [versions, setVersions]    = useState<ModrinthVersion[]>([])
   const [loading, setLoading]      = useState(true)
   const [selectedInst, setSelInst] = useState<Instance | null>(null)
@@ -612,7 +637,7 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
           {project.icon_url && <img src={project.icon_url} alt="" style={{ width: 28, height: 28, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--accent)', letterSpacing: '.1em' }}>
-              ADD {tabInfo.label.toUpperCase()}
+              {t.content.addLabel(tabLabelMap[tab])}
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{project.title}</div>
           </div>
@@ -621,7 +646,7 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
 
         {tab === 'datapack' && (
           <div style={{ margin: '10px 18px 0', padding: '8px 12px', background: 'rgba(255,165,0,.1)', border: '1px solid rgba(255,165,0,.4)', borderRadius: 3, fontSize: 11, color: 'var(--gold)', lineHeight: 1.45 }}>
-            Data packs are downloaded to the instance folder. Move them into a world's <code style={{ background: 'var(--surface-2)', padding: '0 3px' }}>datapacks/</code> folder in-game.
+            {t.content.datapackNote}
           </div>
         )}
 
@@ -629,10 +654,10 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Instance picker */}
           <div style={{ width: 210, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>1. Select Instance</div>
+            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{t.content.selectInstance}</div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {instances.length === 0
-                ? <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>No instances yet.</div>
+                ? <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>{t.content.noInstances}</div>
                 : instances.map(inst => {
                     const active = selectedInst?.id === inst.id
                     return (
@@ -648,12 +673,12 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
 
           {/* Version picker */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>2. Select Version</div>
+            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{t.content.selectVersion}</div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {loading
-                ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>Loading…</div>
+                ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.content.loading}</div>
                 : versions.length === 0
-                  ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>No versions found.</div>
+                  ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.content.noVersions}</div>
                   : versions.map(v => {
                       const isSel  = selectedVer === v.id
                       const mcOk   = selectedInst ? v.game_versions.includes(selectedInst.minecraftVersion) : true
@@ -675,10 +700,10 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
         {/* Footer */}
         <div style={{ padding: '10px 18px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-            {!selectedInst ? 'Pick an instance' : !selectedVer ? 'Pick a version' : `Installing to "${selectedInst.name}"`}
+            {!selectedInst ? t.content.pickInstance : !selectedVer ? t.content.pickVersion : t.content.installingTo(selectedInst.name)}
           </div>
           <button disabled={!canInstall} onClick={() => canInstall && onInstall(selectedInst!.id, selectedVer!)} style={{ fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: canInstall ? '#fff' : 'var(--ink-4)', background: canInstall ? 'var(--accent)' : 'var(--surface-3)', border: 'none', cursor: canInstall ? 'pointer' : 'not-allowed', padding: '0 24px', height: 34, boxShadow: canInstall ? 'inset 0 -3px 0 var(--accent-lo)' : 'none' }}>
-            INSTALL
+            {t.content.install}
           </button>
         </div>
       </div>
@@ -695,6 +720,7 @@ interface ModpackInstallModalProps {
 }
 
 function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModalProps) {
+  const t = useT()
   const [versions, setVersions]  = useState<ModrinthVersion[]>([])
   const [loading, setLoading]    = useState(true)
   const [name, setName]          = useState(project.title)
@@ -728,7 +754,7 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
           {project.icon_url && <img src={project.icon_url} alt="" style={{ width: 32, height: 32, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ender)', letterSpacing: '.1em' }}>INSTALL MODPACK</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ender)', letterSpacing: '.1em' }}>{t.content.installModpackTitle}</div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{project.title}</div>
           </div>
           <button onClick={onClose} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
@@ -737,7 +763,7 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Instance name */}
           <div>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>INSTANCE NAME</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>{t.content.instanceName}</div>
             <input
               value={name}
               onChange={e => setName(e.target.value)}
@@ -747,9 +773,9 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
 
           {/* Version picker */}
           <div>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>VERSION</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>{t.content.version}</div>
             {loading
-              ? <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>Loading versions…</div>
+              ? <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{t.content.loadingVersions}</div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
                   {versions.map(v => {
                     const isSel     = selectedVer === v.id
@@ -792,9 +818,9 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
 
         {/* Footer */}
         <div style={{ padding: '12px 18px', borderTop: '1px solid var(--line)', display: 'flex', gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, height: 36, background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+          <button onClick={onClose} style={{ flex: 1, height: 36, background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', fontSize: 13 }}>{t.content.cancel}</button>
           <button disabled={!canInstall} onClick={() => canInstall && onInstall(name.trim(), selectedVer!)} style={{ flex: 2, height: 36, fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.12em', color: canInstall ? '#fff' : 'var(--ink-4)', background: canInstall ? 'var(--ender)' : 'var(--surface-3)', border: 'none', borderRadius: 3, cursor: canInstall ? 'pointer' : 'not-allowed', boxShadow: canInstall ? 'inset 0 -3px 0 rgba(0,0,0,.3)' : 'none' }}>
-            CREATE INSTANCE
+            {t.content.createInstance}
           </button>
         </div>
       </div>
@@ -805,10 +831,11 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
 // ─── Progress overlay ─────────────────────────────────────────────────────────
 
 function ProgressOverlay({ title, step, percent }: { projectId: string; title: string; step: string; percent: number }) {
+  const t = useT()
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', width: 440, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ fontFamily: "'VT323',monospace", fontSize: 20, letterSpacing: '.14em', color: 'var(--ender)' }}>INSTALLING MODPACK</div>
+        <div style={{ fontFamily: "'VT323',monospace", fontSize: 20, letterSpacing: '.14em', color: 'var(--ender)' }}>{t.content.installingModpack}</div>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{title}</div>
         <div style={{ height: 8, background: 'var(--surface-3)', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${percent}%`, background: 'var(--ender)', transition: 'width .2s', borderRadius: 4 }} />
@@ -842,8 +869,16 @@ function ContentBrowser() {
   const [installingId, setInstallingId]   = useState<string | null>(null)
   const [progressInfo, setProgress]       = useState<{ projectId: string; title: string; step: string; percent: number } | null>(null)
 
+  const t = useT()
+  const tabLabels: Record<ContentTab, string> = {
+    modpack:      t.content.tabModpack,
+    resourcepack: t.content.tabResourcepack,
+    shader:       t.content.tabShader,
+    datapack:     t.content.tabDatapack,
+  }
+
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const tabInfo   = TABS.find(t => t.type === tab)!
+  const tabInfo   = TABS.find(ti => ti.type === tab)!
 
   useEffect(() => {
     api.instance.list().then(setInstances).catch(() => {})
@@ -944,23 +979,23 @@ function ContentBrowser() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Page header */}
       <div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>Content Browser</h1>
-        <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>Browse modpacks, resource packs, shaders, and data packs from Modrinth.</p>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>{t.content.title}</h1>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>{t.content.subtitle}</p>
       </div>
 
       {/* Type tabs */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: 4 }}>
-        {TABS.map(t => (
-          <button key={t.type} onClick={() => { setTab(t.type as ContentTab); setQuery(''); setLoader(null) }} style={{
+        {TABS.map(tabItem => (
+          <button key={tabItem.type} onClick={() => { setTab(tabItem.type as ContentTab); setQuery(''); setLoader(null) }} style={{
             flex: 1, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             fontFamily: "'VT323',monospace", fontSize: 14, letterSpacing: '.1em',
-            color: tab === t.type ? '#fff' : 'var(--ink-3)',
-            background: tab === t.type ? (t.type === 'modpack' ? 'var(--ender)' : 'var(--accent)') : 'transparent',
+            color: tab === tabItem.type ? '#fff' : 'var(--ink-3)',
+            background: tab === tabItem.type ? (tabItem.type === 'modpack' ? 'var(--ender)' : 'var(--accent)') : 'transparent',
             border: 'none', borderRadius: 3, cursor: 'pointer',
-            boxShadow: tab === t.type ? 'inset 0 -2px 0 rgba(0,0,0,.3)' : 'none',
+            boxShadow: tab === tabItem.type ? 'inset 0 -2px 0 rgba(0,0,0,.3)' : 'none',
           }}>
-            <span style={{ fontSize: 16 }}>{t.icon}</span>
-            {t.label.toUpperCase()}
+            <span style={{ fontSize: 16 }}>{tabItem.icon}</span>
+            {tabLabels[tabItem.type as ContentTab].toUpperCase()}
           </button>
         ))}
       </div>
@@ -972,7 +1007,7 @@ function ContentBrowser() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder={`Search ${tabInfo.label.toLowerCase()}…`}
+            placeholder={t.content.searchPlaceholder(tabLabels[tab])}
             style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--ink)' }}
           />
           {query && <button onClick={() => setQuery('')} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>}
@@ -982,7 +1017,7 @@ function ContentBrowser() {
         {tabInfo.showLoader && (
           <div style={{ display: 'flex', gap: 4 }}>
             <button onClick={() => setLoader(null)} style={{ fontSize: 11, fontWeight: 500, color: loader === null ? 'var(--accent)' : 'var(--ink-4)', background: loader === null ? 'var(--accent-tint)' : 'var(--surface)', border: `1px solid ${loader === null ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>
-              All
+              {t.content.allLoaders}
             </button>
             {LOADERS.map(l => (
               <button key={l} onClick={() => setLoader(loader === l ? null : l)} style={{ fontSize: 11, fontWeight: 500, color: loader === l ? 'var(--accent)' : 'var(--ink-4)', background: loader === l ? 'var(--accent-tint)' : 'var(--surface)', border: `1px solid ${loader === l ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>
@@ -995,15 +1030,15 @@ function ContentBrowser() {
 
       {/* Results count */}
       <div style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
-        {loading ? 'Searching…' : `${total.toLocaleString()} ${tabInfo.label.toLowerCase()} found`}
+        {loading ? t.content.searching : t.content.found(total, tabLabels[tab])}
       </div>
 
       {/* Grid */}
       {loading ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>Loading…</div>
+        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.content.loading}</div>
       ) : results.length === 0 ? (
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>
-          No {tabInfo.label.toLowerCase()} found. Try a different search or filter.
+          {t.content.noContent(tabLabels[tab])}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
