@@ -216,6 +216,12 @@ function createBrowserApi(): RefractAPI {
       delete:       async () => { throw new Error('Mod management requires the Electron app.') },
       installLocal: async () => { throw new Error('Mod install requires the Electron app.') },
     },
+    curseforge: {
+      searchMods:    async () => { throw new Error('CurseForge requires the Electron app.') },
+      searchModpacks:async () => { throw new Error('CurseForge requires the Electron app.') },
+      files:         async () => { throw new Error('CurseForge requires the Electron app.') },
+      install:       async () => { throw new Error('CurseForge requires the Electron app.') },
+    },
     java: {
       managedList: async () => [],
       requiredFor: async () => 21,

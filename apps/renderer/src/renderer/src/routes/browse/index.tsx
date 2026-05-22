@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import type React from 'react'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { api } from '@/lib/api'
-import type { ModrinthProject, ModrinthVersion, Instance } from '@refract/core'
+import type { ModrinthProject, ModrinthVersion, Instance, CFProject, CFFile } from '@refract/core'
 import { useT } from '@/i18n'
 
 export const Route = createFileRoute('/browse/')({
@@ -572,11 +572,14 @@ function SideLabel({ children }: { children: React.ReactNode }) {
 
 function Browse() {
   const t = useT()
+  const [source, setSource] = useState<'mr' | 'cf'>('mr')
+  const [cfApiKey, setCfApiKey] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [loader, setLoader] = useState('All')
   const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [results, setResults] = useState<ModrinthProject[]>([])
+  const [cfResults, setCfResults] = useState<CFProject[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -585,6 +588,7 @@ function Browse() {
   const [instances, setInstances] = useState<Instance[]>([])
   const [detailTarget, setDetailTarget] = useState<ModrinthProject | null>(null)
   const [installTarget, setInstallTarget] = useState<ModrinthProject | null>(null)
+  const [cfInstallTarget, setCfInstallTarget] = useState<CFProject | null>(null)
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
@@ -592,23 +596,33 @@ function Browse() {
 
   useEffect(() => {
     api.instance.list().then(setInstances).catch(() => setInstances([]))
+    api.config.get().then(cfg => setCfApiKey((cfg as { curseforgeApiKey?: string }).curseforgeApiKey ?? null)).catch(() => {})
   }, [])
 
   useEffect(() => {
+    if (source === 'cf' && !cfApiKey) return
     if (searchRef.current) clearTimeout(searchRef.current)
     searchRef.current = setTimeout(() => doSearch(0), query ? 400 : 0)
     return () => { if (searchRef.current) clearTimeout(searchRef.current) }
-  }, [query, category, loader, gameVersion])
+  }, [query, category, loader, gameVersion, source, cfApiKey])
 
   async function doSearch(newOffset: number) {
     setLoading(true)
     setOffset(newOffset)
     try {
-      const gameLoader = loader !== 'All' ? loader : undefined
-      const facetCat = category !== 'All' ? category.toLowerCase() : undefined
-      const res = await api.modrinth.search(query, gameVersion ?? undefined, gameLoader, facetCat, LIMIT, newOffset)
-      setResults(res.hits)
-      setTotal(res.total_hits)
+      if (source === 'cf' && cfApiKey) {
+        const gameLoader = loader !== 'All' ? loader : undefined
+        const res = await api.curseforge.searchMods(query || undefined, gameVersion ?? undefined, gameLoader, LIMIT, newOffset)
+        const cfRes = res as { data: CFProject[]; pagination: { totalCount: number } }
+        setCfResults(cfRes.data)
+        setTotal(cfRes.pagination.totalCount)
+      } else {
+        const gameLoader = loader !== 'All' ? loader : undefined
+        const facetCat = category !== 'All' ? category.toLowerCase() : undefined
+        const res = await api.modrinth.search(query, gameVersion ?? undefined, gameLoader, facetCat, LIMIT, newOffset)
+        setResults(res.hits)
+        setTotal(res.total_hits)
+      }
     } catch (e) {
       showToast(`Search failed: ${e instanceof Error ? e.message : 'Unknown error'}`, false)
     } finally {
@@ -637,78 +651,149 @@ function Browse() {
     }
   }
 
+  async function handleCfInstall(instanceId: string, modId: number, fileId: number, displayName: string) {
+    setCfInstallTarget(null)
+    setInstallingId(String(modId))
+    try {
+      await api.curseforge.install(instanceId, modId, fileId, displayName)
+      showToast(`${displayName} installed successfully!`, true)
+      api.instance.list().then(setInstances).catch(() => {})
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Install failed', false)
+    } finally {
+      setInstallingId(null)
+    }
+  }
+
   const totalPages = Math.ceil(total / LIMIT)
   const currentPage = Math.floor(offset / LIMIT)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>{t.browse.title}</h1>
-        <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>{t.browse.subtitle}</p>
-      </div>
-
-      {/* Search */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: '0 12px', height: 38 }}>
-        <div style={{ color: 'var(--ink-4)', display: 'flex', alignItems: 'center', flexShrink: 0 }}><SearchIcon /></div>
-        <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder={t.browse.searchPlaceholder}
-          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--ink)' }}
-        />
-        {query && <button onClick={() => setQuery('')} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✕</button>}
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {CATEGORIES.map(cat => (
-            <FilterChip key={cat} active={category === cat} onClick={() => setCategory(cat)}>{cat}</FilterChip>
-          ))}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>{t.browse.title}</h1>
+          <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>{t.browse.subtitle}</p>
         </div>
-        <div style={{ width: 1, height: 18, background: 'var(--border-r)' }} />
-        <VersionDropdown value={gameVersion} onChange={v => { setGameVersion(v); setOffset(0) }} />
-        <div style={{ width: 1, height: 18, background: 'var(--border-r)' }} />
-        <div style={{ display: 'flex', gap: 4 }}>
-          {LOADERS.map(l => (
-            <FilterChip key={l} active={loader === l} onClick={() => setLoader(l)} color={LOADER_COLOR[l]}>
-              {l === 'All' ? 'All loaders' : l}
-            </FilterChip>
+        {/* Source toggle */}
+        <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: 3, gap: 3, flexShrink: 0 }}>
+          {(['mr', 'cf'] as const).map(src => (
+            <button
+              key={src}
+              onClick={() => { setSource(src); setOffset(0); setResults([]); setCfResults([]) }}
+              style={{
+                height: 26, padding: '0 12px', fontSize: 11, fontWeight: 600,
+                fontFamily: src === 'cf' ? 'inherit' : 'inherit',
+                color: source === src ? '#fff' : 'var(--ink-3)',
+                background: source === src ? (src === 'cf' ? 'var(--ender)' : 'var(--accent)') : 'transparent',
+                border: 'none', borderRadius: 3, cursor: 'pointer',
+                boxShadow: source === src ? 'inset 0 -2px 0 rgba(0,0,0,.25)' : 'none',
+              }}
+            >
+              {src === 'mr' ? t.browse.sourceMr : t.browse.sourceCf}
+            </button>
           ))}
         </div>
       </div>
 
-      <div style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
-        {loading ? t.browse.searching : t.browse.modsFound(total)}
-      </div>
-
-      {loading ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.loading}</div>
-      ) : results.length === 0 ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.noMods}</div>
+      {/* No API key notice */}
+      {source === 'cf' && !cfApiKey ? (
+        <div style={{ padding: '40px 24px', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontFamily: "'VT323',monospace", fontSize: 22, letterSpacing: '.12em', color: 'var(--ender)' }}>
+            {t.browse.noApiKey}
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0, maxWidth: 400 }}>{t.browse.noApiKeyDesc}</p>
+          <a
+            href="#"
+            onClick={e => { e.preventDefault(); window.location.hash = '/settings/' }}
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}
+          >
+            {t.browse.goToSettings}
+          </a>
+        </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-          {results.map(mod => (
-            <ModTile
-              key={mod.project_id}
-              mod={mod}
-              installing={installingId === mod.project_id}
-              installedInInstances={instances.filter(i => i.mods?.some(m => m.projectId === mod.project_id)).length}
-              onInstall={() => setInstallTarget(mod)}
-              onDetail={() => setDetailTarget(mod)}
+        <>
+          {/* Search */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: '0 12px', height: 38 }}>
+            <div style={{ color: 'var(--ink-4)', display: 'flex', alignItems: 'center', flexShrink: 0 }}><SearchIcon /></div>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder={t.browse.searchPlaceholder}
+              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--ink)' }}
             />
-          ))}
-        </div>
-      )}
+            {query && <button onClick={() => setQuery('')} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+          </div>
 
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', paddingTop: 4 }}>
-          <PageBtn disabled={currentPage === 0} onClick={() => doSearch((currentPage - 1) * LIMIT)}>←</PageBtn>
-          <span style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ink-3)', alignSelf: 'center', letterSpacing: '.06em' }}>
-            {currentPage + 1} / {totalPages}
-          </span>
-          <PageBtn disabled={currentPage >= totalPages - 1} onClick={() => doSearch((currentPage + 1) * LIMIT)}>→</PageBtn>
-        </div>
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            {source === 'mr' && (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {CATEGORIES.map(cat => (
+                  <FilterChip key={cat} active={category === cat} onClick={() => setCategory(cat)}>{cat}</FilterChip>
+                ))}
+              </div>
+            )}
+            {source === 'mr' && <div style={{ width: 1, height: 18, background: 'var(--border-r)' }} />}
+            <VersionDropdown value={gameVersion} onChange={v => { setGameVersion(v); setOffset(0) }} />
+            <div style={{ width: 1, height: 18, background: 'var(--border-r)' }} />
+            <div style={{ display: 'flex', gap: 4 }}>
+              {LOADERS.map(l => (
+                <FilterChip key={l} active={loader === l} onClick={() => setLoader(l)} color={LOADER_COLOR[l]}>
+                  {l === 'All' ? t.browse.allLoaders : l}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
+            {loading ? t.browse.searching : t.browse.modsFound(total)}
+          </div>
+
+          {loading ? (
+            <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.loading}</div>
+          ) : source === 'cf' ? (
+            cfResults.length === 0 ? (
+              <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.noMods}</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+                {cfResults.map(mod => (
+                  <CFModTile
+                    key={mod.id}
+                    mod={mod}
+                    installing={installingId === String(mod.id)}
+                    onInstall={() => setCfInstallTarget(mod)}
+                  />
+                ))}
+              </div>
+            )
+          ) : results.length === 0 ? (
+            <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.noMods}</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+              {results.map(mod => (
+                <ModTile
+                  key={mod.project_id}
+                  mod={mod}
+                  installing={installingId === mod.project_id}
+                  installedInInstances={instances.filter(i => i.mods?.some(m => m.projectId === mod.project_id)).length}
+                  onInstall={() => setInstallTarget(mod)}
+                  onDetail={() => setDetailTarget(mod)}
+                />
+              ))}
+            </div>
+          )}
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', paddingTop: 4 }}>
+              <PageBtn disabled={currentPage === 0} onClick={() => doSearch((currentPage - 1) * LIMIT)}>←</PageBtn>
+              <span style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ink-3)', alignSelf: 'center', letterSpacing: '.06em' }}>
+                {currentPage + 1} / {totalPages}
+              </span>
+              <PageBtn disabled={currentPage >= totalPages - 1} onClick={() => doSearch((currentPage + 1) * LIMIT)}>→</PageBtn>
+            </div>
+          )}
+        </>
       )}
 
       {detailTarget && (
@@ -725,6 +810,15 @@ function Browse() {
           instances={instances}
           onClose={() => setInstallTarget(null)}
           onInstall={handleInstall}
+        />
+      )}
+
+      {cfInstallTarget && (
+        <CFInstallModal
+          mod={cfInstallTarget}
+          instances={instances}
+          onClose={() => setCfInstallTarget(null)}
+          onInstall={handleCfInstall}
         />
       )}
 
@@ -828,6 +922,178 @@ function ModTile({ mod, installing, installedInInstances, onInstall, onDetail }:
         >
           {installing ? t.browse.installing : t.browse.install}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── CFModTile ────────────────────────────────────────────────────────────────
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function CFModTile({ mod, installing, onInstall }: { mod: CFProject; installing: boolean; onInstall: () => void }) {
+  const t = useT()
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'var(--surface)',
+        border: `1px solid ${hovered ? 'var(--ender)' : 'var(--border-r)'}`,
+        borderRadius: 'var(--radius)',
+        display: 'flex', flexDirection: 'column',
+        transition: 'border-color .14s',
+      }}
+    >
+      <div style={{ padding: '14px 14px 10px', display: 'flex', gap: 12 }}>
+        {mod.logo?.thumbnailUrl ? (
+          <img src={mod.logo.thumbnailUrl} alt="" style={{ width: 64, height: 64, flexShrink: 0, imageRendering: 'pixelated', border: '1px solid var(--border-r)', borderRadius: 4 }} />
+        ) : (
+          <div style={{ width: 64, height: 64, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 700, color: 'var(--ink-4)' }}>
+            {mod.name[0]}
+          </div>
+        )}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mod.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>↓ {fmtNum(mod.downloadCount)}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {mod.authors.map(a => a.name).join(', ')}
+          </div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+            <Tag color="var(--ender)" key="cf">CurseForge</Tag>
+          </div>
+        </div>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--ink)', margin: '0 14px 10px', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        {mod.summary}
+      </p>
+      <div style={{ padding: '8px 12px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {mod.categories.slice(0, 2).map(cat => <Tag key={cat.id} color="var(--ink-4)">{cat.name}</Tag>)}
+        </div>
+        <button
+          onClick={e => { e.stopPropagation(); onInstall() }}
+          disabled={installing}
+          style={{
+            fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.08em',
+            color: installing ? 'var(--ink-4)' : '#fff',
+            background: installing ? 'var(--surface-3)' : 'var(--ender)',
+            border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
+            padding: '0 32px', height: 36, borderRadius: 3, flexShrink: 0,
+            boxShadow: installing ? 'none' : 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)',
+          }}
+        >
+          {installing ? t.browse.cfInstalling : t.browse.cfInstall}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── CFInstallModal ───────────────────────────────────────────────────────────
+
+function CFInstallModal({ mod, instances, onClose, onInstall }: {
+  mod: CFProject
+  instances: Instance[]
+  onClose: () => void
+  onInstall: (instanceId: string, modId: number, fileId: number, displayName: string) => void
+}) {
+  const t = useT()
+  const [files, setFiles] = useState<CFFile[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(true)
+  const [selectedInst, setSelInst] = useState<Instance | null>(null)
+  const [selectedFile, setSelFile] = useState<CFFile | null>(null)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  useEffect(() => {
+    if (!selectedInst) {
+      api.curseforge.files(mod.id, undefined, undefined)
+        .then(f => { setFiles(f as CFFile[]); setLoadingFiles(false) })
+        .catch(() => setLoadingFiles(false))
+    } else {
+      setLoadingFiles(true)
+      api.curseforge.files(mod.id, selectedInst.minecraftVersion, selectedInst.modLoader ?? undefined)
+        .then(f => { setFiles(f as CFFile[]); setLoadingFiles(false) })
+        .catch(() => setLoadingFiles(false))
+    }
+  }, [mod.id, selectedInst])
+
+  const canInstall = selectedInst !== null && selectedFile !== null
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', width: 660, maxHeight: '78vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {mod.logo?.thumbnailUrl && <img src={mod.logo.thumbnailUrl} alt="" style={{ width: 28, height: 28, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ender)', letterSpacing: '.1em' }}>{t.browse.cfInstallMod}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{mod.name}</div>
+          </div>
+          <button onClick={onClose} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <div style={{ width: 210, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{t.browse.cfSelectInstance}</div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
+              {instances.length === 0
+                ? <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>{t.browse.noInstances}</div>
+                : instances.map(inst => {
+                    const active = selectedInst?.id === inst.id
+                    return (
+                      <button key={inst.id} onClick={() => { setSelInst(inst); setSelFile(null) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 8px', marginBottom: 3, background: active ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, cursor: 'pointer' }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inst.name}</div>
+                        <div style={{ fontFamily: "'VT323',monospace", fontSize: 11, color: 'var(--ink-4)', marginTop: 1 }}>{inst.minecraftVersion} · {inst.modLoader?.toUpperCase() ?? 'VANILLA'}</div>
+                      </button>
+                    )
+                  })
+              }
+            </div>
+          </div>
+
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{t.browse.cfSelectVersion}</div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
+              {loadingFiles
+                ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.cfLoadingFiles}</div>
+                : files.length === 0
+                  ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.cfNoFiles}</div>
+                  : files.map(f => {
+                      const isSel = selectedFile?.id === f.id
+                      const mcVers = f.gameVersions.filter(v => /^\d+\.\d+/.test(v))
+                      return (
+                        <button key={f.id} onClick={() => setSelFile(f)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '7px 8px', marginBottom: 3, background: isSel ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${isSel ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, cursor: 'pointer' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{f.displayName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{mcVers.slice(0, 3).join(', ')}</div>
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--ink-4)', flexShrink: 0, marginLeft: 8 }}>↓ {fmtNum(f.downloadCount)}</div>
+                        </button>
+                      )
+                    })
+              }
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
+            {!selectedInst ? t.browse.selectInstanceHint : !selectedFile ? t.browse.selectVersionHint : t.browse.installingTo(selectedInst.name)}
+          </div>
+          <button disabled={!canInstall} onClick={() => canInstall && onInstall(selectedInst!.id, mod.id, selectedFile!.id, selectedFile!.displayName)} style={{ fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: canInstall ? '#fff' : 'var(--ink-4)', background: canInstall ? 'var(--ender)' : 'var(--surface-3)', border: 'none', cursor: canInstall ? 'pointer' : 'not-allowed', padding: '0 24px', height: 34, boxShadow: canInstall ? 'inset 0 -3px 0 rgba(0,0,0,.3)' : 'none' }}>
+            {t.browse.cfInstallBtn}
+          </button>
+        </div>
       </div>
     </div>
   )

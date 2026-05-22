@@ -549,7 +549,7 @@ function Library() {
   const [serversTarget, setServersTarget] = useState<Instance | null>(null)
   const [updateCounts, setUpdateCounts] = useState<Map<string, number>>(new Map())
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [javas, setJavas] = useState<import('@refract/core').JavaInstallation[]>([])
   const [jarToast, setJarToast] = useState<string | null>(null)
   const [whatsNew, setWhatsNew] = useState<ChangelogEntry[]>(FALLBACK_WHATS_NEW)
@@ -766,11 +766,11 @@ function Library() {
   }, [])
 
   const groups = [...new Set(instances.map(i => i.groupId).filter(Boolean) as string[])].sort()
+  const isGroupedView = carouselTab === 'all' && groups.length > 0
 
   const tabInstances = (() => {
     let base = instances
     if (searchQuery) base = base.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    if (selectedGroup) base = base.filter(i => i.groupId === selectedGroup)
     if (carouselTab === 'pinned') return base.filter(i => i.pinned)
     if (carouselTab === 'recent') return [...base].sort((a, b) => {
       const at = a.lastPlayed ?? a.createdAt
@@ -820,20 +820,6 @@ function Library() {
                 color: 'var(--ink)', fontSize: 12, outline: 'none', width: 180,
               }}
             />
-            {groups.map(g => (
-              <button
-                key={g}
-                onClick={() => { setSelectedGroup(selectedGroup === g ? null : g); setCarouselPage(0) }}
-                style={{
-                  height: 28, padding: '0 10px', borderRadius: 3, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-                  background: selectedGroup === g ? 'var(--accent-tint)' : 'var(--surface-2)',
-                  border: `1px solid ${selectedGroup === g ? 'var(--accent)' : 'var(--border-r)'}`,
-                  color: selectedGroup === g ? 'var(--ink)' : 'var(--ink-3)',
-                }}
-              >
-                {g}
-              </button>
-            ))}
           </div>
         )}
 
@@ -863,16 +849,20 @@ function Library() {
 
           {instances.length > 0 && (
             <div style={{ display: 'flex', gap: 4 }}>
-              <NavBtn disabled={carouselPage === 0} onClick={() => setCarouselPage(p => Math.max(0, p - 1))}>
-                <ChevLeftIcon />
-              </NavBtn>
-              <NavBtn disabled={carouselPage >= totalPages - 1} onClick={() => setCarouselPage(p => Math.min(totalPages - 1, p + 1))}>
-                <ChevRightIcon />
-              </NavBtn>
+              {!isGroupedView && (
+                <>
+                  <NavBtn disabled={carouselPage === 0} onClick={() => setCarouselPage(p => Math.max(0, p - 1))}>
+                    <ChevLeftIcon />
+                  </NavBtn>
+                  <NavBtn disabled={carouselPage >= totalPages - 1} onClick={() => setCarouselPage(p => Math.min(totalPages - 1, p + 1))}>
+                    <ChevRightIcon />
+                  </NavBtn>
+                </>
+              )}
               <button
                 onClick={() => setCreateOpen(true)}
                 style={{
-                  marginLeft: 4,
+                  marginLeft: isGroupedView ? 0 : 4,
                   fontSize: 11, fontWeight: 600,
                   color: 'var(--ink-2)',
                   background: 'var(--surface)',
@@ -895,6 +885,90 @@ function Library() {
           </div>
         ) : instances.length === 0 ? (
           <EmptyState onOpen={() => setCreateOpen(true)} />
+        ) : isGroupedView ? (
+          (() => {
+            const filtered = searchQuery
+              ? instances.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
+              : instances
+            const sections: Array<{ key: string; title: string; items: Instance[] }> = groups
+              .map(g => ({ key: g, title: g, items: filtered.filter(i => i.groupId === g) }))
+              .filter(s => s.items.length > 0)
+            const ungrouped = filtered.filter(i => !i.groupId)
+            if (ungrouped.length > 0) sections.push({ key: '__ungrouped__', title: '', items: ungrouped })
+
+            if (sections.length === 0) return (
+              <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-4)', fontSize: 13 }}>
+                {t.home.nothingHere}
+              </div>
+            )
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {sections.map(section => {
+                  const isCollapsed = collapsedGroups.has(section.key)
+                  return (
+                    <div key={section.key}>
+                      <button
+                        onClick={() => setCollapsedGroups(prev => {
+                          const next = new Set(prev)
+                          if (next.has(section.key)) next.delete(section.key)
+                          else next.add(section.key)
+                          return next
+                        })}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0',
+                          background: 'none', border: 'none', borderBottom: '1px solid var(--line)',
+                          cursor: 'pointer', width: '100%', marginBottom: isCollapsed ? 0 : 10,
+                        }}
+                      >
+                        <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>{isCollapsed ? '▶' : '▼'}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
+                          {section.title || t.home.ungrouped}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 8, padding: '0 6px', lineHeight: 1.7 }}>
+                          {section.items.length}
+                        </span>
+                      </button>
+                      {!isCollapsed && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                          {section.items.map(inst => {
+                            const needed = requiredJava(inst.minecraftVersion)
+                            const javaOk = javas.some(j => j.version >= needed)
+                            return (
+                              <InstanceCard
+                                key={inst.id}
+                                instance={inst}
+                                onLaunch={() => handleLaunch(inst)}
+                                onEdit={() => setEditTarget(inst)}
+                                onConsole={() => setConsoleOpen(inst.id)}
+                                onMods={() => setModsTarget(inst)}
+                                onOpenFolder={() => api.instance.openFolder(inst.id)}
+                                onServers={() => setServersTarget(inst)}
+                                onDropJar={async (path) => {
+                                  try {
+                                    await api.mods.installLocal(inst.id, path)
+                                    setJarToast(`Mod installed to "${inst.name}"`)
+                                  } catch (e) {
+                                    setJarToast(`Install failed: ${e instanceof Error ? e.message : String(e)}`)
+                                  }
+                                  setTimeout(() => setJarToast(null), 3500)
+                                }}
+                                blockReason={!hasProfile ? 'no-profile' : !canPlayMinecraft ? 'no-license' : null}
+                                isRunning={runningIds.has(inst.id)}
+                                hasLogs={(consoleLogs.get(inst.id)?.length ?? 0) > 0}
+                                updateCount={updateCounts.get(inst.id) ?? 0}
+                                javaOk={javaOk}
+                              />
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()
         ) : tabInstances.length === 0 ? (
           <div style={{
             height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,

@@ -15,6 +15,7 @@ declare global {
           windowBounds: { width: number; height: number; x?: number; y?: number }
           defaultMemoryMb: number
           onboardingDone: boolean
+          curseforgeApiKey?: string
           accounts: Array<{
             uuid: string
             username: string
@@ -187,6 +188,12 @@ declare global {
         onProgress: (cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => () => void
         onLog: (cb: (data: { instanceId: string; line: string; stream: string }) => void) => () => void
         onExit: (cb: (data: { instanceId: string; code: number | null; error?: string }) => void) => () => void
+      }
+      curseforge: {
+        searchMods:     (query?: string, gameVersion?: string, loader?: string, pageSize?: number, index?: number) => Promise<import('@refract/core').CFSearchResult>
+        searchModpacks: (query?: string, gameVersion?: string, pageSize?: number, index?: number) => Promise<import('@refract/core').CFSearchResult>
+        files:          (modId: number, gameVersion?: string, loader?: string) => Promise<import('@refract/core').CFFile[]>
+        install:        (instanceId: string, modId: number, fileId: number, displayName: string) => Promise<void>
       }
     }
   }

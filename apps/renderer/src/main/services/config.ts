@@ -8,6 +8,7 @@ export interface AppConfig {
   windowBounds: { width: number; height: number; x?: number; y?: number }
   defaultMemoryMb: number
   onboardingDone: boolean
+  curseforgeApiKey?: string
   accounts: Array<{
     uuid: string
     username: string

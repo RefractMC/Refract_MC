@@ -27,6 +27,7 @@ function Settings() {
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
   const [activeAccount, setActiveAccount] = useState<SafeAccount | null>(null)
+  const [cfKeyDraft, setCfKeyDraft] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -61,6 +62,7 @@ function Settings() {
     ])
     setConfig(nextConfig)
     setMemoryMb(nextConfig.defaultMemoryMb ?? 2048)
+    setCfKeyDraft(nextConfig.curseforgeApiKey ?? '')
     setAccounts(nextAccounts)
     setActiveAccount(nextActive)
   }
@@ -249,6 +251,35 @@ function Settings() {
                     {t.settings.langUk}
                   </SegmentButton>
                 </Segmented>
+              </Field>
+
+              <Field label={t.settings.curseforgeKey} note={t.settings.curseforgeKeyNote}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="password"
+                    value={cfKeyDraft}
+                    onChange={e => setCfKeyDraft(e.target.value)}
+                    placeholder={t.settings.curseforgeKeyPlaceholder}
+                    style={{
+                      flex: 1, height: 32, padding: '0 10px',
+                      background: 'var(--bg)', border: '1px solid var(--border-r)',
+                      borderRadius: 3, color: 'var(--ink)', fontSize: 12, outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={async () => {
+                      await api.config.set('curseforgeApiKey', cfKeyDraft.trim() || undefined)
+                      showToast(t.settings.curseforgeKeySaved)
+                    }}
+                    style={{
+                      height: 32, padding: '0 14px', fontSize: 12, fontWeight: 600,
+                      background: 'var(--accent)', color: '#fff', border: 'none',
+                      borderRadius: 3, cursor: 'pointer',
+                    }}
+                  >
+                    {t.account.save}
+                  </button>
+                </div>
               </Field>
             </div>
           </Panel>

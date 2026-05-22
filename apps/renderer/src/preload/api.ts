@@ -101,6 +101,16 @@ export const api = {
     add:    (username: string)    => ipcRenderer.invoke('friends.add', username),
     remove: (uuid: string)        => ipcRenderer.invoke('friends.remove', uuid),
   },
+  curseforge: {
+    searchMods:    (query?: string, gameVersion?: string, loader?: string, pageSize?: number, index?: number) =>
+      ipcRenderer.invoke('curseforge.searchMods', query, gameVersion, loader, pageSize, index),
+    searchModpacks:(query?: string, gameVersion?: string, pageSize?: number, index?: number) =>
+      ipcRenderer.invoke('curseforge.searchModpacks', query, gameVersion, pageSize, index),
+    files:         (modId: number, gameVersion?: string, loader?: string) =>
+      ipcRenderer.invoke('curseforge.files', modId, gameVersion, loader),
+    install:       (instanceId: string, modId: number, fileId: number, displayName: string) =>
+      ipcRenderer.invoke('curseforge.install', instanceId, modId, fileId, displayName),
+  },
   java: {
     managedList: (): Promise<import('@refract/core').JavaInstallation[]> => ipcRenderer.invoke('java.managedList'),
     requiredFor: (mcVersion: string): Promise<number> => ipcRenderer.invoke('java.requiredFor', mcVersion),
