@@ -14,7 +14,81 @@ const LOADER_COLOR: Record<string, string> = {
   fabric: '#b8a892', forge: '#4b8fc4', quilt: '#b070b0', neoforge: '#e8883c',
 }
 
-// ─── MC Version Dropdown ─────────────────────────────────────────────────────
+interface ModrinthProjectDetail {
+  id: string
+  slug: string
+  title: string
+  description: string
+  body: string
+  categories: string[]
+  client_side: string
+  server_side: string
+  downloads: number
+  followers: number
+  icon_url: string | null
+  gallery: Array<{ url: string; featured: boolean; title?: string; description?: string }>
+  game_versions: string[]
+  loaders: string[]
+  issues_url?: string | null
+  source_url?: string | null
+  discord_url?: string | null
+  published?: string
+  updated?: string
+}
+
+function stripMarkdown(text: string): string {
+  return (text ?? '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/!\[.*?\]\(.*?\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/[^\S\n]*\n[^\S\n]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[​-‍﻿‎‏]/g, '')
+    .trim()
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatDownloads(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function bestVersionForInstance(versions: ModrinthVersion[], instance: Instance): ModrinthVersion | null {
+  const mcVer = instance.minecraftVersion
+  const loader = instance.modLoader?.toLowerCase()
+  const exact = versions.filter(v =>
+    v.game_versions.includes(mcVer) && (!loader || v.loaders.some(l => l.toLowerCase() === loader))
+  )
+  if (exact.length > 0) return exact[0]
+  const mcOnly = versions.filter(v => v.game_versions.includes(mcVer))
+  if (mcOnly.length > 0) return mcOnly[0]
+  return null
+}
+
+function versionCompatibility(v: ModrinthVersion, instance: Instance | null): 'compatible' | 'partial' | 'incompatible' {
+  if (!instance) return 'compatible'
+  const mcOk = v.game_versions.includes(instance.minecraftVersion)
+  const loader = instance.modLoader?.toLowerCase()
+  const loaderOk = !loader || v.loaders.some(l => l.toLowerCase() === loader)
+  if (mcOk && loaderOk) return 'compatible'
+  if (mcOk && !loaderOk) return 'partial'
+  return 'incompatible'
+}
+
+// ─── VersionDropdown ──────────────────────────────────────────────────────────
 
 function VersionDropdown({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const [open, setOpen] = useState(false)
@@ -42,7 +116,6 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
   }
 
   const active = value !== null
-
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
@@ -62,17 +135,13 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
         {active ? `MC ${value}` : 'All versions'}
         <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>{open ? '▲' : '▼'}</span>
       </button>
-
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 40,
           background: 'var(--surface)', border: '1px solid var(--border-r)',
-          borderRadius: 'var(--radius)',
-          boxShadow: '0 8px 24px rgba(0,0,0,.5)',
-          width: 140, maxHeight: 260, overflowY: 'auto',
-          display: 'flex', flexDirection: 'column',
+          borderRadius: 'var(--radius)', boxShadow: '0 8px 24px rgba(0,0,0,.5)',
+          width: 140, maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column',
         }}>
-          {/* Clear */}
           <button
             onClick={() => { onChange(null); setOpen(false) }}
             style={{
@@ -84,7 +153,6 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
           >
             All versions
           </button>
-
           {loading ? (
             <div style={{ padding: '12px', fontSize: 11, color: 'var(--ink-4)', textAlign: 'center' }}>Loading…</div>
           ) : (
@@ -110,46 +178,7 @@ function VersionDropdown({ value, onChange }: { value: string | null; onChange: 
   )
 }
 
-function formatDownloads(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return String(n)
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
-function bestVersionForInstance(versions: ModrinthVersion[], instance: Instance): ModrinthVersion | null {
-  const mcVer = instance.minecraftVersion
-  const loader = instance.modLoader?.toLowerCase()
-
-  // Exact match: right MC version AND right loader
-  const exact = versions.filter(v =>
-    v.game_versions.includes(mcVer) &&
-    (!loader || v.loaders.some(l => l.toLowerCase() === loader))
-  )
-  if (exact.length > 0) return exact[0]
-
-  // Fallback: at least right MC version
-  const mcOnly = versions.filter(v => v.game_versions.includes(mcVer))
-  if (mcOnly.length > 0) return mcOnly[0]
-
-  return null
-}
-
-function versionCompatibility(v: ModrinthVersion, instance: Instance | null): 'best' | 'compatible' | 'partial' | 'incompatible' {
-  if (!instance) return 'compatible'
-  const mcOk = v.game_versions.includes(instance.minecraftVersion)
-  const loader = instance.modLoader?.toLowerCase()
-  const loaderOk = !loader || v.loaders.some(l => l.toLowerCase() === loader)
-
-  if (mcOk && loaderOk) return 'compatible'
-  if (mcOk && !loaderOk) return 'partial'
-  return 'incompatible'
-}
-
-// ─── Install modal ──────────────────────────────────────────────────────────
+// ─── InstallModal ─────────────────────────────────────────────────────────────
 
 interface InstallModalProps {
   mod: ModrinthProject
@@ -167,14 +196,10 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
   useEffect(() => {
     setLoadingVersions(true)
     api.modrinth.versions(mod.project_id)
-      .then(v => {
-        setVersions(v)
-        setLoadingVersions(false)
-      })
+      .then(v => { setVersions(v); setLoadingVersions(false) })
       .catch(() => setLoadingVersions(false))
   }, [mod.project_id])
 
-  // Auto-select best version when instance changes
   useEffect(() => {
     if (!selectedInstance || versions.length === 0) return
     const best = bestVersionForInstance(versions, selectedInstance)
@@ -185,18 +210,10 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={onClose}
     >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--surface)', border: '1px solid var(--border-r)',
-          borderRadius: 'var(--radius)', width: 680, maxHeight: '80vh',
-          display: 'flex', flexDirection: 'column',
-        }}
-      >
-        {/* Header */}
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', width: 680, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {mod.icon_url && (
             <img src={mod.icon_url} alt="" style={{ width: 32, height: 32, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />
@@ -208,9 +225,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
           <button onClick={onClose} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
 
-        {/* Body */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          {/* Left: Instance picker */}
           <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '10px 14px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>
               1. Select Instance
@@ -222,17 +237,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                 const active = selectedInstance?.id === inst.id
                 const alreadyHas = inst.mods?.some(m => m.projectId === mod.project_id)
                 return (
-                  <button
-                    key={inst.id}
-                    onClick={() => setSelectedInstance(inst)}
-                    style={{
-                      display: 'block', width: '100%', textAlign: 'left',
-                      padding: '8px 10px', marginBottom: 4,
-                      background: active ? 'var(--accent-tint)' : 'var(--surface-2)',
-                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border-r)'}`,
-                      borderRadius: 3, cursor: 'pointer',
-                    }}
-                  >
+                  <button key={inst.id} onClick={() => setSelectedInstance(inst)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 4, background: active ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, cursor: 'pointer' }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{inst.name}</span>
                       {alreadyHas && <span style={{ fontSize: 9, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 2, padding: '0 3px', flexShrink: 0 }}>✓</span>}
@@ -246,7 +251,6 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
             </div>
           </div>
 
-          {/* Right: Version picker */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
               2. Select Version
@@ -256,7 +260,6 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                 </span>
               )}
             </div>
-
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {loadingVersions ? (
                 <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>Loading versions…</div>
@@ -264,48 +267,17 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                 <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>No versions found.</div>
               ) : versions.map(v => {
                 const compat = versionCompatibility(v, selectedInstance)
-                const isBest = selectedInstance
-                  ? bestVersionForInstance(versions, selectedInstance)?.id === v.id
-                  : false
+                const isBest = selectedInstance ? bestVersionForInstance(versions, selectedInstance)?.id === v.id : false
                 const isSelected = selectedVersionId === v.id
                 const dimmed = compat === 'incompatible' && !isSelected
-
                 return (
-                  <button
-                    key={v.id}
-                    onClick={() => setSelectedVersionId(v.id)}
-                    style={{
-                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-                      width: '100%', textAlign: 'left',
-                      padding: '8px 10px', marginBottom: 4,
-                      background: isBest ? 'rgba(91,156,58,.12)' : isSelected ? 'var(--accent-tint)' : 'var(--surface-2)',
-                      border: `1px solid ${isBest ? 'var(--grass)' : isSelected ? 'var(--accent)' : 'var(--border-r)'}`,
-                      borderRadius: 3, cursor: 'pointer',
-                      opacity: dimmed ? 0.45 : 1,
-                    }}
-                  >
+                  <button key={v.id} onClick={() => setSelectedVersionId(v.id)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 4, background: isBest ? 'rgba(91,156,58,.12)' : isSelected ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${isBest ? 'var(--grass)' : isSelected ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, cursor: 'pointer', opacity: dimmed ? 0.45 : 1 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{v.version_number}</span>
-                        {isBest && (
-                          <span style={{
-                            fontFamily: "'VT323',monospace", fontSize: 11, letterSpacing: '.06em',
-                            color: '#fff', background: 'var(--grass)',
-                            padding: '0 5px', borderRadius: 2,
-                          }}>
-                            RECOMMENDED
-                          </span>
-                        )}
-                        {compat === 'partial' && !isBest && (
-                          <span style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 2, padding: '0 4px' }}>
-                            loader mismatch
-                          </span>
-                        )}
-                        {compat === 'incompatible' && (
-                          <span style={{ fontSize: 10, color: 'var(--redstone)', border: '1px solid var(--redstone)', borderRadius: 2, padding: '0 4px' }}>
-                            incompatible
-                          </span>
-                        )}
+                        {isBest && <span style={{ fontFamily: "'VT323',monospace", fontSize: 11, letterSpacing: '.06em', color: '#fff', background: 'var(--grass)', padding: '0 5px', borderRadius: 2 }}>RECOMMENDED</span>}
+                        {compat === 'partial' && !isBest && <span style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 2, padding: '0 4px' }}>loader mismatch</span>}
+                        {compat === 'incompatible' && <span style={{ fontSize: 10, color: 'var(--redstone)', border: '1px solid var(--redstone)', borderRadius: 2, padding: '0 4px' }}>incompatible</span>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 3, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <span>{v.game_versions.slice(0, 3).join(', ')}{v.game_versions.length > 3 ? '…' : ''}</span>
@@ -324,7 +296,6 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
             {!selectedInstance && 'Select an instance'}
@@ -334,14 +305,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
           <button
             disabled={!canInstall}
             onClick={() => canInstall && onInstall(selectedInstance!.id, selectedVersionId!)}
-            style={{
-              fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em',
-              color: canInstall ? '#fff' : 'var(--ink-4)',
-              background: canInstall ? 'var(--accent)' : 'var(--surface-3)',
-              border: 'none', cursor: canInstall ? 'pointer' : 'not-allowed',
-              padding: '0 28px', height: 36,
-              boxShadow: canInstall ? 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)' : 'none',
-            }}
+            style={{ fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: canInstall ? '#fff' : 'var(--ink-4)', background: canInstall ? 'var(--accent)' : 'var(--surface-3)', border: 'none', cursor: canInstall ? 'pointer' : 'not-allowed', padding: '0 28px', height: 36, boxShadow: canInstall ? 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)' : 'none' }}
           >
             INSTALL
           </button>
@@ -351,7 +315,238 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
   )
 }
 
-// ─── Browse ──────────────────────────────────────────────────────────────────
+// ─── ModDetailModal ───────────────────────────────────────────────────────────
+
+function ModDetailModal({ mod, onClose, onInstall }: {
+  mod: ModrinthProject
+  onClose: () => void
+  onInstall: () => void
+}) {
+  const [detail, setDetail] = useState<ModrinthProjectDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`https://api.modrinth.com/v2/project/${mod.project_id}`, {
+      headers: { 'User-Agent': 'Refract/1.0 (github.com/ShevRuslan1)', Accept: 'application/json' },
+    })
+      .then(r => r.ok ? r.json() as Promise<ModrinthProjectDetail> : null)
+      .then(d => { setDetail(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [mod.project_id])
+
+  const gallery = detail?.gallery ?? []
+  const loaders = detail?.loaders ?? mod.loaders ?? []
+  const gameVersions = detail?.game_versions ?? mod.game_versions ?? []
+  const followers = detail?.followers ?? mod.follows
+  const modrinthUrl = `https://modrinth.com/mod/${mod.slug ?? mod.project_id}`
+
+  const bodyText = detail?.body ? stripMarkdown(detail.body) : mod.description
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 75, background: 'rgba(0,0,0,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '86vw', maxWidth: 960, maxHeight: '90vh', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16, flexShrink: 0 }}>
+          {mod.icon_url ? (
+            <img src={mod.icon_url} alt="" style={{ width: 72, height: 72, flexShrink: 0, imageRendering: 'pixelated', border: '1px solid var(--border-r)', borderRadius: 6 }} />
+          ) : (
+            <div style={{ width: 72, height: 72, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: 'var(--ink-4)' }}>
+              {mod.title[0]}
+            </div>
+          )}
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>{mod.title}</div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--ink-3)', flexWrap: 'wrap', marginBottom: 5 }}>
+              <span>↓ {formatDownloads(mod.downloads)} downloads</span>
+              {followers != null && <span>♥ {formatDownloads(followers)} followers</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {loaders.map(l => (
+                <Tag key={l} color={LOADER_COLOR[l] ?? 'var(--ink-4)'}>{l}</Tag>
+              ))}
+              {gameVersions.length > 0 && (
+                <Tag color="var(--diamond)">
+                  MC {gameVersions[0]}{gameVersions.length > 1 ? ` – ${gameVersions[gameVersions.length - 1]}` : ''}
+                </Tag>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'flex-start' }}>
+            <button
+              onClick={() => window.open(modrinthUrl)}
+              style={{ height: 32, padding: '0 14px', fontSize: 12, fontWeight: 600, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 3, cursor: 'pointer' }}
+            >
+              Modrinth ↗
+            </button>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 4 }}>✕</button>
+          </div>
+        </div>
+
+        {/* Gallery */}
+        {gallery.length > 0 && (
+          <div style={{ borderBottom: '1px solid var(--line)', padding: '10px 22px', overflowX: 'auto', display: 'flex', gap: 8, flexShrink: 0 }}>
+            {gallery.map((img, i) => (
+              <div
+                key={i}
+                onClick={() => setGalleryIndex(i)}
+                style={{ flexShrink: 0, cursor: 'pointer', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border-r)', height: 130 }}
+              >
+                <img
+                  src={img.url}
+                  alt={img.title ?? ''}
+                  style={{ height: '100%', width: 'auto', display: 'block', objectFit: 'cover' }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}>
+          {/* Description */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px' }}>
+            {loading ? (
+              <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>Loading details…</div>
+            ) : (
+              <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
+                {bodyText}
+              </p>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div style={{ width: 210, flexShrink: 0, borderLeft: '1px solid var(--line)', padding: '18px 16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Categories */}
+            {mod.categories.length > 0 && (
+              <div>
+                <SideLabel>Categories</SideLabel>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                  {mod.categories.map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
+                </div>
+              </div>
+            )}
+
+            {/* Environment */}
+            {detail && (
+              <div>
+                <SideLabel>Environment</SideLabel>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Client</span>
+                    <span style={{ color: detail.client_side === 'required' ? 'var(--grass)' : detail.client_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
+                      {detail.client_side}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Server</span>
+                    <span style={{ color: detail.server_side === 'required' ? 'var(--grass)' : detail.server_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
+                      {detail.server_side}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dates */}
+            {detail?.published && (
+              <div>
+                <SideLabel>Published</SideLabel>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>{formatDate(detail.published)}</div>
+                {detail.updated && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>Updated {formatDate(detail.updated)}</div>}
+              </div>
+            )}
+
+            {/* Links */}
+            {detail && (detail.issues_url || detail.source_url || detail.discord_url) && (
+              <div>
+                <SideLabel>Links</SideLabel>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {detail.issues_url && (
+                    <button onClick={() => window.open(detail.issues_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      🐛 Issues ↗
+                    </button>
+                  )}
+                  {detail.source_url && (
+                    <button onClick={() => window.open(detail.source_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      {'</>'} Source ↗
+                    </button>
+                  )}
+                  {detail.discord_url && (
+                    <button onClick={() => window.open(detail.discord_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      💬 Discord ↗
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Install CTA */}
+            <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+              <button
+                onClick={onInstall}
+                style={{ width: '100%', height: 36, fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: '#fff', background: 'var(--accent)', border: 'none', cursor: 'pointer', boxShadow: 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)' }}
+              >
+                INSTALL
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {galleryIndex !== null && gallery[galleryIndex] && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setGalleryIndex(null)}
+        >
+          <img
+            src={gallery[galleryIndex].url}
+            alt=""
+            style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-r)' }}
+            onClick={e => e.stopPropagation()}
+          />
+          {gallery.length > 1 && (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); setGalleryIndex(i => i !== null ? (i - 1 + gallery.length) % gallery.length : 0) }}
+                style={{ position: 'absolute', left: 24, fontSize: 28, color: '#fff', background: 'rgba(0,0,0,.5)', border: 'none', cursor: 'pointer', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ‹
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); setGalleryIndex(i => i !== null ? (i + 1) % gallery.length : 0) }}
+                style={{ position: 'absolute', right: 24, fontSize: 28, color: '#fff', background: 'rgba(0,0,0,.5)', border: 'none', cursor: 'pointer', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ›
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setGalleryIndex(null)}
+            style={{ position: 'absolute', top: 16, right: 20, fontSize: 22, color: '#fff', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SideLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+      {children}
+    </div>
+  )
+}
+
+// ─── Browse ───────────────────────────────────────────────────────────────────
 
 function Browse() {
   const [query, setQuery] = useState('')
@@ -365,6 +560,7 @@ function Browse() {
   const LIMIT = 18
 
   const [instances, setInstances] = useState<Instance[]>([])
+  const [detailTarget, setDetailTarget] = useState<ModrinthProject | null>(null)
   const [installTarget, setInstallTarget] = useState<ModrinthProject | null>(null)
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
@@ -468,7 +664,7 @@ function Browse() {
       ) : results.length === 0 ? (
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>No mods found. Try a different search.</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
           {results.map(mod => (
             <ModTile
               key={mod.project_id}
@@ -476,6 +672,7 @@ function Browse() {
               installing={installingId === mod.project_id}
               installedInInstances={instances.filter(i => i.mods?.some(m => m.projectId === mod.project_id)).length}
               onInstall={() => setInstallTarget(mod)}
+              onDetail={() => setDetailTarget(mod)}
             />
           ))}
         </div>
@@ -489,6 +686,14 @@ function Browse() {
           </span>
           <PageBtn disabled={currentPage >= totalPages - 1} onClick={() => doSearch((currentPage + 1) * LIMIT)}>→</PageBtn>
         </div>
+      )}
+
+      {detailTarget && (
+        <ModDetailModal
+          mod={detailTarget}
+          onClose={() => setDetailTarget(null)}
+          onInstall={() => setInstallTarget(detailTarget)}
+        />
       )}
 
       {installTarget && (
@@ -506,7 +711,7 @@ function Browse() {
           display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 18px', background: 'var(--surface-2)', border: '1px solid var(--border-r)',
           borderRadius: 'var(--radius)', boxShadow: '0 8px 24px rgba(0,0,0,.5)',
-          fontSize: 13, color: 'var(--ink)', zIndex: 70,
+          fontSize: 13, color: 'var(--ink)', zIndex: 100,
         }}>
           <div style={{ width: 8, height: 8, background: toast.ok ? 'var(--grass)' : 'var(--lava)', flexShrink: 0 }} />
           {toast.msg}
@@ -518,63 +723,93 @@ function Browse() {
 
 // ─── ModTile ──────────────────────────────────────────────────────────────────
 
-function ModTile({ mod, installing, installedInInstances, onInstall }: {
+function ModTile({ mod, installing, installedInInstances, onInstall, onDetail }: {
   mod: ModrinthProject
   installing: boolean
   installedInInstances: number
   onInstall: () => void
+  onDetail: () => void
 }) {
+  const [hovered, setHovered] = useState(false)
   const loaders = mod.loaders ?? []
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div
+      onClick={onDetail}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'var(--surface)',
+        border: `1px solid ${hovered ? 'var(--accent)' : 'var(--border-r)'}`,
+        borderRadius: 'var(--radius)',
+        cursor: 'pointer',
+        display: 'flex', flexDirection: 'column',
+        transition: 'border-color .14s',
+      }}
+    >
+      {/* Top: icon + name + stats */}
+      <div style={{ padding: '14px 14px 10px', display: 'flex', gap: 12 }}>
         {mod.icon_url ? (
-          <img src={mod.icon_url} alt="" style={{ width: 36, height: 36, flexShrink: 0, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />
+          <img
+            src={mod.icon_url}
+            alt=""
+            style={{ width: 64, height: 64, flexShrink: 0, imageRendering: 'pixelated', border: '1px solid var(--border-r)', borderRadius: 4 }}
+          />
         ) : (
-          <div style={{ width: 36, height: 36, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'var(--ink-4)' }}>
+          <div style={{ width: 64, height: 64, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 700, color: 'var(--ink-4)' }}>
             {mod.title[0]}
           </div>
         )}
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mod.title}</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{loaders.slice(0, 3).join(' · ') || 'unknown'}</div>
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {mod.title}
+          </div>
+          <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--ink-4)' }}>
+            <span>↓ {formatDownloads(mod.downloads)}</span>
+            {mod.follows != null && <span>♥ {formatDownloads(mod.follows)}</span>}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {loaders.slice(0, 4).join(' · ') || 'universal'}
+          </div>
+          {installedInInstances > 0 && (
+            <div style={{ fontSize: 10, color: 'var(--grass)', border: '1px solid var(--grass)', borderRadius: 2, padding: '1px 5px', width: 'fit-content', opacity: 0.9 }}>
+              ✓ {installedInInstances} instance{installedInInstances > 1 ? 's' : ''}
+            </div>
+          )}
         </div>
       </div>
 
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: 0, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+      {/* Description */}
+      <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 14px 10px', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
         {mod.description}
       </p>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
+      {/* Footer */}
+      <div style={{ padding: '8px 12px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {mod.categories.slice(0, 2).map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
-          {installedInInstances > 0 && (
-            <Tag color="var(--grass)">✓ {installedInInstances} instance{installedInInstances > 1 ? 's' : ''}</Tag>
-          )}
         </div>
-        <span style={{ fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
-          ↓ {formatDownloads(mod.downloads)}
-        </span>
+        <button
+          onClick={e => { e.stopPropagation(); onInstall() }}
+          disabled={installing}
+          style={{
+            fontFamily: "'VT323',monospace", fontSize: 14, letterSpacing: '.08em',
+            color: installing ? 'var(--ink-4)' : '#fff',
+            background: installing ? 'var(--surface-3)' : 'var(--accent)',
+            border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
+            padding: '0 16px', height: 28, borderRadius: 3, flexShrink: 0,
+            boxShadow: installing ? 'none' : 'inset 0 -2px 0 var(--accent-lo), inset 0 2px 0 var(--accent-hi)',
+          }}
+        >
+          {installing ? '…' : 'INSTALL'}
+        </button>
       </div>
-
-      <button
-        onClick={onInstall}
-        disabled={installing}
-        style={{
-          marginTop: 4, width: '100%', height: 30,
-          fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.1em',
-          color: installing ? 'var(--ink-4)' : '#fff',
-          background: installing ? 'var(--surface-3)' : 'var(--accent)',
-          border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
-          boxShadow: installing ? 'inset 0 -3px 0 rgba(0,0,0,.28)' : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
-        }}
-      >
-        {installing ? 'INSTALLING…' : 'INSTALL'}
-      </button>
     </div>
   )
 }
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function FilterChip({ active, onClick, children, color }: { active: boolean; onClick: () => void; children: React.ReactNode; color?: string }) {
   const c = color ?? 'var(--accent)'

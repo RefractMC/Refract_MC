@@ -12,22 +12,46 @@ export const Route = createFileRoute('/modpacks/')({ component: ContentBrowser }
 type ContentTab = ModrinthProjectType & ('modpack' | 'resourcepack' | 'shader' | 'datapack')
 
 const TABS: Array<{ type: ContentTab; label: string; icon: string; showLoader: boolean }> = [
-  { type: 'modpack',     label: 'Modpacks',       icon: '📦', showLoader: true  },
-  { type: 'resourcepack',label: 'Resource Packs',  icon: '🎨', showLoader: true  },
-  { type: 'shader',      label: 'Shaders',         icon: '✨', showLoader: false },
-  { type: 'datapack',    label: 'Data Packs',      icon: '📜', showLoader: false },
+  { type: 'modpack',     label: 'Modpacks',      icon: '📦', showLoader: true  },
+  { type: 'resourcepack',label: 'Resource Packs', icon: '🎨', showLoader: true  },
+  { type: 'shader',      label: 'Shaders',        icon: '✨', showLoader: false },
+  { type: 'datapack',    label: 'Data Packs',     icon: '📜', showLoader: false },
 ]
 
 const SORT_OPTIONS: Array<{ label: string; value: ModrinthSortIndex }> = [
-  { label: 'Most Downloaded', value: 'downloads' },
-  { label: 'Most Followed',   value: 'follows'   },
-  { label: 'Newest',          value: 'newest'    },
-  { label: 'Recently Updated',value: 'updated'   },
-  { label: 'Relevance',       value: 'relevance' },
+  { label: 'Most Downloaded',  value: 'downloads' },
+  { label: 'Most Followed',    value: 'follows'   },
+  { label: 'Newest',           value: 'newest'    },
+  { label: 'Recently Updated', value: 'updated'   },
+  { label: 'Relevance',        value: 'relevance' },
 ]
 
 const LOADERS = ['fabric', 'forge', 'quilt', 'neoforge']
 const LIMIT = 20
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ModrinthProjectDetail {
+  id: string
+  slug: string
+  title: string
+  description: string
+  body: string
+  categories: string[]
+  client_side: string
+  server_side: string
+  downloads: number
+  followers: number
+  icon_url: string | null
+  gallery: Array<{ url: string; featured: boolean; title?: string; description?: string }>
+  game_versions: string[]
+  loaders: string[]
+  issues_url?: string | null
+  source_url?: string | null
+  discord_url?: string | null
+  published?: string
+  updated?: string
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,10 +70,58 @@ function loaderLabel(l: string): string {
   return l.charAt(0).toUpperCase() + l.slice(1)
 }
 
-// ─── MC Version picker (same pattern as Browse page) ─────────────────────────
+function stripMarkdown(text: string): string {
+  return (text ?? '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/!\[.*?\]\(.*?\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/[^\S\n]*\n[^\S\n]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[​-‍﻿‎‏]/g, '')
+    .trim()
+}
+
+function tabColor(tab: ContentTab): string {
+  return tab === 'modpack' ? 'var(--ender)' : 'var(--accent)'
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+
+function Tag({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <span style={{ fontSize: 10, fontWeight: 500, color, border: `1px solid ${color}`, borderRadius: 2, padding: '1px 5px', opacity: 0.85 }}>
+      {children}
+    </span>
+  )
+}
+
+function SideLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+      {children}
+    </div>
+  )
+}
+
+function PageBtn({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button disabled={disabled} onClick={onClick} style={{ width: 32, height: 28, fontFamily: "'VT323',monospace", fontSize: 18, color: disabled ? 'var(--ink-4)' : 'var(--ink)', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? .4 : 1 }}>
+      {children}
+    </button>
+  )
+}
+
+// ─── MC Version picker ────────────────────────────────────────────────────────
 
 function VersionDropdown({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  const [open, setOpen]       = useState(false)
+  const [open, setOpen]         = useState(false)
   const [versions, setVersions] = useState<string[]>([])
   const [loading, setLoading]   = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -169,90 +241,330 @@ function SortDropdown({ value, onChange }: { value: ModrinthSortIndex; onChange:
   )
 }
 
-// ─── Content Card ─────────────────────────────────────────────────────────────
+// ─── ContentCard (tile) ───────────────────────────────────────────────────────
 
-function ContentCard({ project, tab, onInstall, installing }: {
+function ContentCard({ project, tab, onInstall, onDetail, installing }: {
   project: ModrinthProject
   tab: ContentTab
   onInstall: () => void
+  onDetail: () => void
   installing: boolean
 }) {
+  const [hovered, setHovered] = useState(false)
+  const loaders = project.loaders ?? []
   const isModpack = tab === 'modpack'
+  const accent = tabColor(tab)
+  const tabInfo = TABS.find(t => t.type === tab)!
+
   return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border-r)',
-      borderRadius: 'var(--radius)', padding: '12px 14px',
-      display: 'flex', flexDirection: 'column', gap: 7,
-    }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        {project.icon_url
-          ? <img src={project.icon_url} alt="" style={{ width: 40, height: 40, flexShrink: 0, border: '1px solid var(--border-r)', borderRadius: 3, imageRendering: 'pixelated' }} />
-          : <div style={{ width: 40, height: 40, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
-              {TABS.find(t => t.type === tab)?.icon ?? '📦'}
-            </div>
-        }
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+    <div
+      onClick={onDetail}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'var(--surface)',
+        border: `1px solid ${hovered ? accent : 'var(--border-r)'}`,
+        borderRadius: 'var(--radius)',
+        cursor: 'pointer',
+        display: 'flex', flexDirection: 'column',
+        transition: 'border-color .14s',
+      }}
+    >
+      {/* Top: icon + name + stats */}
+      <div style={{ padding: '14px 14px 10px', display: 'flex', gap: 12 }}>
+        {project.icon_url ? (
+          <img
+            src={project.icon_url}
+            alt=""
+            style={{ width: 64, height: 64, flexShrink: 0, imageRendering: 'pixelated', border: '1px solid var(--border-r)', borderRadius: 4 }}
+          />
+        ) : (
+          <div style={{ width: 64, height: 64, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>
+            {tabInfo.icon}
+          </div>
+        )}
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {project.title}
           </div>
-          <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
-            {(project.loaders ?? []).slice(0, 3).map(l => (
-              <span key={l} style={{ fontSize: 10, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 2, padding: '1px 5px' }}>
-                {loaderLabel(l)}
-              </span>
-            ))}
-            {(project.game_versions ?? []).slice(0, 2).map(v => (
-              <span key={v} style={{ fontSize: 10, fontFamily: "'VT323',monospace", letterSpacing: '.04em', color: 'var(--diamond)', background: 'rgba(79,184,232,.1)', border: '1px solid rgba(79,184,232,.3)', borderRadius: 2, padding: '1px 5px' }}>
-                {v}
-              </span>
-            ))}
+          <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--ink-4)' }}>
+            <span>↓ {fmtNum(project.downloads)}</span>
+            {project.follows != null && <span>♥ {fmtNum(project.follows)}</span>}
           </div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {loaders.slice(0, 4).map(loaderLabel).join(' · ') || 'universal'}
+          </div>
+          {(project.game_versions ?? []).length > 0 && (
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 11, letterSpacing: '.04em', color: 'var(--diamond)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {project.game_versions![0]}{(project.game_versions!).length > 1 ? ` – ${project.game_versions![project.game_versions!.length - 1]}` : ''}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Description */}
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: 0, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+      <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 14px 10px', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
         {project.description}
       </p>
 
-      {/* Stats */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--ink-4)' }}>
-        <span>↓ {fmtNum(project.downloads)}</span>
-        {project.follows != null && <span>★ {fmtNum(project.follows)}</span>}
-        {project.date_modified && <span style={{ marginLeft: 'auto' }}>{fmtDate(project.date_modified)}</span>}
-      </div>
-
-      {/* Categories */}
-      {project.categories.length > 0 && (
+      {/* Footer */}
+      <div style={{ padding: '8px 12px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {project.categories.slice(0, 3).map(cat => (
-            <span key={cat} style={{ fontSize: 10, color: 'var(--ink-4)', border: '1px solid var(--border-r)', borderRadius: 2, padding: '1px 5px' }}>
-              {cat}
-            </span>
-          ))}
+          {project.categories.slice(0, 2).map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
         </div>
-      )}
-
-      {/* CTA */}
-      <button onClick={onInstall} disabled={installing} style={{
-        marginTop: 2, width: '100%', height: 30,
-        fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.1em',
-        color: installing ? 'var(--ink-4)' : '#fff',
-        background: installing ? 'var(--surface-3)' : isModpack ? 'var(--ender)' : 'var(--accent)',
-        border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
-        boxShadow: installing ? 'none' : isModpack
-          ? 'inset 0 -3px 0 rgba(0,0,0,.3), inset 0 3px 0 rgba(255,255,255,.1)'
-          : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
-        borderRadius: 2,
-      }}>
-        {installing ? 'INSTALLING…' : isModpack ? 'INSTALL AS INSTANCE' : 'ADD TO INSTANCE'}
-      </button>
+        <button
+          onClick={e => { e.stopPropagation(); onInstall() }}
+          disabled={installing}
+          style={{
+            fontFamily: "'VT323',monospace", fontSize: 14, letterSpacing: '.08em',
+            color: installing ? 'var(--ink-4)' : '#fff',
+            background: installing ? 'var(--surface-3)' : accent,
+            border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
+            padding: '0 16px', height: 28, borderRadius: 3, flexShrink: 0,
+            boxShadow: installing ? 'none' : isModpack
+              ? 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)'
+              : 'inset 0 -2px 0 var(--accent-lo), inset 0 2px 0 var(--accent-hi)',
+          }}
+        >
+          {installing ? '…' : isModpack ? 'INSTALL' : 'ADD'}
+        </button>
+      </div>
     </div>
   )
 }
 
-// ─── Content install modal (resource packs, shaders, data packs) ──────────────
+// ─── ContentDetailModal ───────────────────────────────────────────────────────
+
+function ContentDetailModal({ project, tab, onClose, onInstall }: {
+  project: ModrinthProject
+  tab: ContentTab
+  onClose: () => void
+  onInstall: () => void
+}) {
+  const [detail, setDetail]         = useState<ModrinthProjectDetail | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+
+  const isModpack = tab === 'modpack'
+  const accent    = tabColor(tab)
+  const tabInfo   = TABS.find(t => t.type === tab)!
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`https://api.modrinth.com/v2/project/${project.project_id}`, {
+      headers: { 'User-Agent': 'Refract/1.0 (github.com/ShevRuslan1)', Accept: 'application/json' },
+    })
+      .then(r => r.ok ? r.json() as Promise<ModrinthProjectDetail> : null)
+      .then(d => { setDetail(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [project.project_id])
+
+  const gallery     = detail?.gallery ?? []
+  const loaders     = detail?.loaders ?? project.loaders ?? []
+  const gameVersions = detail?.game_versions ?? project.game_versions ?? []
+  const followers   = detail?.followers ?? project.follows
+  const modrinthUrl = `https://modrinth.com/${tab}/${project.slug ?? project.project_id}`
+  const bodyText    = detail?.body ? stripMarkdown(detail.body) : project.description
+
+  const btnLabel = isModpack ? 'INSTALL AS INSTANCE' : `ADD TO INSTANCE`
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 75, background: 'rgba(0,0,0,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={onClose}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ width: '86vw', maxWidth: 960, maxHeight: '90vh', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      >
+        {/* Header */}
+        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16, flexShrink: 0 }}>
+          {project.icon_url ? (
+            <img src={project.icon_url} alt="" style={{ width: 72, height: 72, flexShrink: 0, imageRendering: 'pixelated', border: '1px solid var(--border-r)', borderRadius: 6 }} />
+          ) : (
+            <div style={{ width: 72, height: 72, flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
+              {tabInfo.icon}
+            </div>
+          )}
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>{project.title}</div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--ink-3)', flexWrap: 'wrap', marginBottom: 5 }}>
+              <span>↓ {fmtNum(project.downloads)} downloads</span>
+              {followers != null && <span>♥ {fmtNum(followers)} followers</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {loaders.map(l => (
+                <Tag key={l} color={accent}>{loaderLabel(l)}</Tag>
+              ))}
+              {gameVersions.length > 0 && (
+                <Tag color="var(--diamond)">
+                  MC {gameVersions[0]}{gameVersions.length > 1 ? ` – ${gameVersions[gameVersions.length - 1]}` : ''}
+                </Tag>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'flex-start' }}>
+            <button
+              onClick={() => window.open(modrinthUrl)}
+              style={{ height: 32, padding: '0 14px', fontSize: 12, fontWeight: 600, background: 'transparent', color: accent, border: `1px solid ${accent}`, borderRadius: 3, cursor: 'pointer' }}
+            >
+              Modrinth ↗
+            </button>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 4 }}>✕</button>
+          </div>
+        </div>
+
+        {/* Gallery */}
+        {gallery.length > 0 && (
+          <div style={{ borderBottom: '1px solid var(--line)', padding: '10px 22px', overflowX: 'auto', display: 'flex', gap: 8, flexShrink: 0 }}>
+            {gallery.map((img, i) => (
+              <div
+                key={i}
+                onClick={() => setGalleryIndex(i)}
+                style={{ flexShrink: 0, cursor: 'pointer', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border-r)', height: 130 }}
+              >
+                <img src={img.url} alt={img.title ?? ''} style={{ height: '100%', width: 'auto', display: 'block', objectFit: 'cover' }} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}>
+          {/* Description text */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px' }}>
+            {loading ? (
+              <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>Loading details…</div>
+            ) : (
+              <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
+                {bodyText}
+              </p>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div style={{ width: 210, flexShrink: 0, borderLeft: '1px solid var(--line)', padding: '18px 16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Categories */}
+            {project.categories.length > 0 && (
+              <div>
+                <SideLabel>Categories</SideLabel>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                  {project.categories.map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
+                </div>
+              </div>
+            )}
+
+            {/* Environment */}
+            {detail && (
+              <div>
+                <SideLabel>Environment</SideLabel>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Client</span>
+                    <span style={{ color: detail.client_side === 'required' ? 'var(--grass)' : detail.client_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
+                      {detail.client_side}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Server</span>
+                    <span style={{ color: detail.server_side === 'required' ? 'var(--grass)' : detail.server_side === 'unsupported' ? 'var(--lava)' : 'var(--gold)' }}>
+                      {detail.server_side}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dates */}
+            {detail?.published && (
+              <div>
+                <SideLabel>Published</SideLabel>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>{fmtDate(detail.published)}</div>
+                {detail.updated && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>Updated {fmtDate(detail.updated)}</div>}
+              </div>
+            )}
+
+            {/* Links */}
+            {detail && (detail.issues_url || detail.source_url || detail.discord_url) && (
+              <div>
+                <SideLabel>Links</SideLabel>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {detail.issues_url && (
+                    <button onClick={() => window.open(detail.issues_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      🐛 Issues ↗
+                    </button>
+                  )}
+                  {detail.source_url && (
+                    <button onClick={() => window.open(detail.source_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      {'</>'} Source ↗
+                    </button>
+                  )}
+                  {detail.discord_url && (
+                    <button onClick={() => window.open(detail.discord_url!)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      💬 Discord ↗
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Install CTA */}
+            <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+              <button
+                onClick={onInstall}
+                style={{ width: '100%', height: 36, fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.1em', color: '#fff', background: accent, border: 'none', cursor: 'pointer', boxShadow: isModpack ? 'inset 0 -3px 0 rgba(0,0,0,.3), inset 0 3px 0 rgba(255,255,255,.1)' : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)' }}
+              >
+                {btnLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {galleryIndex !== null && gallery[galleryIndex] && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setGalleryIndex(null)}
+        >
+          <img
+            src={gallery[galleryIndex].url}
+            alt=""
+            style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-r)' }}
+            onClick={e => e.stopPropagation()}
+          />
+          {gallery.length > 1 && (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); setGalleryIndex(i => i !== null ? (i - 1 + gallery.length) % gallery.length : 0) }}
+                style={{ position: 'absolute', left: 24, fontSize: 28, color: '#fff', background: 'rgba(0,0,0,.5)', border: 'none', cursor: 'pointer', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ‹
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); setGalleryIndex(i => i !== null ? (i + 1) % gallery.length : 0) }}
+                style={{ position: 'absolute', right: 24, fontSize: 28, color: '#fff', background: 'rgba(0,0,0,.5)', border: 'none', cursor: 'pointer', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ›
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setGalleryIndex(null)}
+            style={{ position: 'absolute', top: 16, right: 20, fontSize: 22, color: '#fff', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ContentInstallModal (resource packs, shaders, data packs) ────────────────
 
 interface ContentInstallModalProps {
   project: ModrinthProject
@@ -263,10 +575,10 @@ interface ContentInstallModalProps {
 }
 
 function ContentInstallModal({ project, tab, instances, onClose, onInstall }: ContentInstallModalProps) {
-  const [versions, setVersions]     = useState<ModrinthVersion[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [selectedInst, setSelInst]  = useState<Instance | null>(null)
-  const [selectedVer, setSelVer]    = useState<string | null>(null)
+  const [versions, setVersions]    = useState<ModrinthVersion[]>([])
+  const [loading, setLoading]      = useState(true)
+  const [selectedInst, setSelInst] = useState<Instance | null>(null)
+  const [selectedVer, setSelVer]   = useState<string | null>(null)
 
   useEffect(() => {
     api.modrinth.versions(project.project_id)
@@ -275,10 +587,10 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
   }, [project.project_id])
 
   const canInstall = selectedInst !== null && selectedVer !== null
-  const tabInfo = TABS.find(t => t.type === tab)!
+  const tabInfo    = TABS.find(t => t.type === tab)!
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', width: 660, maxHeight: '78vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -328,8 +640,8 @@ function ContentInstallModal({ project, tab, instances, onClose, onInstall }: Co
                 : versions.length === 0
                   ? <div style={{ padding: 30, textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>No versions found.</div>
                   : versions.map(v => {
-                      const isSel = selectedVer === v.id
-                      const mcOk = selectedInst ? v.game_versions.includes(selectedInst.minecraftVersion) : true
+                      const isSel  = selectedVer === v.id
+                      const mcOk   = selectedInst ? v.game_versions.includes(selectedInst.minecraftVersion) : true
                       return (
                         <button key={v.id} onClick={() => setSelVer(v.id)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '7px 8px', marginBottom: 3, background: isSel ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${isSel ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, cursor: 'pointer', opacity: (!mcOk && !isSel) ? .45 : 1 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -368,10 +680,10 @@ interface ModpackInstallModalProps {
 }
 
 function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModalProps) {
-  const [versions, setVersions]   = useState<ModrinthVersion[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [name, setName]           = useState(project.title)
-  const [selectedVer, setSelVer]  = useState<string | null>(null)
+  const [versions, setVersions]  = useState<ModrinthVersion[]>([])
+  const [loading, setLoading]    = useState(true)
+  const [name, setName]          = useState(project.title)
+  const [selectedVer, setSelVer] = useState<string | null>(null)
 
   useEffect(() => {
     api.modrinth.versions(project.project_id)
@@ -383,13 +695,13 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
       .catch(() => setLoading(false))
   }, [project.project_id])
 
-  const ver = versions.find(v => v.id === selectedVer)
-  const mcVer = ver?.game_versions[0]
-  const loader = ver?.loaders.find(l => l !== 'mrpack')
+  const ver        = versions.find(v => v.id === selectedVer)
+  const mcVer      = ver?.game_versions[0]
+  const loader     = ver?.loaders.find(l => l !== 'mrpack')
   const canInstall = name.trim().length > 0 && selectedVer !== null
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', width: 520, display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -419,7 +731,7 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
               ? <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>Loading versions…</div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
                   {versions.map(v => {
-                    const isSel = selectedVer === v.id
+                    const isSel     = selectedVer === v.id
                     const loaderName = v.loaders.find(l => l !== 'mrpack')
                     return (
                       <button key={v.id} onClick={() => setSelVer(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', textAlign: 'left', background: isSel ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${isSel ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, cursor: 'pointer' }}>
@@ -471,13 +783,12 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
 
 // ─── Progress overlay ─────────────────────────────────────────────────────────
 
-function ProgressOverlay({ projectId, title, step, percent }: { projectId: string; title: string; step: string; percent: number }) {
+function ProgressOverlay({ title, step, percent }: { projectId: string; title: string; step: string; percent: number }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', width: 440, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ fontFamily: "'VT323',monospace", fontSize: 20, letterSpacing: '.14em', color: 'var(--ender)' }}>INSTALLING MODPACK</div>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{title}</div>
-        {/* Progress bar */}
         <div style={{ height: 8, background: 'var(--surface-3)', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${percent}%`, background: 'var(--ender)', transition: 'width .2s', borderRadius: 4 }} />
         </div>
@@ -505,20 +816,18 @@ function ContentBrowser() {
   const [instances, setInstances] = useState<Instance[]>([])
   const [toast, setToast]         = useState<{ msg: string; ok: boolean } | null>(null)
 
-  // Install state
-  const [installTarget, setTarget]    = useState<ModrinthProject | null>(null)
-  const [installingId, setInstallingId] = useState<string | null>(null)
-  // Modpack progress
-  const [progressInfo, setProgress]   = useState<{ projectId: string; title: string; step: string; percent: number } | null>(null)
+  const [detailTarget, setDetailTarget]   = useState<ModrinthProject | null>(null)
+  const [installTarget, setTarget]        = useState<ModrinthProject | null>(null)
+  const [installingId, setInstallingId]   = useState<string | null>(null)
+  const [progressInfo, setProgress]       = useState<{ projectId: string; title: string; step: string; percent: number } | null>(null)
 
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const tabInfo = TABS.find(t => t.type === tab)!
+  const tabInfo   = TABS.find(t => t.type === tab)!
 
   useEffect(() => {
     api.instance.list().then(setInstances).catch(() => {})
   }, [])
 
-  // Subscribe to modpack progress/done events
   useEffect(() => {
     const offProgress = api.modpack.onProgress(({ projectId, step, percent }) => {
       setProgress(prev => prev?.projectId === projectId ? { ...prev, step, percent } : prev)
@@ -529,17 +838,15 @@ function ContentBrowser() {
       if (error) {
         showToast(`Install failed: ${error}`, false)
       } else {
-        showToast(`Modpack installed! Find it in your Instance Library.`, true)
+        showToast('Modpack installed! Find it in your Instance Library.', true)
         if (instanceId) api.instance.list().then(setInstances).catch(() => {})
       }
     })
     return () => { offProgress(); offDone() }
   }, [])
 
-  // Reset offset when filters change
   useEffect(() => { setOffset(0) }, [tab, sort, gameVersion, loader])
 
-  // Debounced search
   useEffect(() => {
     if (searchRef.current) clearTimeout(searchRef.current)
     searchRef.current = setTimeout(() => doSearch(0), query ? 400 : 0)
@@ -591,13 +898,12 @@ function ContentBrowser() {
   async function handleModpackInstall(name: string, versionId: string) {
     if (!installTarget) return
     const projectId = installTarget.project_id
-    const title = installTarget.title
+    const title     = installTarget.title
     setTarget(null)
     setInstallingId(projectId)
     setProgress({ projectId, title, step: 'Starting…', percent: 0 })
     try {
       await api.modpack.install(name, projectId, versionId)
-      // done event handled by onDone listener
     } catch (e) {
       setProgress(null)
       setInstallingId(null)
@@ -605,9 +911,13 @@ function ContentBrowser() {
     }
   }
 
-  const totalPages = Math.ceil(total / LIMIT)
+  function openInstall(project: ModrinthProject) {
+    setDetailTarget(null)
+    setTarget(project)
+  }
+
+  const totalPages  = Math.ceil(total / LIMIT)
   const currentPage = Math.floor(offset / LIMIT)
-  const currentTabInfo = TABS.find(t => t.type === tab)!
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -636,25 +946,18 @@ function ContentBrowser() {
 
       {/* Search + filters */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        {/* Search box */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 240px', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: '0 10px', height: 36 }}>
           <div style={{ color: 'var(--ink-4)', display: 'flex', alignItems: 'center', flexShrink: 0 }}><SearchIcon /></div>
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder={`Search ${currentTabInfo.label.toLowerCase()}…`}
+            placeholder={`Search ${tabInfo.label.toLowerCase()}…`}
             style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--ink)' }}
           />
           {query && <button onClick={() => setQuery('')} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✕</button>}
         </div>
-
-        {/* Sort */}
-        <SortDropdown value={sort} onChange={s => { setSort(s) }} />
-
-        {/* MC Version */}
+        <SortDropdown value={sort} onChange={s => setSort(s)} />
         <VersionDropdown value={gameVersion} onChange={v => { setVersion(v); setOffset(0) }} />
-
-        {/* Loader filter (only for modpacks and resource packs) */}
         {tabInfo.showLoader && (
           <div style={{ display: 'flex', gap: 4 }}>
             <button onClick={() => setLoader(null)} style={{ fontSize: 11, fontWeight: 500, color: loader === null ? 'var(--accent)' : 'var(--ink-4)', background: loader === null ? 'var(--accent-tint)' : 'var(--surface)', border: `1px solid ${loader === null ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>
@@ -671,7 +974,7 @@ function ContentBrowser() {
 
       {/* Results count */}
       <div style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
-        {loading ? 'Searching…' : `${total.toLocaleString()} ${currentTabInfo.label.toLowerCase()} found`}
+        {loading ? 'Searching…' : `${total.toLocaleString()} ${tabInfo.label.toLowerCase()} found`}
       </div>
 
       {/* Grid */}
@@ -679,17 +982,18 @@ function ContentBrowser() {
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>Loading…</div>
       ) : results.length === 0 ? (
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>
-          No {currentTabInfo.label.toLowerCase()} found. Try a different search or filter.
+          No {tabInfo.label.toLowerCase()} found. Try a different search or filter.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
           {results.map(project => (
             <ContentCard
               key={project.project_id}
               project={project}
               tab={tab}
               installing={installingId === project.project_id}
-              onInstall={() => setTarget(project)}
+              onInstall={() => openInstall(project)}
+              onDetail={() => setDetailTarget(project)}
             />
           ))}
         </div>
@@ -704,6 +1008,16 @@ function ContentBrowser() {
           </span>
           <PageBtn disabled={currentPage >= totalPages - 1} onClick={() => doSearch((currentPage + 1) * LIMIT)}>→</PageBtn>
         </div>
+      )}
+
+      {/* Detail modal */}
+      {detailTarget && (
+        <ContentDetailModal
+          project={detailTarget}
+          tab={tab}
+          onClose={() => setDetailTarget(null)}
+          onInstall={() => openInstall(detailTarget)}
+        />
       )}
 
       {/* Install modals */}
@@ -736,19 +1050,11 @@ function ContentBrowser() {
 
       {/* Toast */}
       {toast && (
-        <div style={{ position: 'fixed', bottom: 44, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', boxShadow: '0 8px 24px rgba(0,0,0,.5)', fontSize: 13, color: 'var(--ink)', zIndex: 70 }}>
+        <div style={{ position: 'fixed', bottom: 44, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', boxShadow: '0 8px 24px rgba(0,0,0,.5)', fontSize: 13, color: 'var(--ink)', zIndex: 100 }}>
           <div style={{ width: 8, height: 8, background: toast.ok ? 'var(--grass)' : 'var(--lava)', flexShrink: 0 }} />
           {toast.msg}
         </div>
       )}
     </div>
-  )
-}
-
-function PageBtn({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button disabled={disabled} onClick={onClick} style={{ width: 32, height: 28, fontFamily: "'VT323',monospace", fontSize: 18, color: disabled ? 'var(--ink-4)' : 'var(--ink)', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? .4 : 1 }}>
-      {children}
-    </button>
   )
 }
