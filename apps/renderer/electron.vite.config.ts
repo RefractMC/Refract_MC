@@ -14,7 +14,7 @@ const workspaceAlias = {
   '@refract/plugin-api':        resolve('../../packages/plugin-api/src/index.ts'),
 }
 
-const workspaceExclude = ['@refract/core', '@refract/core/java-manager', '@refract/core/launcher', '@refract/plugin-api']
+const workspaceExclude = ['@refract/core', '@refract/core/java-manager', '@refract/core/launcher', '@refract/plugin-api', 'electron-updater']
 
 export default defineConfig({
   main: {
