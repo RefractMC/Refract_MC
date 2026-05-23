@@ -28,10 +28,11 @@ mac:
 linux:
   target:
     - AppImage
-    - snap
     - deb
   maintainer: electronjs.org
   category: Utility
+  homepage: https://github.com/ShevRuslan1/Refract_MC
+  artifactName: ${productName}-${version}.${ext}
 publish:
   provider: github
   owner: ShevRuslan1
