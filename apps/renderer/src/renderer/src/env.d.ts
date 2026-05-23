@@ -167,9 +167,10 @@ declare global {
         onProgress:  (cb: (data: { major: number; step: string; percent: number }) => void) => () => void
       }
       friends: {
-        list:   () => Promise<Array<{ uuid: string; username: string; addedAt: number }>>
-        add:    (username: string) => Promise<{ uuid: string; username: string; addedAt: number }>
-        remove: (uuid: string) => Promise<void>
+        list:       () => Promise<Array<{ uuid: string; username: string; addedAt: number; note?: string }>>
+        add:        (username: string) => Promise<{ uuid: string; username: string; addedAt: number; note?: string }>
+        remove:     (uuid: string) => Promise<void>
+        updateNote: (uuid: string, note: string) => Promise<void>
       }
       mc: {
         versions: () => Promise<import('@refract/core').MinecraftVersion[]>

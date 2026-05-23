@@ -229,9 +229,10 @@ function createBrowserApi(): RefractAPI {
       onProgress:  () => () => undefined,
     },
     friends: {
-      list:   async () => [],
-      add:    async () => { throw new Error('Friends require the Electron app.') },
-      remove: async () => undefined,
+      list:       async () => [],
+      add:        async () => { throw new Error('Friends require the Electron app.') },
+      remove:     async () => undefined,
+      updateNote: async () => undefined,
     },
     modpack: {
       install: async () => { throw new Error('Modpack install requires the Electron app.') },

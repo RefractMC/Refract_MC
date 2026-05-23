@@ -2,11 +2,13 @@ import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { handleIpc } from './handle'
 import { paths } from '../services/paths'
+import { getConfig } from '../services/config'
 
 export interface Friend {
   uuid: string
   username: string
   addedAt: number
+  note?: string
 }
 
 function friendsPath(): string {
@@ -44,6 +46,12 @@ export function registerFriendsIpc(): void {
     const profile = await lookupMinecraft(name)
     const uuid = hyphenateUuid(profile.id)
 
+    const config = getConfig()
+    const activeAccount = config.accounts.find(a => a.uuid === config.activeAccountId)
+    if (activeAccount && uuid === activeAccount.uuid) {
+      throw new Error("You can't add yourself as a friend.")
+    }
+
     const friends = load()
     if (friends.some(f => f.uuid === uuid)) {
       throw new Error(`${profile.name} is already in your friends list.`)
@@ -57,5 +65,13 @@ export function registerFriendsIpc(): void {
 
   handleIpc('friends.remove', (_e, uuid) => {
     persist(load().filter(f => f.uuid !== String(uuid)))
+  })
+
+  handleIpc('friends.updateNote', (_e, uuid, note) => {
+    const friends = load()
+    const i = friends.findIndex(f => f.uuid === String(uuid))
+    if (i === -1) return
+    friends[i] = { ...friends[i], note: String(note ?? '').trim() || undefined }
+    persist(friends)
   })
 }

@@ -1,19 +1,24 @@
 import { Link, useMatchRoute } from '@tanstack/react-router'
-import { useEffect, useRef, useState, type ComponentType } from 'react'
+import { useEffect, useRef, useState, useCallback, type ComponentType } from 'react'
 import { LibraryIcon, ModsIcon, ModpacksIcon, AccountIcon, CogIcon, SignOutIcon } from '../ui/BlockIcons'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import { api, type SafeAccount } from '@/lib/api'
 import { useT } from '@/i18n'
+import type { Instance } from '@refract/core'
 
 interface Friend {
   uuid: string
   username: string
   addedAt: number
+  note?: string
 }
 
-function crafatarUrl(uuid: string): string {
-  return `https://crafatar.com/avatars/${uuid}?size=32&overlay=true&default=MHF_Steve`
+function avatarUrl(uuid: string, fallback = false): string {
+  const id = uuid.replace(/-/g, '')
+  return fallback
+    ? `https://crafatar.com/avatars/${id}?size=32&overlay=true&default=MHF_Steve`
+    : `https://mc-heads.net/avatar/${id}/32`
 }
 
 interface NavItemProps { to: string; label: string; Icon: ComponentType; exact: boolean }
@@ -155,14 +160,23 @@ function AvatarBlock() {
 function FriendsPanel() {
   const t = useT()
   const [friends, setFriends] = useState<Friend[]>([])
+  const [instances, setInstances] = useState<Instance[]>([])
   const [adding, setAdding] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [myUsername, setMyUsername] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     api.friends.list().then(list => setFriends(list as Friend[])).catch(() => {})
+    api.auth.active().then(a => setMyUsername(a?.username ?? null)).catch(() => {})
+    api.instance.list().then(setInstances).catch(() => {})
+  }, [])
+
+  const handleNoteChange = useCallback(async (uuid: string, note: string) => {
+    await api.friends.updateNote(uuid, note).catch(() => {})
+    setFriends(prev => prev.map(f => f.uuid === uuid ? { ...f, note: note.trim() || undefined } : f))
   }, [])
 
   function startAdd() {
@@ -182,6 +196,10 @@ function FriendsPanel() {
     e.preventDefault()
     const name = input.trim()
     if (!name) return
+    if (myUsername && name.toLowerCase() === myUsername.toLowerCase()) {
+      setError("That's you — you can't add yourself as a friend.")
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -301,97 +319,161 @@ function FriendsPanel() {
         </div>
       ) : (
         friends.map(friend => (
-          <FriendRow key={friend.uuid} friend={friend} onRemove={() => removeFriend(friend.uuid)} />
+          <FriendRow key={friend.uuid} friend={friend} instances={instances} onRemove={() => removeFriend(friend.uuid)} onNoteChange={(note) => handleNoteChange(friend.uuid, note)} />
         ))
       )}
     </div>
   )
 }
 
-function FriendRow({ friend, onRemove }: { friend: Friend; onRemove: () => void }) {
-  const t = useT()
-  const [hovered, setHovered] = useState(false)
-  const [imgFailed, setImgFailed] = useState(false)
+function FriendRow({ friend, instances, onRemove, onNoteChange }: {
+  friend: Friend
+  instances: Instance[]
+  onRemove: () => void
+  onNoteChange: (note: string) => void
+}) {
+  const [hovered, setHovered]       = useState(false)
+  const [imgSrc, setImgSrc] = useState(() => avatarUrl(friend.uuid))
+  const [imgFailed, setImgFailed]   = useState(false)
+  const [editingNote, setEditingNote] = useState(false)
+  const [noteDraft, setNoteDraft]   = useState(friend.note ?? '')
+  const [copied, setCopied]         = useState<string | null>(null)
+  const noteRef = useRef<HTMLInputElement>(null)
 
-  const addedDaysAgo = Math.floor((Date.now() - friend.addedAt) / (1000 * 60 * 60 * 24))
-  const timeLabel = addedDaysAgo === 0 ? t.sidebar.addedToday : addedDaysAgo === 1 ? t.sidebar.addedYesterday : t.sidebar.addedDaysAgo(addedDaysAgo)
+  function copy(text: string, key: string) {
+    navigator.clipboard.writeText(text).catch(() => {})
+    setCopied(key)
+    setTimeout(() => setCopied(null), 1600)
+  }
+
+  function openNameMC() {
+    const shell = (window as Window & { electron?: { shell?: { openExternal?: (url: string) => void } } }).electron?.shell
+    if (shell?.openExternal) shell.openExternal(`https://namemc.com/profile/${friend.uuid}`)
+    else window.open(`https://namemc.com/profile/${friend.uuid}`, '_blank')
+  }
+
+  function startNote() {
+    setNoteDraft(friend.note ?? '')
+    setEditingNote(true)
+    setTimeout(() => noteRef.current?.focus(), 0)
+  }
+
+  function commitNote() {
+    setEditingNote(false)
+    const trimmed = noteDraft.trim()
+    if (trimmed !== (friend.note ?? '')) onNoteChange(trimmed)
+  }
+
+  // installed instances shared with this friend (same MC version)
+  const sharedInstances = instances.filter(i => i.isInstalled)
+  const versionChips = [...new Set(sharedInstances.map(i =>
+    i.modLoader ? `${i.minecraftVersion} ${i.modLoader}` : i.minecraftVersion
+  ))].slice(0, 3)
 
   return (
     <div
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '4px 6px', borderRadius: 4,
-        background: hovered ? 'var(--surface-2)' : 'transparent',
-        transition: 'background .1s',
-        position: 'relative',
-      }}
+      style={{ padding: '5px 6px', borderRadius: 4, background: hovered ? 'var(--surface-2)' : 'transparent', transition: 'background .1s' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Avatar */}
-      <div style={{
-        width: 24, height: 24, flexShrink: 0,
-        position: 'relative', overflow: 'hidden',
-        border: '1px solid var(--line)',
-        background: 'var(--surface-3)',
-        imageRendering: 'pixelated',
-      }}>
-        {!imgFailed ? (
-          <img
-            src={crafatarUrl(friend.uuid.replace(/-/g, ''))}
-            alt={friend.username}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <div style={{
-            width: '100%', height: '100%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--ink-3)',
-          }}>
-            {friend.username[0]?.toUpperCase()}
-          </div>
-        )}
-        {/* Offline indicator */}
-        <div style={{
-          position: 'absolute', right: -2, bottom: -2,
-          width: 7, height: 7,
-          background: 'var(--ink-4)',
-          border: '1px solid var(--sb)',
-        }} />
-      </div>
+      {/* Top row: avatar + name + actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Avatar — click opens NameMC */}
+        <div
+          onClick={openNameMC}
+          title="View on NameMC"
+          style={{ width: 24, height: 24, flexShrink: 0, position: 'relative', overflow: 'hidden', border: '1px solid var(--line)', background: 'var(--surface-3)', imageRendering: 'pixelated', cursor: 'pointer' }}
+        >
+          {!imgFailed ? (
+            <img src={imgSrc} alt={friend.username}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
+              onError={() => {
+                if (!imgSrc.includes('crafatar')) setImgSrc(avatarUrl(friend.uuid, true))
+                else setImgFailed(true)
+              }} />
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--ink-3)' }}>
+              {friend.username[0]?.toUpperCase()}
+            </div>
+          )}
+        </div>
 
-      {/* Text */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12, fontWeight: 500, color: 'var(--ink)',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>
+        {/* Username — click opens NameMC */}
+        <div
+          onClick={openNameMC}
+          title="View on NameMC"
+          style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}
+        >
           {friend.username}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {timeLabel}
-        </div>
+
+        {/* Action buttons (visible on hover) */}
+        {hovered && (
+          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+            <ActionBtn title="Copy UUID" active={copied === 'uuid'} onClick={() => copy(friend.uuid, 'uuid')}>
+              {copied === 'uuid' ? '✓' : '#'}
+            </ActionBtn>
+            <ActionBtn title="Copy /whitelist add command" active={copied === 'wl'} onClick={() => copy(`/whitelist add ${friend.username}`, 'wl')}>
+              {copied === 'wl' ? '✓' : '⊕'}
+            </ActionBtn>
+            <ActionBtn title="Add note" onClick={startNote}>✎</ActionBtn>
+            <ActionBtn title="Remove friend" danger onClick={onRemove}>✕</ActionBtn>
+          </div>
+        )}
       </div>
 
-      {/* Remove */}
-      {hovered && (
-        <button
-          onClick={e => { e.stopPropagation(); onRemove() }}
-          title="Remove friend"
-          style={{
-            position: 'absolute', right: 4,
-            background: 'none', border: 'none',
-            color: 'var(--ink-4)', cursor: 'pointer',
-            fontSize: 12, lineHeight: 1, padding: '2px 4px',
-          }}
-          onMouseEnter={e => { (e.currentTarget).style.color = 'var(--lava)' }}
-          onMouseLeave={e => { (e.currentTarget).style.color = 'var(--ink-4)' }}
-        >
-          ✕
-        </button>
+      {/* Note row */}
+      {editingNote ? (
+        <input
+          ref={noteRef}
+          value={noteDraft}
+          onChange={e => setNoteDraft(e.target.value)}
+          onBlur={commitNote}
+          onKeyDown={e => { if (e.key === 'Enter') commitNote(); if (e.key === 'Escape') { setEditingNote(false) } }}
+          placeholder="Add a note…"
+          style={{ marginTop: 4, width: '100%', fontSize: 10, padding: '2px 5px', background: 'var(--bg)', border: '1px solid var(--accent)', color: 'var(--ink)', borderRadius: 2, outline: 'none', boxSizing: 'border-box' }}
+        />
+      ) : friend.note ? (
+        <div onClick={startNote} title="Click to edit note" style={{ marginTop: 3, fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic', cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 32 }}>
+          {friend.note}
+        </div>
+      ) : null}
+
+      {/* Shared instances chips */}
+      {versionChips.length > 0 && hovered && (
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 4, paddingLeft: 32 }}>
+          {versionChips.map(v => (
+            <span key={v} style={{ fontSize: 9, padding: '1px 5px', background: 'var(--accent-tint)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 2, whiteSpace: 'nowrap' }}>
+              {v}
+            </span>
+          ))}
+          {sharedInstances.length > versionChips.length && (
+            <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>+{sharedInstances.length - versionChips.length}</span>
+          )}
+        </div>
       )}
     </div>
+  )
+}
+
+function ActionBtn({ title, onClick, children, danger, active }: { title: string; onClick: () => void; children: React.ReactNode; danger?: boolean; active?: boolean }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick() }}
+      title={title}
+      style={{
+        width: 18, height: 18, padding: 0, border: 'none',
+        background: active ? 'var(--grass)' : 'transparent',
+        color: active ? '#fff' : danger ? 'var(--lava)' : 'var(--ink-4)',
+        cursor: 'pointer', borderRadius: 2, fontSize: 11, lineHeight: 1,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'color .1s, background .1s',
+      }}
+      onMouseEnter={e => { if (!active) (e.currentTarget).style.color = danger ? 'var(--lava)' : 'var(--ink)' }}
+      onMouseLeave={e => { if (!active) (e.currentTarget).style.color = danger ? 'var(--lava)' : 'var(--ink-4)' }}
+    >
+      {children}
+    </button>
   )
 }
 

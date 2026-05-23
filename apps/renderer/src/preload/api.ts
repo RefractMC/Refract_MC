@@ -97,9 +97,10 @@ export const api = {
     installLocal: (instanceId: string, srcPath: string) => ipcRenderer.invoke('mods.installLocal', instanceId, srcPath),
   },
   friends: {
-    list:   ()                    => ipcRenderer.invoke('friends.list'),
-    add:    (username: string)    => ipcRenderer.invoke('friends.add', username),
-    remove: (uuid: string)        => ipcRenderer.invoke('friends.remove', uuid),
+    list:       ()                           => ipcRenderer.invoke('friends.list'),
+    add:        (username: string)           => ipcRenderer.invoke('friends.add', username),
+    remove:     (uuid: string)               => ipcRenderer.invoke('friends.remove', uuid),
+    updateNote: (uuid: string, note: string) => ipcRenderer.invoke('friends.updateNote', uuid, note),
   },
   curseforge: {
     searchMods:    (query?: string, gameVersion?: string, loader?: string, pageSize?: number, index?: number) =>
