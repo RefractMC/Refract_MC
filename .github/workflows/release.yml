@@ -26,7 +26,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and publish
+      - name: Build app
+        run: pnpm --filter @refract/app build
+
+      - name: Package and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm --filter @refract/app exec electron-builder --win --publish always
@@ -51,7 +54,10 @@ jobs:
       - name: Install Linux build dependencies
         run: sudo apt-get install -y rpm fakeroot
 
-      - name: Build and publish
+      - name: Build app
+        run: pnpm --filter @refract/app build
+
+      - name: Package and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm --filter @refract/app exec electron-builder --linux AppImage deb --publish always
