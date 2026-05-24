@@ -2,7 +2,7 @@ import { Client } from '@xhayper/discord-rpc'
 
 // Register a Discord application at https://discord.com/developers/applications
 // Enable Rich Presence, then paste the Application ID here.
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? ''
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '1507941943190093844'
 
 let client: Client | null = null
 let connected = false
