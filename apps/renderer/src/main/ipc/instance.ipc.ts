@@ -7,11 +7,12 @@ import {
 } from '../services/instance-store'
 import type { CreateInstanceInput, Instance } from '@refract/core'
 import { handleIpc } from './handle'
-import { shell, dialog } from 'electron'
+import { shell, dialog, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, cpSync } from 'fs'
 import { spawn } from 'child_process'
 import { resolveInstanceDir } from '../services/instance-store'
+import { importMultiMcInstance } from '../services/multimc-import'
 
 function zipDirectory(src: string, dst: string): Promise<void> {
   const psEscape = (s: string) => s.replace(/'/g, "''")
@@ -77,6 +78,16 @@ export function registerInstanceIpc(): void {
     if (src.isInstalled) updateInstance(copy.id, { isInstalled: true, mods: src.mods ?? [] })
 
     return getInstanceById(copy.id)
+  })
+
+  handleIpc('instance.importMultiMc', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Select MultiMC / Prism Instance Folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return importMultiMcInstance(result.filePaths[0])
   })
 
   handleIpc('instance.export', async (_event, id) => {

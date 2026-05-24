@@ -42,9 +42,10 @@ interface Props {
   onOpenChange: (open: boolean) => void
   onCreate: (input: CreateInput) => Promise<void>
   onImportFile?: (filePath: string) => void
+  onImportMultiMc?: () => void
 }
 
-export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFile }: Props) {
+export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFile, onImportMultiMc }: Props) {
   const t = useT()
   const [name, setName]           = useState('')
   const [mcVersion, setMcVersion] = useState('1.21.1')
@@ -216,6 +217,18 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                     opacity: loading ? 0.55 : 1,
                   }}>
                     {t.createInst.importZip}
+                  </button>
+                )}
+                {onImportMultiMc && (
+                  <button type="button" disabled={loading} onClick={() => { onOpenChange(false); reset(); onImportMultiMc() }} style={{
+                    flex:1, height:38,
+                    fontFamily:"'VT323',monospace", fontSize:15, letterSpacing:'.1em',
+                    color: loading ? 'var(--ink-4)' : 'var(--ink)',
+                    background:'var(--surface-2)', border:'1px solid var(--border-r)',
+                    borderRadius:3, cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.55 : 1,
+                  }}>
+                    MultiMC / Prism
                   </button>
                 )}
                 <button type="submit" disabled={!name.trim() || loading} style={{

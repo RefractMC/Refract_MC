@@ -123,7 +123,8 @@ declare global {
         delete:     (id: string) => Promise<void>
         openFolder: (id: string) => Promise<void>
         export:     (id: string) => Promise<string | null>
-        duplicate:  (id: string) => Promise<import('@refract/core').Instance | null>
+        duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
+        importMultiMc:  () => Promise<import('@refract/core').Instance | null>
       }
       window: {
         minimize: () => void

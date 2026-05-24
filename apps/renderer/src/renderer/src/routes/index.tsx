@@ -20,7 +20,7 @@ export const Route = createFileRoute('/')({
 
 type ActiveAccount = Awaited<ReturnType<typeof api.auth.active>>
 
-const RELEASES_URL = 'https://api.github.com/repos/ShevRuslan1/Refract_MC/releases'
+const RELEASES_URL = 'https://api.github.com/repos/RefractMC/Refract_MC/releases'
 
 interface ChangelogEntry { version: string; notes: string[]; date?: string }
 
@@ -47,9 +47,7 @@ function releasesToChangelog(releases: GitHubRelease[]): ChangelogEntry[] {
 }
 
 const FALLBACK_WHATS_NEW: ChangelogEntry[] = [
-  { version: '0.6.0', notes: ['Java Manager — auto-download Temurin JRE from settings', 'Instance search bar and group tags', 'Drag-and-drop .jar onto instance card to install mod'] },
-  { version: '0.5.1', notes: ['Mod update checker with one-click Update All', 'Server list viewer with copy-IP', 'Instance export as ZIP, duplicate instance'] },
-  { version: '0.5.0', notes: ['Worlds browser with delete, Screenshots grid', 'Crash report viewer on non-zero MC exit', 'First-run onboarding flow'] },
+  { version: '1.0.0', notes: ['First stable release', 'Windows installer + Linux AppImage & .deb', 'Discord Rich Presence with instance name and playtime', 'MultiMC / Prism instance import', 'Java Manager with auto-download and remove', 'Notifications panel in title bar'] },
 ]
 
 type ActivityEntry = { id: string; label: string; ts: number }
@@ -1121,6 +1119,17 @@ function Library() {
           void recordActivity(`Created instance "${inst.name}"`)
         }}
         onImportFile={handleImportFile}
+        onImportMultiMc={async () => {
+          try {
+            const inst = await api.instance.importMultiMc()
+            if (inst) {
+              await queryClient.invalidateQueries({ queryKey: ['instances'] })
+              void recordActivity(`Imported "${inst.name}" from MultiMC/Prism`)
+            }
+          } catch (e) {
+            setLaunchToast(e instanceof Error ? e.message : 'Import failed')
+          }
+        }}
       />
 
       <EditInstanceDialog

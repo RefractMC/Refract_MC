@@ -34,8 +34,9 @@ export const api = {
     update:     (id: string, patch: unknown)                   => ipcRenderer.invoke('instance.update', id, patch),
     delete:     (id: string)                                   => ipcRenderer.invoke('instance.delete', id),
     openFolder: (id: string)                                   => ipcRenderer.invoke('instance.openFolder', id),
-    export:     (id: string): Promise<string | null>           => ipcRenderer.invoke('instance.export', id),
-    duplicate:  (id: string)                                   => ipcRenderer.invoke('instance.duplicate', id),
+    export:         (id: string): Promise<string | null>       => ipcRenderer.invoke('instance.export', id),
+    duplicate:      (id: string)                               => ipcRenderer.invoke('instance.duplicate', id),
+    importMultiMc:  (): Promise<import('@refract/core').Instance | null> => ipcRenderer.invoke('instance.importMultiMc'),
   },
   window: {
     minimize: (): void => ipcRenderer.send('window:minimize'),
