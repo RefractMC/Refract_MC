@@ -566,13 +566,13 @@ function Settings() {
                 {t.settings.joinDiscord}
               </button>
               <button
-                onClick={() => window.open('https://github.com/ShevRuslan1/Refract_MC/issues')}
+                onClick={() => window.open('https://github.com/RefractMC/Refract_MC/issues')}
                 style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:4, cursor:'pointer' }}
               >
                 {t.settings.reportBug}
               </button>
               <button
-                onClick={() => window.open('https://github.com/ShevRuslan1/Refract_MC')}
+                onClick={() => window.open('https://github.com/RefractMC/Refract_MC')}
                 style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:4, cursor:'pointer' }}
               >
                 {t.settings.github}
