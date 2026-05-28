@@ -3,3 +3,11 @@ dist
 out
 .DS_Store
 *.local
+node_modules
+.pnpm-store
+dist
+out
+.eslintcache
+*.log
+.env
+.claude/*

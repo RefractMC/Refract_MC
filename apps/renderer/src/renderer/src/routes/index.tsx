@@ -571,6 +571,8 @@ function Library() {
   const [serversTarget, setServersTarget] = useState<Instance | null>(null)
   const [updateCounts, setUpdateCounts] = useState<Map<string, number>>(new Map())
   const [searchQuery, setSearchQuery] = useState('')
+  const [filterLoader, setFilterLoader] = useState('')
+  const [filterVersion, setFilterVersion] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [javas, setJavas] = useState<import('@refract/core').JavaInstallation[]>([])
   const [jarToast, setJarToast] = useState<string | null>(null)
@@ -790,9 +792,17 @@ function Library() {
   const groups = [...new Set(instances.map(i => i.groupId).filter(Boolean) as string[])].sort()
   const isGroupedView = carouselTab === 'all' && groups.length > 0
 
-  const tabInstances = (() => {
-    let base = instances
+  const applyFilters = (base: Instance[]) => {
     if (searchQuery) base = base.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    if (filterLoader) base = base.filter(i => (i.loader ?? 'vanilla') === filterLoader)
+    if (filterVersion) base = base.filter(i => i.mcVersion === filterVersion)
+    return base
+  }
+
+  const allVersions = [...new Set(instances.map(i => i.mcVersion).filter(Boolean))].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+
+  const tabInstances = (() => {
+    let base = applyFilters(instances)
     if (carouselTab === 'pinned') return base.filter(i => i.pinned)
     if (carouselTab === 'recent') return [...base].sort((a, b) => {
       const at = a.lastPlayed ?? a.createdAt
@@ -842,6 +852,34 @@ function Library() {
                 color: 'var(--ink)', fontSize: 12, outline: 'none', width: 180,
               }}
             />
+            <select
+              value={filterLoader}
+              onChange={e => { setFilterLoader(e.target.value); setCarouselPage(0) }}
+              style={{
+                height: 28, padding: '0 6px', background: 'var(--bg)',
+                border: '1px solid var(--border-r)', borderRadius: 3,
+                color: filterLoader ? 'var(--ink)' : 'var(--ink-4)', fontSize: 12, outline: 'none',
+              }}
+            >
+              <option value="">All loaders</option>
+              <option value="vanilla">Vanilla</option>
+              <option value="fabric">Fabric</option>
+              <option value="forge">Forge</option>
+              <option value="neoforge">NeoForge</option>
+              <option value="quilt">Quilt</option>
+            </select>
+            <select
+              value={filterVersion}
+              onChange={e => { setFilterVersion(e.target.value); setCarouselPage(0) }}
+              style={{
+                height: 28, padding: '0 6px', background: 'var(--bg)',
+                border: '1px solid var(--border-r)', borderRadius: 3,
+                color: filterVersion ? 'var(--ink)' : 'var(--ink-4)', fontSize: 12, outline: 'none',
+              }}
+            >
+              <option value="">All versions</option>
+              {allVersions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
           </div>
         )}
 
@@ -909,9 +947,7 @@ function Library() {
           <EmptyState onOpen={() => setCreateOpen(true)} />
         ) : isGroupedView ? (
           (() => {
-            const filtered = searchQuery
-              ? instances.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
-              : instances
+            const filtered = applyFilters(instances)
             const sections: Array<{ key: string; title: string; items: Instance[] }> = groups
               .map(g => ({ key: g, title: g, items: filtered.filter(i => i.groupId === g) }))
               .filter(s => s.items.length > 0)
