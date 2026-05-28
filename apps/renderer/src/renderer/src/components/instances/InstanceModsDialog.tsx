@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react'
 import { api } from '@/lib/api'
+import { compressImage } from '@/lib/image'
 import type { Instance } from '@refract/core'
 
 type ContentType = 'mod' | 'resourcepack' | 'shader' | 'datapack'
@@ -57,6 +58,7 @@ interface Props {
   open: boolean
   onOpenChange: (v: boolean) => void
   onUpdateApplied?: (instanceId: string) => void
+  onInstanceUpdated?: () => void
   onLaunch?: () => void
   isRunning?: boolean
   onEdit?: () => void
@@ -79,12 +81,16 @@ function formatSize(kb: number): string {
   return `${kb} KB`
 }
 
-export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateApplied, onLaunch, isRunning, onEdit }: Props) {
+export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateApplied, onInstanceUpdated, onLaunch, isRunning, onEdit }: Props) {
   const [items, setItems]                = useState<ContentEntry[]>([])
   const [worlds, setWorlds]              = useState<WorldEntry[]>([])
   const [screenshots, setScreenshots]    = useState<ScreenshotEntry[]>([])
   const [modUpdates, setModUpdates]      = useState<ModUpdateEntry[]>([])
   const [servers, setServers]            = useState<ServerEntry[]>([])
+  const [iconHover, setIconHover]        = useState(false)
+  const [addingMod, setAddingMod]        = useState(false)
+  const iconInputRef                     = useRef<HTMLInputElement>(null)
+  const modInputRef                      = useRef<HTMLInputElement>(null)
   const [tab, setTab]                    = useState<TabFilter>('all')
   const [loading, setLoading]            = useState(false)
   const [busy, setBusy]                  = useState<Set<string>>(new Set())
@@ -208,6 +214,32 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     }
   }
 
+  async function handleIconPick(e: ChangeEvent<HTMLInputElement>) {
+    if (!instance) return
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const dataUrl = await compressImage(file, 400)
+      await api.instance.update(instance.id, { iconPath: dataUrl })
+      onInstanceUpdated?.()
+    } catch { /* ignore */ }
+    e.target.value = ''
+  }
+
+  async function handleAddModFile(e: ChangeEvent<HTMLInputElement>) {
+    if (!instance) return
+    const file = e.target.files?.[0] as (File & { path?: string }) | undefined
+    if (!file?.path) return
+    setAddingMod(true)
+    try {
+      await api.mods.installLocal(instance.id, file.path)
+      await load()
+    } catch { /* ignore */ } finally {
+      setAddingMod(false)
+    }
+    e.target.value = ''
+  }
+
   async function handleExport() {
     if (!instance || exporting) return
     setExporting(true)
@@ -234,7 +266,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     >
       <div
         style={{
-          width: 860, maxHeight: '88vh',
+          width: 860, height: '88vh',
           background: 'var(--surface)',
           border: '1px solid var(--border-r)',
           borderRadius: 'var(--radius)',
@@ -243,6 +275,10 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
         }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Hidden file inputs */}
+        <input ref={iconInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleIconPick} />
+        <input ref={modInputRef} type="file" accept=".jar,.zip" style={{ display: 'none' }} onChange={handleAddModFile} />
+
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 14,
@@ -251,15 +287,28 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
           flexShrink: 0,
           background: 'var(--surface-2)',
         }}>
-          {/* Instance icon */}
-          <div style={{
-            width: 56, height: 56, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
-            border: '1px solid var(--border-r)', background: 'var(--bg)',
-          }}>
+          {/* Instance icon — click to change */}
+          <div
+            title="Click to change image"
+            onClick={() => iconInputRef.current?.click()}
+            onMouseEnter={() => setIconHover(true)}
+            onMouseLeave={() => setIconHover(false)}
+            style={{
+              width: 56, height: 56, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+              border: `1px solid ${iconHover ? 'var(--accent)' : 'var(--border-r)'}`,
+              background: 'var(--bg)', cursor: 'pointer', position: 'relative',
+              transition: 'border-color 120ms',
+            }}
+          >
             {instance.iconPath
               ? <img src={instance.iconPath} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--accent)' }}>⬡</div>
             }
+            {iconHover && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 18, color: '#fff' }}>🖼</span>
+              </div>
+            )}
           </div>
 
           {/* Instance info */}
@@ -342,6 +391,21 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 }}
               >
                 {updatingAll ? 'Updating…' : `Update All (${updatesAvailable.length})`}
+              </button>
+            )}
+            {isContentTab && (
+              <button
+                onClick={() => modInputRef.current?.click()}
+                disabled={addingMod}
+                style={{
+                  fontSize: 11, color: '#fff',
+                  background: addingMod ? 'var(--surface-3)' : 'var(--accent)',
+                  border: 'none',
+                  borderRadius: 3, padding: '3px 10px', cursor: addingMod ? 'not-allowed' : 'pointer',
+                  opacity: addingMod ? .6 : 1, fontWeight: 600,
+                }}
+              >
+                {addingMod ? 'Adding…' : '+ Add File'}
               </button>
             )}
             <button

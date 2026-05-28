@@ -1298,6 +1298,7 @@ function Library() {
             .then(updates => setUpdateCounts(prev => { const next = new Map(prev); next.set(instanceId, updates.filter(u => u.hasUpdate).length); return next }))
             .catch(() => {})
         }}
+        onInstanceUpdated={() => queryClient.invalidateQueries({ queryKey: ['instances'] })}
         onLaunch={modsTarget ? () => handleLaunch(modsTarget) : undefined}
         isRunning={modsTarget ? runningIds.has(modsTarget.id) : false}
         onEdit={modsTarget ? () => setEditTarget(modsTarget) : undefined}
