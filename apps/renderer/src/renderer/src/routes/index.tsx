@@ -573,6 +573,8 @@ function Library() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterLoader, setFilterLoader] = useState('')
   const [filterVersion, setFilterVersion] = useState('')
+  const [dragInstanceId, setDragInstanceId] = useState<string | null>(null)
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [javas, setJavas] = useState<import('@refract/core').JavaInstallation[]>([])
   const [jarToast, setJarToast] = useState<string | null>(null)
@@ -964,8 +966,23 @@ function Library() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {sections.map(section => {
                   const isCollapsed = collapsedGroups.has(section.key)
+                  const isDragTarget = dragOverGroup === section.key && dragInstanceId !== null
                   return (
-                    <div key={section.key}>
+                    <div
+                      key={section.key}
+                      onDragOver={e => { e.preventDefault(); setDragOverGroup(section.key) }}
+                      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverGroup(null) }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        setDragOverGroup(null)
+                        const id = dragInstanceId
+                        setDragInstanceId(null)
+                        if (!id) return
+                        const newGroupId = section.key === '__ungrouped__' ? undefined : section.key
+                        updateInstance.mutate({ id, patch: { groupId: newGroupId } })
+                      }}
+                      style={{ outline: isDragTarget ? '2px dashed var(--accent)' : undefined, borderRadius: 4, padding: isDragTarget ? 4 : 0 }}
+                    >
                       <button
                         onClick={() => setCollapsedGroups(prev => {
                           const next = new Set(prev)
@@ -993,30 +1010,37 @@ function Library() {
                             const needed = requiredJava(inst.minecraftVersion)
                             const javaOk = javas.some(j => j.version >= needed)
                             return (
-                              <InstanceCard
+                              <div
                                 key={inst.id}
-                                instance={inst}
-                                onLaunch={() => handleLaunch(inst)}
-                                onEdit={() => setEditTarget(inst)}
-                                onConsole={() => setConsoleOpen(inst.id)}
-                                onMods={() => setModsTarget(inst)}
-                                onOpenFolder={() => api.instance.openFolder(inst.id)}
-                                onServers={() => setServersTarget(inst)}
-                                onDropJar={async (path) => {
-                                  try {
-                                    await api.mods.installLocal(inst.id, path)
-                                    setJarToast(`Mod installed to "${inst.name}"`)
-                                  } catch (e) {
-                                    setJarToast(`Install failed: ${e instanceof Error ? e.message : String(e)}`)
-                                  }
-                                  setTimeout(() => setJarToast(null), 3500)
-                                }}
-                                blockReason={!hasProfile ? 'no-profile' : !canPlayMinecraft ? 'no-license' : null}
-                                isRunning={runningIds.has(inst.id)}
-                                hasLogs={(consoleLogs.get(inst.id)?.length ?? 0) > 0}
-                                updateCount={updateCounts.get(inst.id) ?? 0}
-                                javaOk={javaOk}
-                              />
+                                draggable
+                                onDragStart={() => setDragInstanceId(inst.id)}
+                                onDragEnd={() => { setDragInstanceId(null); setDragOverGroup(null) }}
+                                style={{ cursor: 'grab', opacity: dragInstanceId === inst.id ? 0.5 : 1 }}
+                              >
+                                <InstanceCard
+                                  instance={inst}
+                                  onLaunch={() => handleLaunch(inst)}
+                                  onEdit={() => setEditTarget(inst)}
+                                  onConsole={() => setConsoleOpen(inst.id)}
+                                  onMods={() => setModsTarget(inst)}
+                                  onOpenFolder={() => api.instance.openFolder(inst.id)}
+                                  onServers={() => setServersTarget(inst)}
+                                  onDropJar={async (path) => {
+                                    try {
+                                      await api.mods.installLocal(inst.id, path)
+                                      setJarToast(`Mod installed to "${inst.name}"`)
+                                    } catch (e) {
+                                      setJarToast(`Install failed: ${e instanceof Error ? e.message : String(e)}`)
+                                    }
+                                    setTimeout(() => setJarToast(null), 3500)
+                                  }}
+                                  blockReason={!hasProfile ? 'no-profile' : !canPlayMinecraft ? 'no-license' : null}
+                                  isRunning={runningIds.has(inst.id)}
+                                  hasLogs={(consoleLogs.get(inst.id)?.length ?? 0) > 0}
+                                  updateCount={updateCounts.get(inst.id) ?? 0}
+                                  javaOk={javaOk}
+                                />
+                              </div>
                             )
                           })}
                         </div>
