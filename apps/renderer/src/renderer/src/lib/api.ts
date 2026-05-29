@@ -149,6 +149,12 @@ function createBrowserApi(): RefractAPI {
       },
       delete: async () => undefined,
     },
+    updater: {
+      onAvailable:  () => () => undefined,
+      onProgress:   () => () => undefined,
+      onDownloaded: () => () => undefined,
+      install: () => undefined,
+    },
     launcher: {
       deleteAll: async () => { throw new Error('Delete all requires the Electron app.') },
     },

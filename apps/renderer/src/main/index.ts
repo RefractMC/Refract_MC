@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { autoUpdater } from 'electron-updater'
 import { registerAllIpcHandlers } from './ipc'
@@ -57,8 +57,19 @@ app.whenReady().then(() => {
   const mainWindow = createWindow()
   registerAllIpcHandlers(mainWindow)
 
+  ipcMain.on('updater:install', () => autoUpdater.quitAndInstall())
+
   if (!isDev) {
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+    autoUpdater.on('update-available', (info: { version: string }) => {
+      mainWindow.webContents.send('updater:available', { version: info.version })
+    })
+    autoUpdater.on('download-progress', (p: { percent: number }) => {
+      mainWindow.webContents.send('updater:progress', { percent: Math.round(p.percent) })
+    })
+    autoUpdater.on('update-downloaded', () => {
+      mainWindow.webContents.send('updater:downloaded')
+    })
+    autoUpdater.checkForUpdates().catch(() => {})
   }
 
   app.on('activate', () => {

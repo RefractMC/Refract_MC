@@ -45,6 +45,8 @@ function WinBtn({ onClick, danger, children }: { onClick: () => void; danger?: b
 
 type ActivityEntry = { id: string; label: string; ts: number }
 
+type UpdateState = { version: string; percent: number; ready: boolean }
+
 export function TitleBar() {
   const pathname = useRouterState({ select: s => s.location.pathname })
   const crumb = CRUMBS[pathname] ?? ''
@@ -53,10 +55,18 @@ export function TitleBar() {
   const [entries, setEntries] = useState<ActivityEntry[]>([])
   const [lastSeen, setLastSeen] = useState<number>(() => Number(localStorage.getItem(LAST_SEEN_KEY) ?? 0))
   const panelRef = useRef<HTMLDivElement>(null)
+  const [update, setUpdate] = useState<UpdateState | null>(null)
 
   useEffect(() => {
     api.window.isMaximized().then(setIsMaximized).catch(() => {})
     return api.window.onMaximizedChange(setIsMaximized)
+  }, [])
+
+  useEffect(() => {
+    const unA = api.updater.onAvailable(({ version }) => setUpdate({ version, percent: 0, ready: false }))
+    const unP = api.updater.onProgress(({ percent }) => setUpdate(u => u ? { ...u, percent } : null))
+    const unD = api.updater.onDownloaded(() => setUpdate(u => u ? { ...u, ready: true, percent: 100 } : null))
+    return () => { unA(); unP(); unD() }
   }, [])
 
   useEffect(() => {
@@ -115,6 +125,31 @@ export function TitleBar() {
       </div>
 
       <div style={{ flex: 1 }} />
+
+      {/* Update chip */}
+      {update && (
+        <div className="no-drag-region" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 6, padding: '0 8px', height: 22, borderRadius: 4, background: update.ready ? 'rgba(74,222,128,.12)' : 'rgba(255,255,255,.06)', border: `1px solid ${update.ready ? 'rgba(74,222,128,.35)' : 'var(--line)'}` }}>
+          {update.ready ? (
+            <>
+              <span style={{ fontSize: 10, color: 'var(--grass)', fontWeight: 600 }}>v{update.version} ready</span>
+              <button
+                onClick={() => api.updater.install()}
+                style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 2, cursor: 'pointer', lineHeight: 1 }}
+              >
+                Restart ↺
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>v{update.version}</span>
+              <div style={{ width: 48, height: 3, background: 'var(--surface-3)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${update.percent}%`, background: 'var(--accent)', transition: 'width 300ms linear', borderRadius: 2 }} />
+              </div>
+              <span style={{ fontSize: 10, color: 'var(--ink-4)', minWidth: 26, textAlign: 'right' }}>{update.percent}%</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Bell */}
       <div className="no-drag-region" style={{ position: 'relative', marginRight: 4 }} ref={panelRef}>

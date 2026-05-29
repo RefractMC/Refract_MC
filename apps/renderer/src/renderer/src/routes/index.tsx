@@ -458,6 +458,13 @@ function OnboardingModal({ step, onNext, onClose, onAddAccount, onNewInstance }:
         </div>
       ),
     },
+    {
+      title: t.home.onboarding3Title,
+      body: t.home.onboarding3Body,
+      footer: (
+        <button onClick={onClose} style={primaryBtnStyle}>{t.home.onboarding3Action}</button>
+      ),
+    },
   ]
   const current = steps[step]
   if (!current) return null
@@ -1343,10 +1350,10 @@ function Library() {
       {onboardingStep !== null && (
         <OnboardingModal
           step={onboardingStep}
-          onNext={() => setOnboardingStep(s => s !== null ? Math.min(s + 1, 2) : null)}
+          onNext={() => setOnboardingStep(s => s !== null ? Math.min(s + 1, 3) : null)}
           onClose={dismissOnboarding}
           onAddAccount={dismissOnboarding}
-          onNewInstance={() => { dismissOnboarding(); setCreateOpen(true) }}
+          onNewInstance={() => { setOnboardingStep(3); setCreateOpen(true) }}
         />
       )}
     </div>

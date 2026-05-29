@@ -6,6 +6,24 @@ import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import { useT, type T } from '@/i18n'
 
+function SkinFace({ uuid, size }: { uuid: string; size: number }) {
+  const id = uuid.replace(/-/g, '')
+  const [src, setSrc] = useState(`https://mc-heads.net/avatar/${id}/${size}`)
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <img
+      src={src}
+      alt=""
+      style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
+      onError={() => {
+        if (!src.includes('crafatar')) setSrc(`https://crafatar.com/avatars/${id}?size=${size}&overlay=true&default=MHF_Steve`)
+        else setFailed(true)
+      }}
+    />
+  )
+}
+
 export const Route = createFileRoute('/account/')({
   component: Account,
 })
@@ -428,13 +446,16 @@ function Account() {
                         width:42, height:42, borderRadius:3, overflow:'hidden', flexShrink:0,
                         border:'1px solid var(--border-r)', background:'var(--surface-3)',
                         cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+                        imageRendering: 'pixelated',
                       }}
                     >
                       {avatars[account.uuid]
                         ? <img src={avatars[account.uuid]} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                        : <span style={{ fontFamily:"'VT323',monospace", fontSize:22, color:'var(--ink-3)' }}>
-                            {account.username[0]?.toUpperCase()}
-                          </span>
+                        : account.type !== 'offline'
+                          ? <SkinFace uuid={account.uuid} size={42} />
+                          : <span style={{ fontFamily:"'VT323',monospace", fontSize:22, color:'var(--ink-3)' }}>
+                              {account.username[0]?.toUpperCase()}
+                            </span>
                       }
                     </div>
                     <div style={{ minWidth:0, flex:1 }}>

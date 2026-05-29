@@ -125,6 +125,12 @@ declare global {
         install: (sourcePath: string) => Promise<import('@/lib/theme-types').ThemeDefinition>
         delete:  (fileName: string) => Promise<void>
       }
+      updater: {
+        onAvailable:  (cb: (v: { version: string }) => void) => () => void
+        onProgress:   (cb: (v: { percent: number }) => void) => () => void
+        onDownloaded: (cb: () => void) => () => void
+        install: () => void
+      }
       launcher: {
         deleteAll: () => Promise<void>
       }

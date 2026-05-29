@@ -29,6 +29,24 @@ export const api = {
     install: (sourcePath: string)       => ipcRenderer.invoke('theme.install', sourcePath),
     delete:  (fileName: string)         => ipcRenderer.invoke('theme.delete', fileName),
   },
+  updater: {
+    onAvailable:  (cb: (v: { version: string }) => void) => {
+      const h = (_: IpcRendererEvent, v: { version: string }) => cb(v)
+      ipcRenderer.on('updater:available', h)
+      return () => ipcRenderer.off('updater:available', h)
+    },
+    onProgress:   (cb: (v: { percent: number }) => void) => {
+      const h = (_: IpcRendererEvent, v: { percent: number }) => cb(v)
+      ipcRenderer.on('updater:progress', h)
+      return () => ipcRenderer.off('updater:progress', h)
+    },
+    onDownloaded: (cb: () => void) => {
+      const h = () => cb()
+      ipcRenderer.on('updater:downloaded', h)
+      return () => ipcRenderer.off('updater:downloaded', h)
+    },
+    install: () => ipcRenderer.send('updater:install'),
+  },
   launcher: {
     deleteAll: () => ipcRenderer.invoke('launcher.deleteAll'),
   },
