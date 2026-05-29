@@ -125,6 +125,9 @@ declare global {
         install: (sourcePath: string) => Promise<import('@/lib/theme-types').ThemeDefinition>
         delete:  (fileName: string) => Promise<void>
       }
+      launcher: {
+        deleteAll: () => Promise<void>
+      }
       instance: {
         list:       () => Promise<Instance[]>
         getById:    (id: string) => Promise<Instance | null>

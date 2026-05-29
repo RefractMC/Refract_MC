@@ -31,6 +31,8 @@ function Settings() {
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [memoryMb, setMemoryMb] = useState<number>(2048)
   const memorySaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [javas, setJavas] = useState<JavaInstallation[]>([])
@@ -609,6 +611,71 @@ function Settings() {
           </div>
         </div>
       </Panel>
+
+      {/* Danger zone */}
+      <section style={{
+        border: '1px solid rgba(217,59,59,.35)',
+        borderRadius: 'var(--radius)',
+        overflow: 'hidden',
+      }}>
+        <div style={{ padding: '13px 16px', borderBottom: '1px solid rgba(217,59,59,.25)', color: 'var(--lava)', fontWeight: 700, background: 'rgba(217,59,59,.07)' }}>
+          Danger Zone
+        </div>
+        <div style={{ padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <div style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 13 }}>Delete all launcher data</div>
+            <div style={{ color: 'var(--ink-4)', fontSize: 12, marginTop: 3 }}>
+              Permanently deletes all instances, mods, saves, themes, Java installations and launcher settings. This cannot be undone.
+            </div>
+          </div>
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{
+                height: 34, padding: '0 16px', flexShrink: 0,
+                background: 'transparent', color: 'var(--lava)',
+                border: '1px solid rgba(217,59,59,.5)', borderRadius: 4,
+                cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              }}
+            >
+              Delete All Data
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Are you sure?</span>
+              <button
+                onClick={async () => {
+                  setDeleting(true)
+                  try { await api.launcher.deleteAll() } catch { setDeleting(false); setConfirmDelete(false) }
+                }}
+                disabled={deleting}
+                style={{
+                  height: 34, padding: '0 16px',
+                  background: 'var(--lava)', color: '#fff',
+                  border: 'none', borderRadius: 4,
+                  cursor: deleting ? 'not-allowed' : 'pointer',
+                  fontSize: 12, fontWeight: 700,
+                  opacity: deleting ? 0.6 : 1,
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete everything'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                style={{
+                  height: 34, padding: '0 14px',
+                  background: 'var(--surface-3)', color: 'var(--ink)',
+                  border: '1px solid var(--border-r)', borderRadius: 4,
+                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
 
       {error && (
         <div style={{ padding:12, color:'#fff', background:'rgba(217,59,59,.18)', border:'1px solid var(--redstone)', borderRadius:4, fontSize:13 }}>

@@ -29,6 +29,9 @@ export const api = {
     install: (sourcePath: string)       => ipcRenderer.invoke('theme.install', sourcePath),
     delete:  (fileName: string)         => ipcRenderer.invoke('theme.delete', fileName),
   },
+  launcher: {
+    deleteAll: () => ipcRenderer.invoke('launcher.deleteAll'),
+  },
   instance: {
     list:       ()                                              => ipcRenderer.invoke('instance.list'),
     getById:    (id: string)                                   => ipcRenderer.invoke('instance.getById', id),

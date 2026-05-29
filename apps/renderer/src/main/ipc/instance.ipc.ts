@@ -7,12 +7,13 @@ import {
 } from '../services/instance-store'
 import type { CreateInstanceInput, Instance } from '@refract/core'
 import { handleIpc } from './handle'
-import { shell, dialog, BrowserWindow } from 'electron'
+import { shell, dialog, BrowserWindow, app } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdirSync, cpSync } from 'fs'
+import { existsSync, mkdirSync, cpSync, rmSync } from 'fs'
 import { spawn } from 'child_process'
 import { resolveInstanceDir } from '../services/instance-store'
 import { importMultiMcInstance } from '../services/multimc-import'
+import { paths } from '../services/paths'
 
 function zipDirectory(src: string, dst: string): Promise<void> {
   const psEscape = (s: string) => s.replace(/'/g, "''")
@@ -103,5 +104,18 @@ export function registerInstanceIpc(): void {
     if (canceled || !filePath) return null
     await zipDirectory(instanceDir, filePath)
     return filePath
+  })
+
+  handleIpc('launcher.deleteAll', async () => {
+    const userData = paths.userData
+    const subdirs = ['instances', 'themes', 'plugins', 'java', 'assets', 'libraries', 'versions', 'cache', 'logs'] as const
+    for (const sub of subdirs) {
+      const p = join(userData, sub)
+      if (existsSync(p)) rmSync(p, { recursive: true, force: true })
+    }
+    // Delete config file
+    const configPath = join(userData, 'config.json')
+    if (existsSync(configPath)) rmSync(configPath)
+    app.exit(0)
   })
 }

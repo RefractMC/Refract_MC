@@ -149,6 +149,9 @@ function createBrowserApi(): RefractAPI {
       },
       delete: async () => undefined,
     },
+    launcher: {
+      deleteAll: async () => { throw new Error('Delete all requires the Electron app.') },
+    },
     instance: {
       list: async () => getInstances(),
       getById: async (id) => getInstances().find((instance) => instance.id === id) ?? null,
