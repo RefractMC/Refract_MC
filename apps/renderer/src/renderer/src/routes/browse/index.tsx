@@ -848,10 +848,11 @@ function Browse() {
           )}
 
           {totalPages > 1 && (
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', paddingTop: 4 }}>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', paddingTop: 4 }}>
               <PageBtn disabled={currentPage === 0} onClick={() => doSearch((currentPage - 1) * LIMIT)}>←</PageBtn>
-              <span style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ink-3)', alignSelf: 'center', letterSpacing: '.06em' }}>
-                {currentPage + 1} / {totalPages}
+              <PageJumper current={currentPage} total={totalPages} onGo={p => doSearch(p * LIMIT)} />
+              <span style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--ink-3)', letterSpacing: '.06em' }}>
+                / {totalPages}
               </span>
               <PageBtn disabled={currentPage >= totalPages - 1} onClick={() => doSearch((currentPage + 1) * LIMIT)}>→</PageBtn>
             </div>
@@ -1186,5 +1187,30 @@ function PageBtn({ disabled, onClick, children }: { disabled: boolean; onClick: 
     <button disabled={disabled} onClick={onClick} style={{ width: 32, height: 28, fontFamily: "'VT323',monospace", fontSize: 18, color: disabled ? 'var(--ink-4)' : 'var(--ink)', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1 }}>
       {children}
     </button>
+  )
+}
+
+function PageJumper({ current, total, onGo }: { current: number; total: number; onGo: (zeroIdx: number) => void }) {
+  const [val, setVal] = useState(String(current + 1))
+  useEffect(() => setVal(String(current + 1)), [current])
+  function go() {
+    const n = parseInt(val, 10)
+    if (!isNaN(n)) onGo(Math.max(0, Math.min(n - 1, total - 1)))
+    else setVal(String(current + 1))
+  }
+  return (
+    <input
+      value={val}
+      onChange={e => setVal(e.target.value)}
+      onBlur={go}
+      onKeyDown={e => { if (e.key === 'Enter') go() }}
+      style={{
+        width: Math.max(String(total).length, 2) * 11 + 16,
+        height: 28, textAlign: 'center',
+        fontFamily: "'VT323',monospace", fontSize: 16,
+        background: 'var(--bg)', border: '1px solid var(--border-r)',
+        color: 'var(--ink)', borderRadius: 3, outline: 'none',
+      }}
+    />
   )
 }
