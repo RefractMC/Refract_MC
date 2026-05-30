@@ -237,6 +237,22 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                   placeholder={t.editInst.jvmArgsPlaceholder}
                   style={inputSt}
                 />
+                <div style={{ display:'flex', gap:4, marginTop:4, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:10, color:'var(--ink-4)', alignSelf:'center', flexShrink:0, letterSpacing:'.06em' }}>PRESETS:</span>
+                  {[
+                    { label:"Aikar's", args:'-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:+DisableExplicitGC -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1' },
+                    { label:'Low-end', args:'-XX:+UseSerialGC -XX:TieredStopAtLevel=1' },
+                  ].map(p => (
+                    <button key={p.label} type="button" onClick={() => setJavaArgs(p.args)} style={{ fontSize:10, padding:'2px 8px', background:'var(--surface-3)', color:'var(--ink-3)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontWeight:600 }}>
+                      {p.label}
+                    </button>
+                  ))}
+                  {javaArgs && (
+                    <button type="button" onClick={() => setJavaArgs('')} style={{ fontSize:10, padding:'2px 8px', background:'none', color:'var(--ink-4)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer' }}>
+                      Clear
+                    </button>
+                  )}
+                </div>
               </Field>
 
               {/* Pin toggle */}

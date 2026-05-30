@@ -215,8 +215,9 @@ declare global {
         deleteWorld: (instanceId: string, worldName: string) => Promise<void>
         screenshots: (instanceId: string) => Promise<Array<{ filename: string; sizeKb: number; timestamp: number; dataUrl: string | null }>>
         openScreenshot: (instanceId: string, filename: string) => Promise<void>
-        servers:    (instanceId: string) => Promise<Array<{ name: string; ip: string; icon?: string }>>
-        pingServer: (ip: string) => Promise<{ online: number; max: number; latencyMs: number } | null>
+        servers:     (instanceId: string) => Promise<Array<{ name: string; ip: string; icon?: string }>>
+        pingServer:  (ip: string) => Promise<{ online: number; max: number; latencyMs: number } | null>
+        backupWorld: (instanceId: string, worldName: string) => Promise<string | null>
         onProgress: (cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => () => void
         onLog: (cb: (data: { instanceId: string; line: string; stream: string }) => void) => () => void
         onExit: (cb: (data: { instanceId: string; code: number | null; error?: string }) => void) => () => void

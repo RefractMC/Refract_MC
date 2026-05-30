@@ -1,7 +1,8 @@
-import { ipcMain, BrowserWindow, nativeImage, shell } from 'electron'
-import { join } from 'path'
+import { ipcMain, BrowserWindow, nativeImage, shell, dialog } from 'electron'
+import { join, basename, dirname } from 'path'
 import { readdirSync, statSync, readFileSync, existsSync, rmSync } from 'fs'
 import { createConnection } from 'net'
+import { spawn } from 'child_process'
 import { handleIpc } from './handle'
 import { fetchVersionList } from '@refract/core'
 import { detectJavaInstallations } from '@refract/core/java-manager'
@@ -71,6 +72,24 @@ function getWorldSizeKb(worldPath: string): number {
     }
   } catch { /* ignore */ }
   return Math.round(total / 1024)
+}
+
+function zipPath(src: string, dst: string): Promise<void> {
+  if (process.platform === 'win32') {
+    const esc = (s: string) => s.replace(/'/g, "''")
+    return new Promise((resolve, reject) => {
+      const proc = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+        `Compress-Archive -LiteralPath '${esc(src)}' -DestinationPath '${esc(dst)}' -Force`],
+        { windowsHide: true })
+      proc.on('exit', code => code === 0 ? resolve() : reject(new Error(`Zip failed (${code})`)))
+      proc.on('error', reject)
+    })
+  }
+  return new Promise((resolve, reject) => {
+    const proc = spawn('zip', ['-r', dst, basename(src)], { cwd: dirname(src) })
+    proc.on('exit', code => code === 0 ? resolve() : reject(new Error(`Zip failed (${code})`)))
+    proc.on('error', reject)
+  })
 }
 
 export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
@@ -194,6 +213,19 @@ export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
   handleIpc('mc.openScreenshot', (_event, instanceId, filename) => {
     const p = join(resolveInstanceDir(String(instanceId)), 'minecraft', 'screenshots', String(filename))
     return shell.openPath(p)
+  })
+
+  handleIpc('mc.backupWorld', async (_event, instanceId, worldName) => {
+    const worldPath = join(resolveInstanceDir(String(instanceId)), 'minecraft', 'saves', String(worldName))
+    if (!existsSync(worldPath)) throw new Error('World not found')
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      title: 'Save World Backup',
+      defaultPath: `${worldName}-backup.zip`,
+      filters: [{ name: 'ZIP Archive', extensions: ['zip'] }],
+    })
+    if (canceled || !filePath) return null
+    await zipPath(worldPath, filePath)
+    return filePath
   })
 
   handleIpc('mc.servers', (_event, instanceId) => {

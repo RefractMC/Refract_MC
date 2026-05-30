@@ -23,6 +23,8 @@ function Settings() {
   const applyBuiltin = useThemeStore((state) => state.applyBuiltin)
   const layoutOverrides = useThemeStore((state) => state.layoutOverrides)
   const setLayoutOverride = useThemeStore((state) => state.setLayoutOverride)
+  const accentColor = useThemeStore((state) => state.accentColor)
+  const setAccentColor = useThemeStore((state) => state.setAccentColor)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
@@ -245,6 +247,46 @@ function Settings() {
         <div style={{ display:'grid', gap:14 }}>
           <Panel title={t.settings.appearance}>
             <div style={{ display:'grid', gap:12 }}>
+              <Field label="Accent color" note="Pick any colour — or reset to the default theme green.">
+                <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                  {[
+                    { hex:'#5b9c3a', label:'Default green' },
+                    { hex:'#5316D4', label:'Refract purple' },
+                    { hex:'#3b82f6', label:'Blue' },
+                    { hex:'#f97316', label:'Orange' },
+                    { hex:'#ef4444', label:'Red' },
+                    { hex:'#ec4899', label:'Pink' },
+                    { hex:'#14b8a6', label:'Teal' },
+                  ].map(({ hex, label }) => (
+                    <button
+                      key={hex}
+                      title={label}
+                      onClick={() => { setAccentColor(hex); showToast('Accent colour applied.') }}
+                      style={{
+                        width:22, height:22, borderRadius:'50%', background:hex, border:'none', cursor:'pointer', flexShrink:0, padding:0,
+                        boxShadow: accentColor === hex ? `0 0 0 2px var(--surface), 0 0 0 4px ${hex}` : 'none',
+                        transition:'box-shadow 120ms',
+                      }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={accentColor ?? '#5b9c3a'}
+                    onChange={e => setAccentColor(e.target.value)}
+                    title="Custom colour"
+                    style={{ width:30, height:22, padding:0, border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', background:'none' }}
+                  />
+                  {accentColor && (
+                    <button
+                      onClick={() => { setAccentColor(null); showToast('Accent colour reset.') }}
+                      style={{ fontSize:11, color:'var(--ink-4)', background:'none', border:'1px solid var(--border-r)', borderRadius:3, padding:'2px 8px', cursor:'pointer' }}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </Field>
+
               <Field label={t.settings.theme} note={t.settings.themeNote}>
                 <Segmented>
                   <SegmentButton active={activeThemeId === 'dark'} disabled={!!busy} onClick={() => chooseTheme('dark')}>

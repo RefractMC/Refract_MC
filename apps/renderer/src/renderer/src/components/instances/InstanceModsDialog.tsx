@@ -103,6 +103,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   const [profiles, setProfiles]          = useState<ModProfile[]>([])
   const [savingProfile, setSavingProfile]= useState(false)
   const [newProfileName, setNewProfileName] = useState('')
+  const [selectedMods, setSelectedMods]  = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     if (!instance) return
@@ -162,9 +163,11 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
 
   useEffect(() => {
     if (!open) return
-    setItems([]); setWorlds([]); setScreenshots([]); setModUpdates([]); setServers([]); setProfiles([]); setTab('all'); setError(null)
+    setItems([]); setWorlds([]); setScreenshots([]); setModUpdates([]); setServers([]); setProfiles([]); setTab('all'); setError(null); setSelectedMods(new Set())
     load()
   }, [open, load])
+
+  useEffect(() => { setSelectedMods(new Set()) }, [tab])
 
   useEffect(() => {
     if (!open) return
@@ -273,6 +276,30 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     if (!instance) return
     try { await api.mods.profilesDelete(instance.id, profileId); setProfiles(prev => prev.filter(p => p.id !== profileId)) }
     catch { /* ignore */ }
+  }
+
+  async function handleBulkToggle(enable: boolean) {
+    if (!instance || selectedMods.size === 0) return
+    const targets = visible.filter(e => selectedMods.has(e.filename) && e.enabled !== enable && !e.filename.includes('/'))
+    setBusy(prev => new Set([...prev, ...targets.map(e => e.filename)]))
+    try {
+      for (const entry of targets) await api.mods.toggle(instance.id, entry.filename, entry.type)
+      await load()
+      setSelectedMods(new Set())
+    } catch { /* ignore */ }
+    finally { setBusy(prev => { const n = new Set(prev); targets.forEach(e => n.delete(e.filename)); return n }) }
+  }
+
+  async function handleBulkDelete() {
+    if (!instance || selectedMods.size === 0) return
+    const targets = visible.filter(e => selectedMods.has(e.filename))
+    setBusy(prev => new Set([...prev, ...targets.map(e => e.filename)]))
+    try {
+      for (const entry of targets) await api.mods.delete(instance.id, entry.filename, entry.type)
+      setItems(prev => prev.filter(m => !selectedMods.has(m.filename)))
+      setSelectedMods(new Set())
+    } catch { /* ignore */ }
+    finally { setBusy(prev => { const n = new Set(prev); targets.forEach(e => n.delete(e.filename)); return n }) }
   }
 
   async function handleExport() {
@@ -590,6 +617,19 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
           </div>
         )}
 
+        {/* Bulk action bar */}
+        {isContentTab && selectedMods.size > 0 && (
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px', background:'var(--accent-tint)', borderBottom:'1px solid var(--accent)', flexShrink:0 }}>
+            <span style={{ fontSize:11, color:'var(--accent)', fontWeight:700, minWidth:70 }}>{selectedMods.size} selected</span>
+            <button onClick={() => handleBulkToggle(true)}  style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--grass)', border:'1px solid var(--grass)', borderRadius:3, cursor:'pointer', fontWeight:600 }}>Enable</button>
+            <button onClick={() => handleBulkToggle(false)} style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--gold)',  border:'1px solid var(--gold)',  borderRadius:3, cursor:'pointer', fontWeight:600 }}>Disable</button>
+            <button onClick={handleBulkDelete}              style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--lava)',  border:'1px solid var(--lava)',  borderRadius:3, cursor:'pointer', fontWeight:600 }}>Delete</button>
+            <div style={{ flex:1 }} />
+            <button onClick={() => setSelectedMods(new Set(visible.filter(e => !e.filename.includes('/')).map(e => e.filename)))} style={{ fontSize:10, color:'var(--ink-3)', background:'none', border:'none', cursor:'pointer' }}>Select all</button>
+            <button onClick={() => setSelectedMods(new Set())} style={{ fontSize:10, color:'var(--ink-4)', background:'none', border:'none', cursor:'pointer' }}>✕ Clear</button>
+          </div>
+        )}
+
         {/* Export message */}
         {exportMsg && (
           <div style={{ padding: '6px 16px', fontSize: 11, color: exportMsg.startsWith('Export failed') ? 'var(--lava)' : 'var(--grass)', background: 'var(--bg)', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
@@ -612,6 +652,10 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 world={w}
                 isBusy={busy.has(w.name)}
                 onDelete={() => handleDeleteWorld(w.name)}
+                onBackup={async () => {
+                  if (!instance) return
+                  try { await api.mc.backupWorld(instance.id, w.name) } catch { /* ignore */ }
+                }}
               />
             ))
           ) : tab === 'screenshots' ? (
@@ -651,6 +695,8 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
               key={entry.filename}
               entry={entry}
               isBusy={busy.has(entry.filename)}
+              selected={selectedMods.has(entry.filename)}
+              onSelect={() => setSelectedMods(prev => { const n = new Set(prev); n.has(entry.filename) ? n.delete(entry.filename) : n.add(entry.filename); return n })}
               onToggle={() => handleToggle(entry)}
               onDelete={() => handleDelete(entry)}
             />
@@ -730,8 +776,9 @@ function EmptyMsg({ msg, sub }: { msg: string; sub: string }) {
   )
 }
 
-function WorldRow({ world, isBusy, onDelete }: { world: WorldEntry; isBusy: boolean; onDelete: () => void }) {
+function WorldRow({ world, isBusy, onDelete, onBackup }: { world: WorldEntry; isBusy: boolean; onDelete: () => void; onBackup?: () => void }) {
   const [confirm, setConfirm] = useState(false)
+  const [backing, setBacking] = useState(false)
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px',
@@ -747,22 +794,33 @@ function WorldRow({ world, isBusy, onDelete }: { world: WorldEntry; isBusy: bool
           {world.sizeKb > 0 && <span>{formatSize(world.sizeKb)}</span>}
         </div>
       </div>
-      {confirm ? (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => { setConfirm(false); onDelete() }} disabled={isBusy} style={{ fontSize: 11, color: '#fff', background: 'var(--lava)', border: 'none', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>Delete</button>
-          <button onClick={() => setConfirm(false)} style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>Cancel</button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setConfirm(true)}
-          disabled={isBusy}
-          style={{ fontSize: 11, color: 'var(--ink-4)', background: 'none', border: '1px solid transparent', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--lava)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--lava)' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)' }}
-        >
-          Delete
-        </button>
-      )}
+      <div style={{ display:'flex', gap:5 }}>
+        {onBackup && (
+          <button
+            onClick={async () => { setBacking(true); await onBackup(); setBacking(false) }}
+            disabled={isBusy || backing}
+            style={{ fontSize:11, color:'var(--diamond)', background:'none', border:'1px solid var(--diamond)', borderRadius:3, padding:'3px 9px', cursor:'pointer', opacity: backing ? .6 : 1 }}
+          >
+            {backing ? '…' : 'Backup'}
+          </button>
+        )}
+        {confirm ? (
+          <div style={{ display: 'flex', gap: 5 }}>
+            <button onClick={() => { setConfirm(false); onDelete() }} disabled={isBusy} style={{ fontSize: 11, color: '#fff', background: 'var(--lava)', border: 'none', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>Delete</button>
+            <button onClick={() => setConfirm(false)} style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirm(true)}
+            disabled={isBusy}
+            style={{ fontSize: 11, color: 'var(--ink-4)', background: 'none', border: '1px solid transparent', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--lava)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--lava)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)' }}
+          >
+            Delete
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -838,9 +896,11 @@ function UpdateRow({ entry }: { entry: ModUpdateEntry }) {
   )
 }
 
-function ContentRow({ entry, isBusy, onToggle, onDelete }: {
+function ContentRow({ entry, isBusy, selected, onSelect, onToggle, onDelete }: {
   entry: ContentEntry
   isBusy: boolean
+  selected?: boolean
+  onSelect?: () => void
   onToggle: () => void
   onDelete: () => void
 }) {
@@ -855,7 +915,13 @@ function ContentRow({ entry, isBusy, onToggle, onDelete }: {
       borderBottom: '1px solid var(--line)',
       opacity: isBusy ? 0.5 : 1,
       transition: 'opacity 150ms',
+      background: selected ? 'var(--accent-tint)' : undefined,
     }}>
+      {/* Checkbox */}
+      {onSelect && (
+        <input type="checkbox" checked={!!selected} onChange={onSelect}
+          style={{ cursor:'pointer', flexShrink:0, accentColor:'var(--accent)', width:14, height:14 }} />
+      )}
       {/* Icon */}
       <div style={{
         width: 34, height: 34, flexShrink: 0, borderRadius: 4, overflow: 'hidden',

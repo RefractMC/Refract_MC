@@ -172,8 +172,9 @@ export const api = {
     deleteWorld: (instanceId: string, worldName: string) => ipcRenderer.invoke('mc.deleteWorld', instanceId, worldName),
     screenshots: (instanceId: string) => ipcRenderer.invoke('mc.screenshots', instanceId),
     openScreenshot: (instanceId: string, filename: string) => ipcRenderer.invoke('mc.openScreenshot', instanceId, filename),
-    servers:    (instanceId: string) => ipcRenderer.invoke('mc.servers', instanceId),
-    pingServer: (ip: string): Promise<{ online: number; max: number; latencyMs: number } | null> => ipcRenderer.invoke('mc.pingServer', ip),
+    servers:     (instanceId: string) => ipcRenderer.invoke('mc.servers', instanceId),
+    pingServer:  (ip: string): Promise<{ online: number; max: number; latencyMs: number } | null> => ipcRenderer.invoke('mc.pingServer', ip),
+    backupWorld: (instanceId: string, worldName: string): Promise<string | null> => ipcRenderer.invoke('mc.backupWorld', instanceId, worldName),
     onProgress: (cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => {
       const handler = (_e: IpcRendererEvent, data: Parameters<typeof cb>[0]) => cb(data)
       ipcRenderer.on('mc:progress', handler)
