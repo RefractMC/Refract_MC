@@ -186,11 +186,14 @@ declare global {
         profilesRename: (instanceId: string, profileId: string, newName: string) => Promise<{ id: string; name: string; enabledFiles: string[] }>
       }
       java: {
-        managedList: () => Promise<import('@refract/core').JavaInstallation[]>
-        requiredFor: (mcVersion: string) => Promise<number>
-        download:    (major: number) => Promise<import('@refract/core').JavaInstallation>
-        delete:      (major: number) => Promise<void>
-        onProgress:  (cb: (data: { major: number; step: string; percent: number }) => void) => () => void
+        managedList:  () => Promise<import('@refract/core').JavaInstallation[]>
+        requiredFor:  (mcVersion: string) => Promise<number>
+        download:     (major: number) => Promise<import('@refract/core').JavaInstallation>
+        delete:       (major: number) => Promise<void>
+        browseExe:    () => Promise<string | null>
+        addCustom:    (javaPath: string) => Promise<import('@refract/core').JavaInstallation>
+        removeCustom: (javaPath: string) => Promise<void>
+        onProgress:   (cb: (data: { major: number; step: string; percent: number }) => void) => () => void
       }
       friends: {
         list:       () => Promise<Array<{ uuid: string; username: string; addedAt: number; note?: string }>>

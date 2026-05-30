@@ -39,6 +39,9 @@ function Settings() {
   const [managedJavas, setManagedJavas] = useState<JavaInstallation[]>([])
   const [javaLoading, setJavaLoading] = useState(true)
   const [javaDownloading, setJavaDownloading] = useState<Map<number, { step: string; percent: number }>>(new Map())
+  const [customPathInput, setCustomPathInput] = useState('')
+  const [addingCustom, setAddingCustom] = useState(false)
+  const [customError, setCustomError] = useState<string | null>(null)
   const [logs, setLogs] = useState<Array<{ time: string; level: 'info' | 'warn' | 'error'; source: string; message: string }>>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
@@ -96,6 +99,34 @@ function Settings() {
     await api.java.delete(major)
     await scanJava()
     showToast(`Java ${major} removed.`)
+  }
+
+  async function browseAndAddCustomJava() {
+    const path = await api.java.browseExe()
+    if (path) setCustomPathInput(path)
+  }
+
+  async function addCustomJava() {
+    const path = customPathInput.trim()
+    if (!path) return
+    setAddingCustom(true)
+    setCustomError(null)
+    try {
+      await api.java.addCustom(path)
+      setCustomPathInput('')
+      await scanJava()
+      showToast('Custom Java added.')
+    } catch (e) {
+      setCustomError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAddingCustom(false)
+    }
+  }
+
+  async function removeCustomJava(javaPath: string) {
+    await api.java.removeCustom(javaPath)
+    await scanJava()
+    showToast('Custom Java removed.')
   }
 
   async function downloadJava(major: number) {
@@ -446,7 +477,9 @@ function Settings() {
               {javas.map((j, i) => {
                 const label = t.settings.javaVersionLabel(j.version)
                 const isTop = i === 0
-                const isManaged = managedJavas.some(m => m.version === j.version)
+                const managedEntry = managedJavas.find(m => m.path === j.path) as (JavaInstallation & { custom?: boolean }) | undefined
+                const isCustom  = !!managedEntry?.custom
+                const isManaged = !!managedEntry && !isCustom
                 return (
                   <div
                     key={j.path}
@@ -468,6 +501,11 @@ function Settings() {
                           managed
                         </span>
                       )}
+                      {isCustom && (
+                        <span style={{ fontSize:10, color:'var(--gold)', background:'rgba(228,179,59,.12)', border:'1px solid rgba(228,179,59,.35)', borderRadius:3, padding:'1px 5px' }}>
+                          custom
+                        </span>
+                      )}
                       <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
                         {isTop && (
                           <span style={{ fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.06em', color:'var(--diamond)' }}>
@@ -483,6 +521,15 @@ function Settings() {
                             Remove
                           </button>
                         )}
+                        {isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => removeCustomJava(j.path)}
+                            style={{ fontSize:10, padding:'2px 7px', background:'transparent', border:'1px solid var(--border-r)', borderRadius:3, color:'var(--ink-4)', cursor:'pointer' }}
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div style={{ fontSize:11, color:'var(--ink-4)', lineHeight:1.3 }}>{label}</div>
@@ -492,6 +539,45 @@ function Settings() {
                   </div>
                 )
               })}
+
+              {/* Custom Java path */}
+              <div style={{ marginTop:4, padding:'12px', background:'var(--bg)', border:'1px solid var(--border-r)', borderRadius:4, display:'grid', gap:8 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:'var(--ink-3)' }}>Add custom Java installation</div>
+                <div style={{ fontSize:11, color:'var(--ink-4)', lineHeight:1.4 }}>
+                  Point to a <code style={{ fontFamily:'monospace', color:'var(--ink-3)' }}>java</code> or <code style={{ fontFamily:'monospace', color:'var(--ink-3)' }}>java.exe</code> executable on your system.
+                </div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <input
+                    value={customPathInput}
+                    onChange={e => { setCustomPathInput(e.target.value); setCustomError(null) }}
+                    onKeyDown={e => { if (e.key === 'Enter') void addCustomJava() }}
+                    placeholder="/usr/lib/jvm/java-17/bin/java"
+                    style={{
+                      flex:1, height:32, padding:'0 10px', fontSize:12,
+                      background:'var(--surface-2)', border:`1px solid ${customError ? 'var(--lava)' : 'var(--border-r)'}`,
+                      color:'var(--ink)', borderRadius:3, outline:'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={browseAndAddCustomJava}
+                    style={{ ...smallButtonStyle(false), fontSize:11, whiteSpace:'nowrap' }}
+                  >
+                    Browse…
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addCustomJava}
+                    disabled={!customPathInput.trim() || addingCustom}
+                    style={{ ...smallButtonStyle(!customPathInput.trim() || addingCustom), background:'var(--accent)', color:'#fff', border:'none', fontSize:11 }}
+                  >
+                    {addingCustom ? 'Adding…' : 'Add'}
+                  </button>
+                </div>
+                {customError && (
+                  <div style={{ fontSize:11, color:'var(--lava)', lineHeight:1.4 }}>{customError}</div>
+                )}
+              </div>
             </div>
           </Panel>
         </div>

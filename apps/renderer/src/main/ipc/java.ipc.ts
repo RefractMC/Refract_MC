@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, dialog } from 'electron'
 import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, chmodSync } from 'fs'
 import { spawn, spawnSync } from 'child_process'
 import { handleIpc } from './handle'
@@ -150,6 +150,31 @@ export function registerJavaIpc(): void {
     const majorNum = Number(major)
     const extractDir = join(getManagedJavaDir(), `jre-${majorNum}`)
     if (existsSync(extractDir)) rmSync(extractDir, { recursive: true, force: true })
-    saveManagedJavas(loadManagedJavas().filter(j => j.version !== majorNum))
+    saveManagedJavas(loadManagedJavas().filter(j => j.version !== majorNum || (j as JavaInstallation & { custom?: boolean }).custom))
+  })
+
+  handleIpc('java.browseExe', async () => {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'Select Java executable',
+      filters: IS_WIN ? [{ name: 'Java Executable', extensions: ['exe'] }] : [{ name: 'All files', extensions: ['*'] }],
+      properties: ['openFile'],
+    })
+    return filePaths[0] ?? null
+  })
+
+  handleIpc('java.addCustom', (_e, javaPath: unknown) => {
+    const exe = String(javaPath).trim()
+    if (!existsSync(exe)) throw new Error(`File not found: ${exe}`)
+    const probed = probeJavaExe(exe)
+    if (!probed) throw new Error('Not a valid Java executable — could not read version.')
+    const installation = { ...probed, custom: true } as JavaInstallation & { custom: boolean }
+    const managed = loadManagedJavas().filter(j => j.path !== probed.path)
+    managed.push(installation)
+    saveManagedJavas(managed)
+    return installation
+  })
+
+  handleIpc('java.removeCustom', (_e, javaPath: unknown) => {
+    saveManagedJavas(loadManagedJavas().filter(j => j.path !== String(javaPath)))
   })
 }

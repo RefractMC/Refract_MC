@@ -142,10 +142,13 @@ export const api = {
       ipcRenderer.invoke('curseforge.install', instanceId, modId, fileId, displayName),
   },
   java: {
-    managedList: (): Promise<import('@refract/core').JavaInstallation[]> => ipcRenderer.invoke('java.managedList'),
-    requiredFor: (mcVersion: string): Promise<number> => ipcRenderer.invoke('java.requiredFor', mcVersion),
-    download: (major: number): Promise<import('@refract/core').JavaInstallation> => ipcRenderer.invoke('java.download', major),
-    delete:   (major: number): Promise<void> => ipcRenderer.invoke('java.delete', major),
+    managedList:  (): Promise<import('@refract/core').JavaInstallation[]> => ipcRenderer.invoke('java.managedList'),
+    requiredFor:  (mcVersion: string): Promise<number> => ipcRenderer.invoke('java.requiredFor', mcVersion),
+    download:     (major: number): Promise<import('@refract/core').JavaInstallation> => ipcRenderer.invoke('java.download', major),
+    delete:       (major: number): Promise<void> => ipcRenderer.invoke('java.delete', major),
+    browseExe:    (): Promise<string | null> => ipcRenderer.invoke('java.browseExe'),
+    addCustom:    (javaPath: string): Promise<import('@refract/core').JavaInstallation> => ipcRenderer.invoke('java.addCustom', javaPath),
+    removeCustom: (javaPath: string): Promise<void> => ipcRenderer.invoke('java.removeCustom', javaPath),
     onProgress: (cb: (data: { major: number; step: string; percent: number }) => void) => {
       const handler = (_e: IpcRendererEvent, data: Parameters<typeof cb>[0]) => cb(data)
       ipcRenderer.on('java:progress', handler)
