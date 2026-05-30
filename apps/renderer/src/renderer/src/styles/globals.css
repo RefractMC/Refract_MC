@@ -91,6 +91,12 @@ body::before {
 .no-drag-region { -webkit-app-region: no-drag; }
 
 /* ── Hover glow ──────────────────────────────────────────────────────────── */
+button {
+  transition: filter 100ms ease;
+}
+button:not(:disabled):hover {
+  filter: brightness(1.18);
+}
 .glow-hover {
   transition: filter 100ms ease;
 }
