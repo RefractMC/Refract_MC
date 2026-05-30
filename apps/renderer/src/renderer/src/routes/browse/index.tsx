@@ -367,7 +367,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
   const bodyText = detail?.body ? stripMarkdown(detail.body) : mod.description
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 75, background: 'rgba(0,0,0,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 75, background: 'rgba(0,0,0,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '86vw', maxWidth: 960, maxHeight: '90vh', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Header */}
@@ -524,7 +524,7 @@ function ModDetailModal({ mod, onClose, onInstall }: {
       {galleryIndex !== null && gallery[galleryIndex] && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => setGalleryIndex(null)}
+          onClick={e => { e.stopPropagation(); setGalleryIndex(null) }}
         >
           <img
             src={gallery[galleryIndex].url}
