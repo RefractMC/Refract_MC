@@ -104,6 +104,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   const [savingProfile, setSavingProfile]= useState(false)
   const [newProfileName, setNewProfileName] = useState('')
   const [selectedMods, setSelectedMods]  = useState<Set<string>>(new Set())
+  const [lightbox, setLightbox]          = useState<ScreenshotEntry | null>(null)
 
   const load = useCallback(async () => {
     if (!instance) return
@@ -667,7 +668,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   <ScreenshotThumb
                     key={s.filename}
                     shot={s}
-                    onClick={() => api.mc.openScreenshot(instance.id, s.filename).catch(() => {})}
+                    onClick={() => setLightbox(s)}
                   />
                 ))}
               </div>
@@ -702,6 +703,69 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             />
           ))}
         </div>
+      </div>
+
+      {/* Screenshot lightbox */}
+      {lightbox && (
+        <ScreenshotLightbox
+          shot={lightbox}
+          instanceId={instance.id}
+          onClose={() => setLightbox(null)}
+          onOpenExternal={() => { api.mc.openScreenshot(instance.id, lightbox.filename).catch(() => {}); setLightbox(null) }}
+        />
+      )}
+    </div>
+  )
+}
+
+function ScreenshotLightbox({ shot, instanceId, onClose, onOpenExternal }: {
+  shot: ScreenshotEntry
+  instanceId: string
+  onClose: () => void
+  onOpenExternal: () => void
+}) {
+  const [fullSrc, setFullSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    api.mc.screenshotFull(instanceId, shot.filename).then(s => setFullSrc(s)).catch(() => {})
+    return () => window.removeEventListener('keydown', handler)
+  }, [shot.filename, instanceId, onClose])
+
+  return (
+    <div
+      onClick={e => { e.stopPropagation(); onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 300,
+        background: 'rgba(0,0,0,.93)',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 14,
+      }}
+    >
+      <img
+        src={fullSrc ?? shot.dataUrl ?? undefined}
+        alt={shot.filename}
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: '90vw', maxHeight: '82vh',
+          objectFit: 'contain', borderRadius: 4,
+          boxShadow: '0 0 60px rgba(0,0,0,.8)',
+          opacity: fullSrc ? 1 : 0.65,
+          transition: 'opacity 200ms',
+        }}
+      />
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ display: 'flex', gap: 10, alignItems: 'center' }}
+      >
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>{shot.filename} · {shot.sizeKb} KB</span>
+        <button onClick={onOpenExternal} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
+          Open in viewer ↗
+        </button>
+        <button onClick={onClose} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
+          ✕ Close
+        </button>
       </div>
     </div>
   )

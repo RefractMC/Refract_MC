@@ -215,6 +215,18 @@ export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
     return shell.openPath(p)
   })
 
+  handleIpc('mc.screenshotFull', (_event, instanceId, filename) => {
+    const p = join(resolveInstanceDir(String(instanceId)), 'minecraft', 'screenshots', String(filename))
+    try {
+      const img = nativeImage.createFromPath(p)
+      if (img.isEmpty()) return null
+      const { width, height } = img.getSize()
+      const scale = Math.min(1, 1920 / width, 1080 / height)
+      const out = scale < 1 ? img.resize({ width: Math.round(width * scale), height: Math.round(height * scale) }) : img
+      return out.toDataURL()
+    } catch { return null }
+  })
+
   handleIpc('mc.backupWorld', async (_event, instanceId, worldName) => {
     const worldPath = join(resolveInstanceDir(String(instanceId)), 'minecraft', 'saves', String(worldName))
     if (!existsSync(worldPath)) throw new Error('World not found')

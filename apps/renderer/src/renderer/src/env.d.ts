@@ -214,7 +214,8 @@ declare global {
         worlds: (instanceId: string) => Promise<Array<{ name: string; lastModified: number; sizeKb: number }>>
         deleteWorld: (instanceId: string, worldName: string) => Promise<void>
         screenshots: (instanceId: string) => Promise<Array<{ filename: string; sizeKb: number; timestamp: number; dataUrl: string | null }>>
-        openScreenshot: (instanceId: string, filename: string) => Promise<void>
+        openScreenshot:  (instanceId: string, filename: string) => Promise<void>
+        screenshotFull:  (instanceId: string, filename: string) => Promise<string | null>
         servers:     (instanceId: string) => Promise<Array<{ name: string; ip: string; icon?: string }>>
         pingServer:  (ip: string) => Promise<{ online: number; max: number; latencyMs: number } | null>
         backupWorld: (instanceId: string, worldName: string) => Promise<string | null>
