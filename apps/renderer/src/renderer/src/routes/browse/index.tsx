@@ -641,6 +641,8 @@ function Browse() {
   const LIMIT = 18
 
   const [instances, setInstances] = useState<Instance[]>([])
+  const [activeInstance, setActiveInstance] = useState<Instance | null>(null)
+  const [instanceUpdates, setInstanceUpdates] = useState<Record<string, boolean>>({})
   const [detailTarget, setDetailTarget] = useState<ModrinthProject | null>(null)
   const [installTarget, setInstallTarget] = useState<ModrinthProject | null>(null)
   const [cfInstallTarget, setCfInstallTarget] = useState<CFProject | null>(null)
@@ -653,6 +655,27 @@ function Browse() {
     api.instance.list().then(setInstances).catch(() => setInstances([]))
     api.config.get().then(cfg => setCfApiKey((cfg as { curseforgeApiKey?: string }).curseforgeApiKey ?? null)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!activeInstance) { setInstanceUpdates({}); return }
+    api.modrinth.checkModUpdates(activeInstance.id)
+      .then(updates => {
+        const map: Record<string, boolean> = {}
+        updates.forEach(u => { map[u.projectId] = u.hasUpdate })
+        setInstanceUpdates(map)
+      })
+      .catch(() => setInstanceUpdates({}))
+  }, [activeInstance])
+
+  function getModStatus(mod: ModrinthProject): 'installed' | 'update' | 'incompatible' | null {
+    if (!activeInstance) return null
+    const installed = activeInstance.mods?.some(m => m.projectId === mod.project_id) ?? false
+    if (installed) return instanceUpdates[mod.project_id] ? 'update' : 'installed'
+    const mcOk = !mod.game_versions?.length || mod.game_versions.includes(activeInstance.minecraftVersion)
+    const loader = activeInstance.modLoader?.toLowerCase()
+    const loaderOk = !loader || !mod.loaders?.length || mod.loaders.some(l => l.toLowerCase() === loader)
+    return (!mcOk || !loaderOk) ? 'incompatible' : null
+  }
 
   useEffect(() => {
     if (source === 'cf' && !cfApiKey) return
@@ -787,6 +810,26 @@ function Browse() {
             {query && <button onClick={() => setQuery('')} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✕</button>}
           </div>
 
+          {/* Instance selector */}
+          {instances.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: '0 12px', height: 36, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600, whiteSpace: 'nowrap' }}>Check against:</span>
+              <select
+                value={activeInstance?.id ?? ''}
+                onChange={e => {
+                  const inst = instances.find(i => i.id === e.target.value) ?? null
+                  setActiveInstance(inst)
+                }}
+                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 12, color: 'var(--ink)', cursor: 'pointer', minWidth: 120 }}
+              >
+                <option value="">None</option>
+                {instances.map(i => (
+                  <option key={i.id} value={i.id}>{i.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Filters */}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {source === 'mr' && (
@@ -840,6 +883,7 @@ function Browse() {
                   mod={mod}
                   installing={installingId === mod.project_id}
                   installedInInstances={instances.filter(i => i.mods?.some(m => m.projectId === mod.project_id)).length}
+                  status={getModStatus(mod)}
                   onInstall={() => setInstallTarget(mod)}
                   onDetail={() => setDetailTarget(mod)}
                 />
@@ -904,10 +948,11 @@ function Browse() {
 
 // ─── ModTile ──────────────────────────────────────────────────────────────────
 
-function ModTile({ mod, installing, installedInInstances, onInstall, onDetail }: {
+function ModTile({ mod, installing, installedInInstances, status, onInstall, onDetail }: {
   mod: ModrinthProject
   installing: boolean
   installedInInstances: number
+  status: 'installed' | 'update' | 'incompatible' | null
   onInstall: () => void
   onDetail: () => void
 }) {
@@ -972,20 +1017,52 @@ function ModTile({ mod, installing, installedInInstances, onInstall, onDetail }:
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {mod.categories.slice(0, 2).map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
         </div>
-        <button
-          onClick={e => { e.stopPropagation(); onInstall() }}
-          disabled={installing}
-          style={{
-            fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.08em',
-            color: installing ? 'var(--ink-4)' : '#fff',
-            background: installing ? 'var(--surface-3)' : 'var(--ender)',
-            border: 'none', cursor: installing ? 'not-allowed' : 'pointer',
-            padding: '0 32px', height: 36, borderRadius: 3, flexShrink: 0,
-            boxShadow: installing ? 'none' : 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)',
-          }}
-        >
-          {installing ? t.browse.installing : t.browse.install}
-        </button>
+        {status === 'installed' ? (
+          <button
+            onClick={e => { e.stopPropagation(); onInstall() }}
+            title="Already installed — click to reinstall"
+            style={{
+              fontFamily: "'VT323',monospace", fontSize: 15, letterSpacing: '.06em',
+              color: 'var(--grass)', background: 'transparent',
+              border: '1px solid var(--grass)', cursor: 'pointer',
+              padding: '0 18px', height: 36, borderRadius: 3, flexShrink: 0,
+            }}
+          >
+            ✓ INSTALLED
+          </button>
+        ) : status === 'update' ? (
+          <button
+            onClick={e => { e.stopPropagation(); onInstall() }}
+            title="Update available"
+            style={{
+              fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.08em',
+              color: '#fff', background: 'var(--gold)',
+              border: 'none', cursor: 'pointer',
+              padding: '0 20px', height: 36, borderRadius: 3, flexShrink: 0,
+              boxShadow: 'inset 0 -2px 0 rgba(0,0,0,.3)',
+            }}
+          >
+            ↑ UPDATE
+          </button>
+        ) : (
+          <button
+            onClick={e => { e.stopPropagation(); onInstall() }}
+            disabled={installing}
+            title={status === 'incompatible' ? `Incompatible with ${mod.game_versions?.[0] ?? '?'} — click to install anyway` : undefined}
+            style={{
+              fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.08em',
+              color: installing ? 'var(--ink-4)' : status === 'incompatible' ? 'var(--ink-3)' : '#fff',
+              background: installing ? 'var(--surface-3)' : status === 'incompatible' ? 'var(--surface-2)' : 'var(--ender)',
+              border: status === 'incompatible' ? '1px solid var(--border-r)' : 'none',
+              cursor: installing ? 'not-allowed' : 'pointer',
+              padding: '0 32px', height: 36, borderRadius: 3, flexShrink: 0,
+              opacity: status === 'incompatible' ? 0.55 : 1,
+              boxShadow: (installing || status === 'incompatible') ? 'none' : 'inset 0 -2px 0 rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.1)',
+            }}
+          >
+            {installing ? t.browse.installing : t.browse.install}
+          </button>
+        )}
       </div>
     </div>
   )
