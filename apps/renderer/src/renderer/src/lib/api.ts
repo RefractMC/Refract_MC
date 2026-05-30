@@ -178,6 +178,7 @@ function createBrowserApi(): RefractAPI {
         saveInstances(getInstances().filter((instance) => instance.id !== id))
       },
       openFolder:    async () => undefined,
+      browseFolder:  async () => null,
       export:        async () => null,
       duplicate:     async () => null,
       importMultiMc: async () => { throw new Error('MultiMC import requires the Electron app.') },

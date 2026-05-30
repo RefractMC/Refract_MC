@@ -140,8 +140,9 @@ declare global {
         create:     (input: CreateInstanceInput) => Promise<Instance>
         update:     (id: string, patch: Partial<Instance>) => Promise<Instance>
         delete:     (id: string) => Promise<void>
-        openFolder: (id: string) => Promise<void>
-        export:     (id: string) => Promise<string | null>
+        openFolder:   (id: string) => Promise<void>
+        browseFolder: () => Promise<string | null>
+        export:       (id: string) => Promise<string | null>
         duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
         importMultiMc:  () => Promise<import('@refract/core').Instance | null>
       }

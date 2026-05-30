@@ -15,6 +15,7 @@ export interface Instance {
   id: string
   name: string
   folderName?: string   // human-readable folder on disk; falls back to id for legacy instances
+  customPath?: string   // absolute path when user chose a non-default location
   minecraftVersion: string
   modLoader?: ModLoader
   modLoaderVersion?: string

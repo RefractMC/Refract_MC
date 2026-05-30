@@ -35,6 +35,7 @@ interface CreateInput {
   memoryMb: number
   iconPath?: string
   groupId?: string
+  customPath?: string
 }
 
 interface Props {
@@ -53,6 +54,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
   const [memoryMb, setMemoryMb]   = useState(2048)
   const [groupId, setGroupId]     = useState('')
   const [coverImage, setCoverImage] = useState('')
+  const [customPath, setCustomPath] = useState('')
   const [loading, setLoading]     = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -67,6 +69,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
     setMemoryMb(2048)
     setGroupId('')
     setCoverImage('')
+    setCustomPath('')
   }
 
   async function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -81,7 +84,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
     if (!name.trim()) return
     setLoading(true)
     try {
-      await onCreate({ name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb, iconPath: coverImage || undefined, groupId: groupId.trim() || undefined })
+      await onCreate({ name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb, iconPath: coverImage || undefined, groupId: groupId.trim() || undefined, customPath: customPath.trim() || undefined })
       onOpenChange(false)
       reset()
     } finally {
@@ -196,6 +199,38 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                   placeholder={t.createInst.groupPlaceholder}
                   style={inputSt}
                 />
+              </Field>
+
+              <Field label="LOCATION">
+                <div style={{ display:'flex', gap:5 }}>
+                  <input
+                    type="text"
+                    value={customPath}
+                    onChange={e => setCustomPath(e.target.value)}
+                    placeholder="Default (AppData)"
+                    style={{ ...inputSt, flex:1, fontSize:11 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const p = await window.api.instance.browseFolder()
+                      if (p) setCustomPath(p)
+                    }}
+                    style={{ height:34, padding:'0 11px', background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontSize:12, whiteSpace:'nowrap' }}
+                  >
+                    Browse…
+                  </button>
+                  {customPath && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomPath('')}
+                      title="Use default location"
+                      style={{ height:34, width:34, background:'var(--surface-3)', color:'var(--ink-4)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontSize:14, flexShrink:0 }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </Field>
 
               <div style={{ flex:1 }} />

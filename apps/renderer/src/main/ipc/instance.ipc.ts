@@ -106,6 +106,14 @@ export function registerInstanceIpc(): void {
     return filePath
   })
 
+  handleIpc('instance.browseFolder', async () => {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'Select Instance Location',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    return filePaths[0] ?? null
+  })
+
   handleIpc('launcher.deleteAll', async () => {
     const userData = paths.userData
     const subdirs = ['instances', 'themes', 'plugins', 'java', 'assets', 'libraries', 'versions', 'cache', 'logs'] as const
