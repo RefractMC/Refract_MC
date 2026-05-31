@@ -8,6 +8,9 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      system: {
+        ramGb: () => Promise<number>
+      }
       config: {
         get: () => Promise<{
           activeAccountId: string | null

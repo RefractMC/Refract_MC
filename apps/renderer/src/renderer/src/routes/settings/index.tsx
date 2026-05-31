@@ -720,7 +720,7 @@ function Settings() {
             </p>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               <button
-                onClick={() => window.open('https://discord.gg/7Q5sGzhUQJ')}
+                onClick={() => window.open('https://discord.gg/SUPuuTjMGU')}
                 style={{ height:30, padding:'0 14px', fontSize:12, fontWeight:600, background:'#5865F2', color:'#fff', border:'none', borderRadius:4, cursor:'pointer' }}
               >
                 {t.settings.joinDiscord}

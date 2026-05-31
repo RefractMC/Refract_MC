@@ -74,6 +74,9 @@ function createInstance(input: CreateInstanceInput): Instance {
 
 function createBrowserApi(): RefractAPI {
   return {
+    system: {
+      ramGb: async () => 16,
+    },
     config: {
       get: async () => getConfig(),
       set: async (key, value) => {

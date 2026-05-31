@@ -1,8 +1,9 @@
-import { useState, useId } from 'react'
+import { useState, useId, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type React from 'react'
 import type { ModLoader } from '@refract/core'
 import { McVersionSelect } from './McVersionSelect'
+import { api } from '@/lib/api'
 import { useT } from '@/i18n'
 
 const LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
@@ -13,7 +14,7 @@ const LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: 'neoforge', label: 'NeoForge' },
 ]
 
-const MEM_PRESETS = [1, 2, 4, 8, 16]
+const ALL_PRESETS = [1, 2, 4, 8, 16, 32, 64]
 
 interface CreateInput {
   name: string
@@ -46,6 +47,11 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
   const [memGB, setMemGB]             = useState(2)
   const [groupId, setGroupId]         = useState('')
   const [loading, setLoading]         = useState(false)
+  const [maxRamGb, setMaxRamGb]       = useState(16)
+
+  useEffect(() => {
+    api.system.ramGb().then(gb => setMaxRamGb(Math.max(4, gb))).catch(() => {})
+  }, [])
 
   function reset() {
     setName('My Instance'); setMcVersion('1.21.1'); setSnap(false)
@@ -64,7 +70,8 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
     } finally { setLoading(false) }
   }
 
-  const fillPct = ((memGB - 1) / (16 - 1)) * 100
+  const fillPct = ((memGB - 1) / (maxRamGb - 1)) * 100
+  const memPresets = ALL_PRESETS.filter(g => g <= maxRamGb)
   const displayName = name.trim() || 'My Instance'
   const loaderLabel = LOADERS.find(l => l.value === modLoader)?.label ?? 'Vanilla'
 
@@ -215,13 +222,13 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                 </div>
                 <input
                   className="ni-slider"
-                  type="range" min={1} max={16} step={1}
+                  type="range" min={1} max={maxRamGb} step={1}
                   value={memGB}
                   style={{ '--fill': `${fillPct}%` } as React.CSSProperties}
                   onChange={e => setMemGB(Number(e.target.value))}
                 />
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 3 }}>
-                  {MEM_PRESETS.map(g => (
+                  {memPresets.map(g => (
                     <button key={g} type="button" className="ni-preset" aria-pressed={memGB === g ? 'true' : 'false'} onClick={() => setMemGB(g)}>
                       {g}G
                     </button>

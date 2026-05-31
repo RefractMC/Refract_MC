@@ -6,6 +6,9 @@ export const api = {
     get: () => ipcRenderer.invoke('config.get'),
     set: <K extends string>(key: K, value: unknown) => ipcRenderer.invoke('config.set', key, value),
   },
+  system: {
+    ramGb: (): Promise<number> => ipcRenderer.invoke('system.ramGb'),
+  },
   log: {
     write: (entry: { level: 'info' | 'warn' | 'error'; source: string; message: string; stack?: string }) =>
       ipcRenderer.send('log.write', entry),

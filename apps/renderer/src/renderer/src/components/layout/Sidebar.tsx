@@ -520,7 +520,7 @@ export function Sidebar() {
       <div style={{ marginTop:'auto', display:'flex', flexDirection:'column', gap:2, paddingTop:10, borderTop:'1px solid var(--sb-line)' }}>
         <NavItem to="/settings" label={t.nav.settings} iconSrc={settingsIcon} exact={true} />
         <button
-          onClick={() => window.open('https://discord.gg/7Q5sGzhUQJ')}
+          onClick={() => window.open('https://discord.gg/SUPuuTjMGU')}
           style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:4, color:'var(--ink-2)', fontSize:13, fontWeight:500, background:'none', border:'1px solid transparent', cursor:'pointer', textAlign:'left' }}
           onMouseEnter={e => { e.currentTarget.style.color = '#5865F2'; e.currentTarget.style.background = 'rgba(88,101,242,.1)' }}
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-2)'; e.currentTarget.style.background = 'none' }}
