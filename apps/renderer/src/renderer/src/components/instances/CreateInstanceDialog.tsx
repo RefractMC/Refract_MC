@@ -50,7 +50,10 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
   const [maxRamGb, setMaxRamGb]       = useState(16)
 
   useEffect(() => {
-    api.system.ramGb().then(gb => setMaxRamGb(Math.max(4, gb))).catch(() => {})
+    const fn = (api.system as { ramGb?: () => Promise<number> } | undefined)?.ramGb
+    if (typeof fn === 'function') {
+      fn().then(gb => setMaxRamGb(Math.max(4, gb))).catch(() => {})
+    }
   }, [])
 
   function reset() {
