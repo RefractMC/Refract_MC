@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { api } from '@/lib/api'
 import { compressImage } from '@/lib/image'
 import type { Instance } from '@refract/core'
+import { useT } from '@/i18n'
 
 type ContentType = 'mod' | 'resourcepack' | 'shader' | 'datapack'
 type ContentEntry = {
@@ -25,17 +26,7 @@ type ServerEntry = { name: string; ip: string; icon?: string }
 type ModProfile = { id: string; name: string; enabledFiles: string[] }
 type PingResult = { online: number; max: number; latencyMs: number } | null | 'loading'
 
-const CONTENT_TABS: Array<{ id: TabFilter; label: string }> = [
-  { id: 'all',          label: 'All'            },
-  { id: 'mod',          label: 'Mods'           },
-  { id: 'resourcepack', label: 'Resource Packs' },
-  { id: 'shader',       label: 'Shaders'        },
-  { id: 'datapack',     label: 'Datapacks'      },
-  { id: 'worlds',       label: 'Worlds'         },
-  { id: 'screenshots',  label: 'Screenshots'    },
-  { id: 'servers',      label: 'Servers'        },
-  { id: 'updates',      label: 'Updates'        },
-]
+// Tab labels and empty messages are now loaded from i18n — see useInstanceDetailT() below
 
 const TYPE_COLOR: Record<ContentType, string> = {
   mod:          'var(--accent)',
@@ -44,17 +35,6 @@ const TYPE_COLOR: Record<ContentType, string> = {
   datapack:     '#9c6aab',
 }
 
-const EMPTY_MSG: Record<TabFilter, string> = {
-  all:          'NO CONTENT INSTALLED',
-  mod:          'NO MODS INSTALLED',
-  resourcepack: 'NO RESOURCE PACKS',
-  shader:       'NO SHADERS',
-  datapack:     'NO DATAPACKS',
-  worlds:       'NO WORLDS YET',
-  screenshots:  'NO SCREENSHOTS YET',
-  servers:      'NO SERVERS SAVED',
-  updates:      'ALL MODS UP TO DATE',
-}
 
 interface Props {
   instance: Instance | null
@@ -85,6 +65,33 @@ function formatSize(kb: number): string {
 }
 
 export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateApplied, onInstanceUpdated, onLaunch, isRunning, onEdit }: Props) {
+  const t = useT()
+  const td = t.instanceDetail
+
+  const CONTENT_TABS: Array<{ id: TabFilter; label: string }> = [
+    { id: 'all',          label: td.tabAll          },
+    { id: 'mod',          label: td.tabMods         },
+    { id: 'resourcepack', label: td.tabResourcepack },
+    { id: 'shader',       label: td.tabShader       },
+    { id: 'datapack',     label: td.tabDatapack     },
+    { id: 'worlds',       label: td.tabWorlds       },
+    { id: 'screenshots',  label: td.tabScreenshots  },
+    { id: 'servers',      label: td.tabServers      },
+    { id: 'updates',      label: td.tabUpdates      },
+  ]
+
+  const EMPTY_MSG: Record<TabFilter, string> = {
+    all:          td.emptyAll,
+    mod:          td.emptyMods,
+    resourcepack: td.emptyResourcepack,
+    shader:       td.emptyShader,
+    datapack:     td.emptyDatapack,
+    worlds:       td.emptyWorlds,
+    screenshots:  td.emptyScreenshots,
+    servers:      td.emptyServers,
+    updates:      td.emptyUpdates,
+  }
+
   const [items, setItems]                = useState<ContentEntry[]>([])
   const [worlds, setWorlds]              = useState<WorldEntry[]>([])
   const [screenshots, setScreenshots]    = useState<ScreenshotEntry[]>([])
@@ -403,7 +410,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   fontFamily: "'VT323',monospace", fontSize: 15, letterSpacing: '.1em', fontWeight: 700,
                 }}
               >
-                {isRunning ? '■ STOP' : '▶ PLAY'}
+                {isRunning ? td.stopBtn : td.playBtn}
               </button>
             )}
             {onEdit && (
@@ -425,7 +432,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 opacity: exporting ? .6 : 1,
               }}
             >
-              {exporting ? 'Exporting…' : 'Export ZIP'}
+              {exporting ? td.exporting : td.exportZip}
             </button>
             {tab === 'updates' && updatesAvailable.length > 0 && (
               <button
@@ -454,7 +461,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   fontWeight: 600,
                 }}
               >
-                {updatingAll ? 'Updating…' : `Update All (${updatesAvailable.length})`}
+                {updatingAll ? td.updating : td.updateAll(updatesAvailable.length)}
               </button>
             )}
             {isContentTab && (
@@ -469,7 +476,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   opacity: addingMod ? .6 : 1, fontWeight: 600,
                 }}
               >
-                {addingMod ? 'Adding…' : '+ Add File'}
+                {addingMod ? td.adding : td.addFile}
               </button>
             )}
             <button
@@ -480,7 +487,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 borderRadius: 3, padding: '3px 10px', cursor: 'pointer',
               }}
             >
-              Refresh
+              {td.refresh}
             </button>
             <button
               onClick={() => onOpenChange(false)}
@@ -537,7 +544,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             minHeight: 34, background: 'var(--bg)',
           }}>
             <span style={{ fontSize: 10, color: 'var(--ink-4)', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', flexShrink: 0, marginRight: 2 }}>
-              Profiles
+              {td.profiles}
             </span>
             {profiles.map(p => (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center' }}>
@@ -593,13 +600,13 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   onClick={handleSaveProfile}
                   style={{ fontSize: 11, padding: '1px 8px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 3, cursor: 'pointer' }}
                 >
-                  Save
+                  {td.saving}
                 </button>
                 <button
                   onClick={() => { setSavingProfile(false); setNewProfileName('') }}
                   style={{ fontSize: 11, padding: '1px 8px', background: 'var(--surface-2)', color: 'var(--ink-4)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}
                 >
-                  Cancel
+                  {td.cancel}
                 </button>
               </div>
             ) : (
@@ -613,7 +620,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-r)'; (e.currentTarget as HTMLElement).style.color = 'var(--ink-4)' }}
               >
-                + Save Profile
+                {td.saveProfile}
               </button>
             )}
           </div>
@@ -622,13 +629,13 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
         {/* Bulk action bar */}
         {isContentTab && selectedMods.size > 0 && (
           <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 12px', background:'var(--accent-tint)', borderBottom:'1px solid var(--accent)', flexShrink:0 }}>
-            <span style={{ fontSize:11, color:'var(--accent)', fontWeight:700, minWidth:70 }}>{selectedMods.size} selected</span>
-            <button onClick={() => handleBulkToggle(true)}  style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--grass)', border:'1px solid var(--grass)', borderRadius:3, cursor:'pointer', fontWeight:600 }}>Enable</button>
-            <button onClick={() => handleBulkToggle(false)} style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--gold)',  border:'1px solid var(--gold)',  borderRadius:3, cursor:'pointer', fontWeight:600 }}>Disable</button>
-            <button onClick={handleBulkDelete}              style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--lava)',  border:'1px solid var(--lava)',  borderRadius:3, cursor:'pointer', fontWeight:600 }}>Delete</button>
+            <span style={{ fontSize:11, color:'var(--accent)', fontWeight:700, minWidth:70 }}>{td.selected(selectedMods.size)}</span>
+            <button onClick={() => handleBulkToggle(true)}  style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--grass)', border:'1px solid var(--grass)', borderRadius:3, cursor:'pointer', fontWeight:600 }}>{td.enable}</button>
+            <button onClick={() => handleBulkToggle(false)} style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--gold)',  border:'1px solid var(--gold)',  borderRadius:3, cursor:'pointer', fontWeight:600 }}>{td.disable}</button>
+            <button onClick={handleBulkDelete}              style={{ fontSize:11, padding:'2px 10px', background:'var(--surface-2)', color:'var(--lava)',  border:'1px solid var(--lava)',  borderRadius:3, cursor:'pointer', fontWeight:600 }}>{td.delete}</button>
             <div style={{ flex:1 }} />
-            <button onClick={() => setSelectedMods(new Set(visible.filter(e => !e.filename.includes('/')).map(e => e.filename)))} style={{ fontSize:10, color:'var(--ink-3)', background:'none', border:'none', cursor:'pointer' }}>Select all</button>
-            <button onClick={() => setSelectedMods(new Set())} style={{ fontSize:10, color:'var(--ink-4)', background:'none', border:'none', cursor:'pointer' }}>✕ Clear</button>
+            <button onClick={() => setSelectedMods(new Set(visible.filter(e => !e.filename.includes('/')).map(e => e.filename)))} style={{ fontSize:10, color:'var(--ink-3)', background:'none', border:'none', cursor:'pointer' }}>{td.selectAll}</button>
+            <button onClick={() => setSelectedMods(new Set())} style={{ fontSize:10, color:'var(--ink-4)', background:'none', border:'none', cursor:'pointer' }}>{td.clear}</button>
           </div>
         )}
 
@@ -647,7 +654,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             <div style={{ padding: '20px 16px', color: 'var(--lava)', fontSize: 12 }}>{error}</div>
           ) : tab === 'worlds' ? (
             worlds.length === 0 ? (
-              <EmptyMsg msg={EMPTY_MSG.worlds} sub="Play Minecraft to create worlds." />
+              <EmptyMsg msg={EMPTY_MSG.worlds} sub={td.emptyWorldsSub} />
             ) : worlds.map(w => (
               <WorldRow
                 key={w.name}
@@ -662,7 +669,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             ))
           ) : tab === 'screenshots' ? (
             screenshots.length === 0 ? (
-              <EmptyMsg msg={EMPTY_MSG.screenshots} sub="Screenshots taken in-game will appear here." />
+              <EmptyMsg msg={EMPTY_MSG.screenshots} sub={td.emptyScreensSub} />
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                 {screenshots.map(s => (
@@ -676,13 +683,13 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             )
           ) : tab === 'servers' ? (
             servers.length === 0 ? (
-              <EmptyMsg msg={EMPTY_MSG.servers} sub="Add servers in Minecraft's multiplayer menu." />
+              <EmptyMsg msg={EMPTY_MSG.servers} sub={td.emptyServersSub} />
             ) : servers.map(s => (
               <ServerRow key={s.ip} server={s} />
             ))
           ) : tab === 'updates' ? (
             modUpdates.length === 0 ? (
-              <EmptyMsg msg={EMPTY_MSG.updates} sub="Click Refresh to check for updates." />
+              <EmptyMsg msg={EMPTY_MSG.updates} sub={td.emptyUpdatesSub} />
             ) : (
               <>
                 {modUpdates.map(u => (
@@ -691,7 +698,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
               </>
             )
           ) : visible.length === 0 ? (
-            <EmptyMsg msg={EMPTY_MSG[tab]} sub="Install content from the Content Browser." />
+            <EmptyMsg msg={EMPTY_MSG[tab]} sub={td.emptyContentSub} />
           ) : visible.map(entry => (
             <ContentRow
               key={entry.filename}
@@ -726,6 +733,7 @@ function ScreenshotLightbox({ shot, instanceId, onClose, onOpenExternal }: {
   onClose: () => void
   onOpenExternal: () => void
 }) {
+  const t = useT()
   const [fullSrc, setFullSrc] = useState<string | null>(null)
 
   useEffect(() => {
@@ -763,7 +771,7 @@ function ScreenshotLightbox({ shot, instanceId, onClose, onOpenExternal }: {
       >
         <span style={{ fontSize: 11, color: 'rgba(255,255,255,.4)' }}>{shot.filename} · {shot.sizeKb} KB</span>
         <button onClick={onOpenExternal} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
-          Open in viewer ↗
+          {t.instanceDetail.openViewer}
         </button>
         <button onClick={onClose} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
           ✕ Close
@@ -781,6 +789,7 @@ function pingColor(ms: number): string {
 }
 
 function ServerRow({ server }: { server: ServerEntry }) {
+  const t = useT()
   const [copied, setCopied] = useState(false)
   const [ping, setPing] = useState<PingResult>('loading')
 
@@ -807,14 +816,14 @@ function ServerRow({ server }: { server: ServerEntry }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server.name || 'Unknown Server'}</div>
         <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
           <span>{server.ip}</span>
-          {ping === 'loading' && <span style={{ color: 'var(--ink-4)', fontStyle: 'italic' }}>pinging…</span>}
+          {ping === 'loading' && <span style={{ color: 'var(--ink-4)', fontStyle: 'italic' }}>{t.instanceDetail.pinging}</span>}
           {ping !== 'loading' && ping !== null && (
             <>
               <span style={{ color: pingColor(ping.latencyMs), fontWeight: 600 }}>{ping.latencyMs}ms</span>
-              <span style={{ color: 'var(--ink-3)' }}>{ping.online}/{ping.max} players</span>
+              <span style={{ color: 'var(--ink-3)' }}>{t.instanceDetail.players(ping.online, ping.max)}</span>
             </>
           )}
-          {isOffline && <span style={{ color: 'var(--ink-4)' }}>offline</span>}
+          {isOffline && <span style={{ color: 'var(--ink-4)' }}>{t.instanceDetail.offline}</span>}
         </div>
       </div>
       {/* Online indicator dot */}
@@ -827,7 +836,7 @@ function ServerRow({ server }: { server: ServerEntry }) {
         onClick={copy}
         style={{ fontSize: 11, color: copied ? 'var(--grass)' : 'var(--ink-3)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}
       >
-        {copied ? 'Copied!' : 'Copy IP'}
+        {copied ? t.instanceDetail.copied : t.instanceDetail.copyIp}
       </button>
     </div>
   )
@@ -843,6 +852,8 @@ function EmptyMsg({ msg, sub }: { msg: string; sub: string }) {
 }
 
 function WorldRow({ world, isBusy, onDelete, onBackup }: { world: WorldEntry; isBusy: boolean; onDelete: () => void; onBackup?: () => void }) {
+  const t = useT()
+  const td = t.instanceDetail
   const [confirm, setConfirm] = useState(false)
   const [backing, setBacking] = useState(false)
   return (
@@ -867,12 +878,12 @@ function WorldRow({ world, isBusy, onDelete, onBackup }: { world: WorldEntry; is
             disabled={isBusy || backing}
             style={{ fontSize:11, color:'var(--diamond)', background:'none', border:'1px solid var(--diamond)', borderRadius:3, padding:'3px 9px', cursor:'pointer', opacity: backing ? .6 : 1 }}
           >
-            {backing ? '…' : 'Backup'}
+            {backing ? td.backing : td.backup}
           </button>
         )}
         {confirm ? (
           <div style={{ display: 'flex', gap: 5 }}>
-            <button onClick={() => { setConfirm(false); onDelete() }} disabled={isBusy} style={{ fontSize: 11, color: '#fff', background: 'var(--lava)', border: 'none', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>Delete</button>
+            <button onClick={() => { setConfirm(false); onDelete() }} disabled={isBusy} style={{ fontSize: 11, color: '#fff', background: 'var(--lava)', border: 'none', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>{td.delete}</button>
             <button onClick={() => setConfirm(false)} style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>Cancel</button>
           </div>
         ) : (
@@ -883,7 +894,7 @@ function WorldRow({ world, isBusy, onDelete, onBackup }: { world: WorldEntry; is
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--lava)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--lava)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)' }}
           >
-            Delete
+            {td.delete}
           </button>
         )}
       </div>

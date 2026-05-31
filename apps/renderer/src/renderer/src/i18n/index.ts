@@ -78,6 +78,13 @@ function build(l: Locale) {
         : i(l.editInst.ramMb, { mb }),
       javaVersion: (v: number, vendor: string) => i(l.editInst.javaVersion, { v, vendor }),
     },
+
+    instanceDetail: {
+      ...l.instanceDetail,
+      selected:  (n: number) => i(l.instanceDetail.selected, { n }),
+      updateAll: (n: number) => i(l.instanceDetail.updateAll, { n }),
+      players:   (online: number, max: number) => i(l.instanceDetail.players, { online, max }),
+    },
   }
 }
 
