@@ -18,6 +18,7 @@ declare global {
           windowBounds: { width: number; height: number; x?: number; y?: number }
           defaultMemoryMb: number
           onboardingDone: boolean
+          systemRamGb?: number
           curseforgeApiKey?: string
           accounts: Array<{
             uuid: string

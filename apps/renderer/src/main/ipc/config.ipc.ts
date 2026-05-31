@@ -10,6 +10,7 @@ export function registerConfigIpc(): void {
     return {
       ...config,
       accounts: listSafeAccounts(),
+      systemRamGb: Math.floor(totalmem() / (1024 ** 3)),
     }
   })
 
