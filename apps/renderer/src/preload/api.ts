@@ -45,7 +45,8 @@ export const api = {
       ipcRenderer.on('updater:downloaded', h)
       return () => ipcRenderer.off('updater:downloaded', h)
     },
-    install: () => ipcRenderer.send('updater:install'),
+    install:   () => ipcRenderer.send('updater:install'),
+    download:  () => ipcRenderer.send('updater:download'),
   },
   launcher: {
     deleteAll: () => ipcRenderer.invoke('launcher.deleteAll'),

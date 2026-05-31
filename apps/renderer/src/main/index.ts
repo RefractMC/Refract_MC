@@ -93,9 +93,11 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.on('updater:install', () => autoUpdater.quitAndInstall())
+  ipcMain.on('updater:install',  () => autoUpdater.quitAndInstall())
+  ipcMain.on('updater:download', () => autoUpdater.downloadUpdate().catch(() => {}))
 
   if (!isDev) {
+    autoUpdater.autoDownload = false          // user decides when to download
     autoUpdater.on('update-available', (info: { version: string }) => {
       mainWindow.webContents.send('updater:available', { version: info.version })
     })

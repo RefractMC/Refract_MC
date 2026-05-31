@@ -45,7 +45,7 @@ function WinBtn({ onClick, danger, children }: { onClick: () => void; danger?: b
 
 type ActivityEntry = { id: string; label: string; ts: number }
 
-type UpdateState = { version: string; percent: number; ready: boolean }
+type UpdateState = { version: string; phase: 'pending' | 'downloading' | 'ready'; percent: number }
 
 export function TitleBar() {
   const pathname = useRouterState({ select: s => s.location.pathname })
@@ -63,9 +63,9 @@ export function TitleBar() {
   }, [])
 
   useEffect(() => {
-    const unA = api.updater.onAvailable(({ version }) => setUpdate({ version, percent: 0, ready: false }))
-    const unP = api.updater.onProgress(({ percent }) => setUpdate(u => u ? { ...u, percent } : null))
-    const unD = api.updater.onDownloaded(() => setUpdate(u => u ? { ...u, ready: true, percent: 100 } : null))
+    const unA = api.updater.onAvailable(({ version }) => setUpdate({ version, phase: 'pending', percent: 0 }))
+    const unP = api.updater.onProgress(({ percent }) => setUpdate(u => u ? { ...u, phase: 'downloading', percent } : null))
+    const unD = api.updater.onDownloaded(() => setUpdate(u => u ? { ...u, phase: 'ready', percent: 100 } : null))
     return () => { unA(); unP(); unD() }
   }, [])
 
@@ -128,24 +128,35 @@ export function TitleBar() {
 
       {/* Update chip */}
       {update && (
-        <div className="no-drag-region" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 6, padding: '0 8px', height: 22, borderRadius: 4, background: update.ready ? 'rgba(74,222,128,.12)' : 'rgba(255,255,255,.06)', border: `1px solid ${update.ready ? 'rgba(74,222,128,.35)' : 'var(--line)'}` }}>
-          {update.ready ? (
+        <div className="no-drag-region" style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginRight: 6, padding: '0 8px', height: 22, borderRadius: 4,
+          background: update.phase === 'ready' ? 'rgba(74,222,128,.12)' : 'rgba(255,255,255,.06)',
+          border: `1px solid ${update.phase === 'ready' ? 'rgba(74,222,128,.35)' : 'var(--line)'}`,
+        }}>
+          {update.phase === 'ready' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--grass)', fontWeight: 600 }}>v{update.version} ready</span>
-              <button
-                onClick={() => api.updater.install()}
-                style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 2, cursor: 'pointer', lineHeight: 1 }}
-              >
+              <button onClick={() => api.updater.install()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 2, cursor: 'pointer', lineHeight: 1 }}>
                 Restart ↺
               </button>
             </>
-          ) : (
+          ) : update.phase === 'downloading' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>v{update.version}</span>
               <div style={{ width: 48, height: 3, background: 'var(--surface-3)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${update.percent}%`, background: 'var(--accent)', transition: 'width 300ms linear', borderRadius: 2 }} />
               </div>
               <span style={{ fontSize: 10, color: 'var(--ink-4)', minWidth: 26, textAlign: 'right' }}>{update.percent}%</span>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 10, color: 'var(--ink-3)', fontWeight: 600 }}>v{update.version} available</span>
+              <button onClick={() => api.updater.download()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 2, cursor: 'pointer', lineHeight: 1 }}>
+                Update
+              </button>
+              <button onClick={() => setUpdate(null)} title="Stay on current version" style={{ height: 16, width: 16, fontSize: 12, background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                ✕
+              </button>
             </>
           )}
         </div>

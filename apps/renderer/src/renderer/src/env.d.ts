@@ -129,7 +129,8 @@ declare global {
         onAvailable:  (cb: (v: { version: string }) => void) => () => void
         onProgress:   (cb: (v: { percent: number }) => void) => () => void
         onDownloaded: (cb: () => void) => () => void
-        install: () => void
+        install:  () => void
+        download: () => void
       }
       launcher: {
         deleteAll: () => Promise<void>
