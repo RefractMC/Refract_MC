@@ -707,7 +707,8 @@ function Browse() {
 
   const [instances, setInstances] = useState<Instance[]>([])
   const [activeInstance, setActiveInstance] = useState<Instance | null>(null)
-  const [instanceUpdates, setInstanceUpdates] = useState<Record<string, boolean>>({})
+  const [downloadedIds, setDownloadedIds]   = useState<Set<string>>(new Set())
+  const [updateIds, setUpdateIds]           = useState<Set<string>>(new Set())
   const [detailTarget, setDetailTarget] = useState<ModrinthProject | null>(null)
   const [installTarget, setInstallTarget] = useState<ModrinthProject | null>(null)
   const [cfInstallTarget, setCfInstallTarget] = useState<CFProject | null>(null)
@@ -721,39 +722,29 @@ function Browse() {
     api.config.get().then(cfg => setCfApiKey((cfg as { curseforgeApiKey?: string }).curseforgeApiKey ?? null)).catch(() => {})
   }, [])
 
-  // When instance changes: re-fetch fresh data, apply version+loader filters, check updates
+  // When instance changes: apply filters, scan actual mod files via checkModUpdates
   useEffect(() => {
-    if (!activeInstance) { setInstanceUpdates({}); return }
-
-    // Apply instance filters automatically
+    if (!activeInstance) {
+      setDownloadedIds(new Set())
+      setUpdateIds(new Set())
+      return
+    }
     setGameVersion(activeInstance.minecraftVersion)
     setLoader(activeInstance.modLoader ? activeInstance.modLoader.toLowerCase() : 'All')
     setOffset(0)
 
-    // Re-fetch to get latest mods array
-    api.instance.getById(activeInstance.id)
-      .then(fresh => {
-        if (!fresh) return
-        setActiveInstance(fresh)
-        // Build set of installed Modrinth project IDs
-        const installed = new Set((fresh.mods ?? []).map(m => m.projectId))
-        // Check for updates
-        api.modrinth.checkModUpdates(fresh.id)
-          .then(updates => {
-            const map: Record<string, boolean> = {}
-            updates.filter(u => installed.has(u.projectId)).forEach(u => { map[u.projectId] = u.hasUpdate })
-            setInstanceUpdates(map)
-          })
-          .catch(() => setInstanceUpdates({}))
+    // checkModUpdates reads every .jar in the mods folder and resolves their Modrinth project IDs
+    api.modrinth.checkModUpdates(activeInstance.id)
+      .then(results => {
+        setDownloadedIds(new Set(results.map(r => r.projectId)))
+        setUpdateIds(new Set(results.filter(r => r.hasUpdate).map(r => r.projectId)))
       })
-      .catch(() => setInstanceUpdates({}))
-  }, [activeInstance?.id]) // only re-run when the instance ID changes
+      .catch(() => { setDownloadedIds(new Set()); setUpdateIds(new Set()) })
+  }, [activeInstance?.id])
 
-  function getModStatus(mod: ModrinthProject): 'installed' | 'update' | 'incompatible' | null {
+  function getModStatus(mod: ModrinthProject): 'downloaded' | 'update' | 'incompatible' | null {
     if (!activeInstance) return null
-    const installedProjectIds = new Set((activeInstance.mods ?? []).map(m => m.projectId))
-    const installed = installedProjectIds.has(mod.project_id)
-    if (installed) return instanceUpdates[mod.project_id] ? 'update' : 'installed'
+    if (downloadedIds.has(mod.project_id)) return updateIds.has(mod.project_id) ? 'update' : 'downloaded'
     const mcOk = !mod.game_versions?.length || mod.game_versions.includes(activeInstance.minecraftVersion)
     const instLoader = activeInstance.modLoader?.toLowerCase()
     const loaderOk = !instLoader || !mod.loaders?.length || mod.loaders.some(l => l.toLowerCase() === instLoader)
@@ -1032,7 +1023,7 @@ function ModTile({ mod, installing, installedInInstances, status, onInstall, onD
   mod: ModrinthProject
   installing: boolean
   installedInInstances: number
-  status: 'installed' | 'update' | 'incompatible' | null
+  status: 'downloaded' | 'update' | 'incompatible' | null
   onInstall: () => void
   onDetail: () => void
 }) {
@@ -1097,10 +1088,10 @@ function ModTile({ mod, installing, installedInInstances, status, onInstall, onD
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {mod.categories.slice(0, 2).map(cat => <Tag key={cat} color="var(--ink-4)">{cat}</Tag>)}
         </div>
-        {status === 'installed' ? (
+        {status === 'downloaded' ? (
           <button
             onClick={e => { e.stopPropagation(); onInstall() }}
-            title="Already installed — click to reinstall"
+            title="Already downloaded — click to reinstall"
             style={{
               fontFamily: "'VT323',monospace", fontSize: 15, letterSpacing: '.06em',
               color: 'var(--grass)', background: 'transparent',
@@ -1108,7 +1099,7 @@ function ModTile({ mod, installing, installedInInstances, status, onInstall, onD
               padding: '0 18px', height: 36, borderRadius: 3, flexShrink: 0,
             }}
           >
-            ✓ INSTALLED
+            ✓ DOWNLOADED
           </button>
         ) : status === 'update' ? (
           <button
