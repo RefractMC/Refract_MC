@@ -1133,7 +1133,7 @@ function Library() {
 
       {/* Bottom panels */}
       {instances.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 280px', gap: 14 }}>
           {/* What's New */}
           <Panel title={t.home.whatsNew}>
             <div style={{ maxHeight: 260, overflowY: 'auto', marginRight: -6, paddingRight: 6 }}>
@@ -1166,6 +1166,9 @@ function Library() {
               </div>
             ))}
           </Panel>
+
+          {/* Playtime */}
+          <PlaytimePanel instances={instances} />
         </div>
       )}
 
@@ -1353,6 +1356,107 @@ function Library() {
         />
       )}
     </div>
+  )
+}
+
+function fmtSeconds(s: number): string {
+  if (s < 60) return '< 1m'
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
+}
+
+function PlaytimePanel({ instances }: { instances: Instance[] }) {
+  const sorted = [...instances]
+    .filter(i => i.totalTimePlayed > 0)
+    .sort((a, b) => b.totalTimePlayed - a.totalTimePlayed)
+    .slice(0, 6)
+
+  const grandTotal = instances.reduce((acc, i) => acc + i.totalTimePlayed, 0)
+  const maxTime = sorted[0]?.totalTimePlayed ?? 1
+
+  // Last 7 days
+  const today = new Date()
+  const days: { label: string; seconds: number }[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const key = d.toISOString().slice(0, 10)
+    const dayIdx = d.getDay() // 0=Sun
+    const DAY_ABBR = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+    let secs = 0
+    for (const inst of instances) {
+      secs += inst.playtimeLog?.[key] ?? 0
+    }
+    days.push({ label: DAY_ABBR[dayIdx] ?? '', seconds: secs })
+  }
+  const maxDay = Math.max(...days.map(d => d.seconds), 1)
+
+  const totalHours = Math.floor(grandTotal / 3600)
+
+  if (sorted.length === 0 && grandTotal === 0) {
+    return (
+      <Panel title="Playtime">
+        <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>
+          No playtime recorded yet
+        </div>
+      </Panel>
+    )
+  }
+
+  return (
+    <Panel title="Playtime">
+      {/* Per-instance bars */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {sorted.map(inst => {
+          const pct = (inst.totalTimePlayed / maxTime) * 100
+          return (
+            <div key={inst.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 72, fontSize: 10, color: 'var(--ink-4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {inst.name}
+              </div>
+              <div style={{ flex: 1, height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', borderRadius: 3 }} />
+              </div>
+              <div style={{ width: 34, fontSize: 10, color: 'var(--ink-4)', textAlign: 'right', flexShrink: 0 }}>
+                {fmtSeconds(inst.totalTimePlayed)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Last 7 days */}
+      <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.08em', marginBottom: 6 }}>LAST 7 DAYS</div>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 36 }}>
+          {days.map((day, i) => {
+            const h = day.seconds > 0 ? Math.max(4, Math.round((day.seconds / maxDay) * 32)) : 0
+            return (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div style={{ width: '100%', height: 32, display: 'flex', alignItems: 'flex-end' }}>
+                  <div style={{
+                    width: '100%',
+                    height: h,
+                    background: h > 0 ? 'var(--accent)' : 'var(--surface-2)',
+                    borderRadius: 2,
+                    opacity: h > 0 ? 1 : 0.4,
+                  }} />
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--ink-4)' }}>{day.label}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Total */}
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-4)', textAlign: 'right' }}>
+        {totalHours > 0 ? `${totalHours}h total` : fmtSeconds(grandTotal) + ' total'}
+      </div>
+    </Panel>
   )
 }
 

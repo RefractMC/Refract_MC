@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type React from 'react'
 import type { Instance, ModLoader, JavaInstallation } from '@refract/core'
-import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
 import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
 import { api } from '@/lib/api'
@@ -16,17 +15,7 @@ const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: 'neoforge', label: 'NeoForge' },
 ]
 
-const MEMORY_ALL_QUICK = [1024, 2048, 4096, 8192, 16384, 32768]
-const MEMORY_MIN_MB = 512
-const MEMORY_STEP   = 512
-
-function mbLabel(mb: number) {
-  return mb >= 1024 ? `${mb / 1024}G` : `${mb}M`
-}
-
-function mbToGb(mb: number) {
-  return (mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)
-}
+const ALL_PRESETS = [1, 2, 4, 8, 16, 32, 64]
 
 interface Props {
   instance: Instance | null
@@ -38,36 +27,61 @@ interface Props {
   onDuplicate?: (id: string) => Promise<void>
 }
 
+const IrisLogo = () => (
+  <svg viewBox="-110 -110 220 220" xmlns="http://www.w3.org/2000/svg" style={{ width: 34, height: 34, flexShrink: 0, filter: 'drop-shadow(0 2px 6px var(--ni-p-glow, var(--accent-tint)))' }}>
+    <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4"/>
+    <polygon points="0,-92 14,0 0,92 -14,0" fill="#3D0FA3" transform="rotate(30)"/>
+    <polygon points="0,-92 14,0 0,92 -14,0" fill="#8A52FF" transform="rotate(60)"/>
+    <polygon points="0,-92 14,0 0,92 -14,0" fill="#3D0FA3" transform="rotate(90)"/>
+    <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4" transform="rotate(120)"/>
+    <polygon points="0,-92 14,0 0,92 -14,0" fill="#8A52FF" transform="rotate(150)"/>
+    <circle r="24" fill="#1B044F"/>
+    <circle r="6" fill="#ECE4FF"/>
+  </svg>
+)
+
 export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDelete, onRepair, onDuplicate }: Props) {
   const t = useT()
-  const [name, setName]           = useState('')
-  const [mcVersion, setMcVersion] = useState('1.21.1')
-  const [modLoader, setModLoader] = useState<ModLoader | ''>('')
-  const [memoryMb, setMemoryMb]   = useState(2048)
-  const [coverImage, setCoverImage] = useState('')
-  const [pinned, setPinned]       = useState(false)
-  const [groupId, setGroupId]     = useState('')
-  const [javaPath, setJavaPath]   = useState('')
-  const [javaArgs, setJavaArgs]   = useState('')
-  const [javas, setJavas]         = useState<JavaInstallation[]>([])
-  const [loading, setLoading]     = useState(false)
+  const nameId   = useId()
+  const verId    = useId()
+  const grpId    = useId()
+  const javaId   = useId()
+  const argsId   = useId()
+  const pinId    = useId()
+
+  const [name, setName]               = useState('')
+  const [mcVersion, setMcVersion]     = useState('1.21.1')
+  const [showSnapshots, setSnap]      = useState(false)
+  const [modLoader, setModLoader]     = useState<ModLoader | ''>('')
+  const [memGB, setMemGB]             = useState(2)
+  const [coverImage, setCoverImage]   = useState('')
+  const [pinned, setPinned]           = useState(false)
+  const [groupId, setGroupId]         = useState('')
+  const [javaPath, setJavaPath]       = useState('')
+  const [javaArgs, setJavaArgs]       = useState('')
+  const [javas, setJavas]             = useState<JavaInstallation[]>([])
+  const [loading, setLoading]         = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [systemMaxMb, setSystemMaxMb] = useState(16384)
+  const [maxRamGb, setMaxRamGb]       = useState(16)
+  const [previewHover, setPreviewHover] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    api.system.totalMemoryMb().then(mb => setSystemMaxMb(Math.max(1024, Math.floor(mb / 512) * 512))).catch(() => {})
+    api.config.get()
+      .then(cfg => { if (cfg.systemRamGb && cfg.systemRamGb > 1) setMaxRamGb(cfg.systemRamGb) })
+      .catch(() => {})
   }, [])
 
-  const MEMORY_MAX_MB = systemMaxMb
-  const MEMORY_QUICK = MEMORY_ALL_QUICK.filter(mb => mb <= systemMaxMb)
+  const memPresets = ALL_PRESETS.filter(g => g <= maxRamGb)
+  const fillPct = ((memGB - 1) / Math.max(maxRamGb - 1, 1)) * 100
 
   useEffect(() => {
     if (instance && open) {
       setName(instance.name)
       setMcVersion(instance.minecraftVersion)
+      setSnap(false)
       setModLoader(instance.modLoader ?? '')
-      setMemoryMb(instance.memoryMb)
+      setMemGB(Math.max(1, Math.round(instance.memoryMb / 1024)))
       setCoverImage(instance.iconPath ?? '')
       setPinned(instance.pinned ?? false)
       setGroupId(instance.groupId ?? '')
@@ -77,10 +91,6 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
       api.mc.java().then(setJavas).catch(() => setJavas([]))
     }
   }, [instance, open])
-
-  function setMemory(mb: number) {
-    setMemoryMb(Math.max(MEMORY_MIN_MB, Math.min(MEMORY_MAX_MB, mb)))
-  }
 
   async function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -94,7 +104,17 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
     if (!instance || !name.trim()) return
     setLoading(true)
     try {
-      await onSave(instance.id, { name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb, iconPath: coverImage || undefined, pinned, groupId: groupId.trim() || undefined, javaPath: javaPath || undefined, javaArgs: javaArgs.trim() || undefined })
+      await onSave(instance.id, {
+        name: name.trim(),
+        minecraftVersion: mcVersion,
+        modLoader: modLoader || undefined,
+        memoryMb: memGB * 1024,
+        iconPath: coverImage || undefined,
+        pinned,
+        groupId: groupId.trim() || undefined,
+        javaPath: javaPath || undefined,
+        javaArgs: javaArgs.trim() || undefined,
+      })
       onOpenChange(false)
     } finally {
       setLoading(false)
@@ -113,300 +133,345 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
     }
   }
 
-  const fillPct = ((memoryMb - MEMORY_MIN_MB) / (MEMORY_MAX_MB - MEMORY_MIN_MB)) * 100
+  const loaderLabel = MOD_LOADERS.find(l => l.value === modLoader)?.label ?? 'Vanilla'
+  const displayName = name.trim() || 'Instance'
 
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!loading) onOpenChange(v) }}>
       <Dialog.Portal>
-        <Dialog.Overlay style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.72)', zIndex:40 }} />
-        <Dialog.Content style={{
-          position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
-          background:'var(--surface)', border:'1px solid var(--border-r)',
-          borderRadius:4, width:640, zIndex:50, outline:'none', overflow:'hidden',
-        }}>
-
-          {/* Title bar */}
-          <div style={{ background:'var(--surface-2)', borderBottom:'1px solid var(--line)', padding:'0 16px', height:38, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.14em', color:'var(--ink)', lineHeight:1 }}>{t.editInst.title}</span>
-            <Dialog.Close disabled={loading} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--ink-4)', fontSize:18, lineHeight:1, padding:'4px 6px', opacity:loading ? 0.5 : 1 }}>✕</Dialog.Close>
+        <Dialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 149 }} />
+        <Dialog.Content
+          aria-label="Edit instance"
+          className="ni-dialog"
+          onEscapeKeyDown={() => { if (!loading) onOpenChange(false) }}
+          onPointerDownOutside={() => { if (!loading) onOpenChange(false) }}
+        >
+          {/* ── Header ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderBottom: '1px solid var(--border-r)', background: 'linear-gradient(var(--surface-2), var(--surface))', flexShrink: 0 }}>
+            <IrisLogo />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1, color: 'var(--ink)' }}>{t.editInst.title}</h2>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, letterSpacing: '.08em', color: 'var(--ink-3)', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {displayName}
+              </span>
+            </div>
+            <button className="ni-close" onClick={() => { if (!loading) onOpenChange(false) }} aria-label="Close" type="button">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18"/>
+              </svg>
+            </button>
           </div>
 
-          {/* Body */}
-          <div style={{ display:'flex' }}>
+          {/* ── Body ── */}
+          <div className="ni-body" style={{ flex: 1, minHeight: 0 }}>
 
-            {/* Preview column */}
-            <div style={{ width:160, flexShrink:0, borderRight:'1px solid var(--line)', display:'flex', flexDirection:'column' }}>
-              <ImagePickerArea image={coverImage} fallback={<PixelScene name={loaderToScene(modLoader || null)} style={{ width:'100%', height:140 }} />} onClick={() => fileInputRef.current?.click()} />
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleImagePick} />
-              <div style={{ padding:'10px 12px', display:'flex', flexDirection:'column', gap:5, flex:1 }}>
-                <div style={{ fontSize:12, fontWeight:600, color:'var(--ink)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {name || <span style={{ color:'var(--ink-4)' }}>Instance</span>}
+            {/* Left: live preview */}
+            <aside className="ni-preview" style={{ padding: '22px 20px', background: 'var(--surface-2)', borderRight: '1px solid var(--border-r)', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                Live Preview
+              </div>
+
+              {/* Preview card — clickable to pick image */}
+              <div
+                style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 10px 30px -18px rgba(0,0,0,.5)', cursor: 'pointer' }}
+                onClick={() => fileInputRef.current?.click()}
+                onMouseEnter={() => setPreviewHover(true)}
+                onMouseLeave={() => setPreviewHover(false)}
+              >
+                {/* Thumbnail */}
+                <div style={{ height: 128, position: 'relative', overflow: 'hidden', background: 'linear-gradient(var(--sky-1, #3a2a66), var(--sky-2, #5a3fa6))' }}>
+                  {coverImage
+                    ? <img src={coverImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                    : instance?.iconPath
+                    ? <img src={instance.iconPath} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                    : (
+                      <>
+                        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(1.5px 1.5px at 22% 30%, #fff8, transparent), radial-gradient(1.5px 1.5px at 64% 20%, #ffffffaa, transparent), radial-gradient(1.5px 1.5px at 80% 44%, #fff7, transparent), radial-gradient(1.5px 1.5px at 40% 16%, #fff6, transparent)' }} />
+                        <div style={{ position: 'absolute', top: 16, right: 18, width: 26, height: 26, borderRadius: '50%', background: 'var(--accent-hi, #8a52ff)', boxShadow: '0 0 22px 4px var(--accent-tint)' }} />
+                        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 44, height: 40, opacity: .55, background: 'linear-gradient(#2c1f4d,#2c1f4d) 6% 100%/14px 26px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 22% 100%/20px 38px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 44% 100%/16px 22px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 62% 100%/24px 32px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 84% 100%/16px 30px no-repeat' }} />
+                        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 46, background: 'linear-gradient(#3aa05a,#3aa05a) 0 0/100% 9px no-repeat, linear-gradient(#7a5230,#5f3f24)', boxShadow: 'inset 0 1px 0 #4fbf6e' }} />
+                      </>
+                    )
+                  }
+                  {/* Hover overlay */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    background: 'rgba(0,0,0,.52)',
+                    opacity: previewHover ? 1 : 0,
+                    transition: 'opacity .14s',
+                  }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: '.1em', color: '#fff', textTransform: 'uppercase' }}>
+                      {coverImage || instance?.iconPath ? 'Change' : 'Set Image'}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,.6)' }}>click to browse</div>
+                  </div>
                 </div>
-                <div style={{ fontFamily:"'VT323',monospace", fontSize:13, color:'var(--ink-4)', letterSpacing:'.06em' }}>MC {mcVersion}</div>
-                <div style={{
-                  marginTop:2, alignSelf:'flex-start',
-                  background: modLoader ? 'var(--accent-tint)' : 'var(--surface-3)',
-                  border:`1px solid ${modLoader ? 'var(--accent)' : 'var(--border-r)'}`,
-                  borderRadius:3, padding:'1px 7px',
-                  fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.08em',
-                  color: modLoader ? 'var(--accent)' : 'var(--ink-4)',
-                }}>
-                  {modLoader ? modLoader.toUpperCase() : t.editInst.vanilla}
-                </div>
-                <div style={{ fontFamily:"'VT323',monospace", fontSize:12, color:'var(--ink-4)', letterSpacing:'.04em' }}>
-                  {mbLabel(memoryMb)} RAM
+
+                {/* Card body */}
+                <div style={{ padding: '13px 14px 15px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--ink-3)', letterSpacing: '.02em' }}>Minecraft {mcVersion}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ni-p-deep, var(--accent-hi))', background: 'var(--ni-p-tint, var(--accent-tint))', border: '1px solid var(--ni-p-tint-2, var(--accent-tint))', borderRadius: 6, padding: '3px 8px' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                      {loaderLabel}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 6, padding: '3px 8px', background: 'var(--bg)' }}>
+                      {memGB} GB
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Form column */}
-            <form onSubmit={handleSubmit} style={{ flex:1, padding:'16px 18px', display:'flex', flexDirection:'column', gap:14 }}>
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImagePick} />
+            </aside>
 
-              <Field label={t.editInst.name}>
+            {/* Right: form */}
+            <form id="ei-form" onSubmit={handleSubmit} style={{ padding: '22px 24px 4px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+              {/* Name */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor={nameId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  {t.editInst.name}
+                </label>
                 <input
-                  type="text" value={name} onChange={e => setName(e.target.value)}
-                  autoFocus style={inputSt}
+                  id={nameId}
+                  className="ni-input"
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
                 />
-              </Field>
+              </div>
 
-              <Field label={t.editInst.mcVersion}>
-                <McVersionSelect value={mcVersion} onChange={setMcVersion} selectStyle={selectSt} />
-              </Field>
+              {/* Minecraft version */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <label htmlFor={verId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                    {t.editInst.mcVersion}
+                  </label>
+                  <label className="ni-check">
+                    <input className="ni-check-input" type="checkbox" checked={showSnapshots} onChange={e => setSnap(e.target.checked)} />
+                    <span className="ni-checkmark-box">
+                      <svg className="ni-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-11"/></svg>
+                    </span>
+                    <span className="ni-check-label">Snapshots</span>
+                  </label>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <McVersionSelect
+                    value={mcVersion}
+                    onChange={setMcVersion}
+                    selectClassName="ni-input"
+                    showSnapshots={showSnapshots}
+                    onShowSnapshotsChange={setSnap}
+                    hideBuiltinCheckbox
+                  />
+                  <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--ink-3)' }}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </span>
+                </div>
+              </div>
 
-              <Field label={t.editInst.modLoader}>
-                <div style={{ display:'flex', gap:4 }}>
+              {/* Mod loader */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  {t.editInst.modLoader}
+                </label>
+                <div className="ni-seg">
                   {MOD_LOADERS.map(l => (
-                    <button key={l.value} type="button" onClick={() => setModLoader(l.value)} style={{
-                      flex:1, height:28, fontSize:11, fontWeight:500,
-                      color: modLoader === l.value ? 'var(--ink)' : 'var(--ink-3)',
-                      background: modLoader === l.value ? 'var(--accent-tint)' : 'var(--surface-3)',
-                      border:`1px solid ${modLoader === l.value ? 'var(--accent)' : 'var(--border-r)'}`,
-                      borderRadius:3, cursor:'pointer',
-                    }}>
+                    <button
+                      key={l.value}
+                      type="button"
+                      className="ni-seg-btn"
+                      aria-pressed={modLoader === l.value ? 'true' : 'false'}
+                      onClick={() => setModLoader(l.value)}
+                    >
+                      <span className="ni-glyph" />
                       {l.label}
                     </button>
                   ))}
                 </div>
-              </Field>
+              </div>
 
-              <Field label={t.editInst.memory(mbToGb(memoryMb))}>
+              {/* Memory */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                    {t.editInst.memory(String(memGB))}
+                  </label>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--ni-p-deep, var(--accent-hi))', fontWeight: 600 }}>{memGB} GB allocated</span>
+                </div>
                 <input
-                  type="range" min={MEMORY_MIN_MB} max={MEMORY_MAX_MB} step={MEMORY_STEP}
-                  value={memoryMb} onChange={e => setMemory(Number(e.target.value))}
-                  style={{ width:'100%', height:4, appearance:'none', outline:'none', cursor:'pointer', borderRadius:2,
-                    background:`linear-gradient(to right, var(--accent) ${fillPct}%, var(--surface-3) 0%)` }}
+                  className="ni-slider"
+                  type="range" min={1} max={maxRamGb} step={1}
+                  value={memGB}
+                  style={{ '--fill': `${fillPct}%` } as React.CSSProperties}
+                  onChange={e => setMemGB(Number(e.target.value))}
                 />
-                <div style={{ display:'flex', gap:4, marginTop:4, flexWrap:'wrap' }}>
-                  {MEMORY_QUICK.map(mb => (
-                    <button key={mb} type="button" onClick={() => setMemory(mb)} style={{
-                      flex:'1 1 auto', height:26, fontSize:11, fontWeight:500,
-                      color: memoryMb === mb ? 'var(--ink)' : 'var(--ink-4)',
-                      background: memoryMb === mb ? 'var(--accent-tint)' : 'var(--surface-3)',
-                      border:`1px solid ${memoryMb === mb ? 'var(--accent)' : 'var(--border-r)'}`,
-                      borderRadius:3, cursor:'pointer',
-                    }}>
-                      {mbLabel(mb)}
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 3 }}>
+                  {memPresets.map(g => (
+                    <button key={g} type="button" className="ni-preset" aria-pressed={memGB === g ? 'true' : 'false'} onClick={() => setMemGB(g)}>
+                      {g}G
                     </button>
                   ))}
                 </div>
-              </Field>
+              </div>
 
-              <Field label={t.editInst.group}>
+              {/* Group */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor={grpId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  {t.editInst.group}
+                </label>
                 <input
+                  id={grpId}
+                  className="ni-input"
                   type="text"
                   value={groupId}
                   onChange={e => setGroupId(e.target.value)}
                   placeholder={t.editInst.groupPlaceholder}
-                  style={inputSt}
+                  autoComplete="off"
                 />
-              </Field>
+              </div>
 
-              <Field label={t.editInst.javaOverride}>
-                <select
-                  value={javaPath}
-                  onChange={e => setJavaPath(e.target.value)}
-                  style={selectSt}
-                >
-                  <option value="">{t.editInst.javaAuto}</option>
-                  {javas.map(j => (
-                    <option key={j.path} value={j.path}>
-                      {t.editInst.javaVersion(j.version, j.vendor)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {/* Java override */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor={javaId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  {t.editInst.javaOverride}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    id={javaId}
+                    className="ni-input"
+                    value={javaPath}
+                    onChange={e => setJavaPath(e.target.value)}
+                  >
+                    <option value="">{t.editInst.javaAuto}</option>
+                    {javas.map(j => (
+                      <option key={j.path} value={j.path}>
+                        {t.editInst.javaVersion(j.version, j.vendor)}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--ink-3)' }}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </span>
+                </div>
+              </div>
 
-              <Field label={t.editInst.jvmArgs}>
+              {/* JVM args */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor={argsId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  {t.editInst.jvmArgs}
+                </label>
                 <input
+                  id={argsId}
+                  className="ni-input"
                   type="text"
                   value={javaArgs}
                   onChange={e => setJavaArgs(e.target.value)}
                   placeholder={t.editInst.jvmArgsPlaceholder}
-                  style={inputSt}
+                  autoComplete="off"
+                  spellCheck={false}
                 />
-                <div style={{ display:'flex', gap:4, marginTop:4, flexWrap:'wrap' }}>
-                  <span style={{ fontSize:10, color:'var(--ink-4)', alignSelf:'center', flexShrink:0, letterSpacing:'.06em' }}>PRESETS:</span>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, color: 'var(--ink-4)', alignSelf: 'center', flexShrink: 0, letterSpacing: '.06em', fontFamily: "'JetBrains Mono', monospace" }}>PRESETS:</span>
                   {[
-                    { label:"Aikar's", args:'-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:+DisableExplicitGC -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1' },
-                    { label:'Low-end', args:'-XX:+UseSerialGC -XX:TieredStopAtLevel=1' },
+                    { label: "Aikar's", args: '-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:+DisableExplicitGC -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1' },
+                    { label: 'Low-end', args: '-XX:+UseSerialGC -XX:TieredStopAtLevel=1' },
                   ].map(p => (
-                    <button key={p.label} type="button" onClick={() => setJavaArgs(p.args)} style={{ fontSize:10, padding:'2px 8px', background:'var(--surface-3)', color:'var(--ink-3)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontWeight:600 }}>
+                    <button key={p.label} type="button" onClick={() => setJavaArgs(p.args)} style={{ fontSize: 10, padding: '2px 8px', background: 'var(--surface-3)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
                       {p.label}
                     </button>
                   ))}
                   {javaArgs && (
-                    <button type="button" onClick={() => setJavaArgs('')} style={{ fontSize:10, padding:'2px 8px', background:'none', color:'var(--ink-4)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer' }}>
+                    <button type="button" onClick={() => setJavaArgs('')} style={{ fontSize: 10, padding: '2px 8px', background: 'none', color: 'var(--ink-4)', border: '1px solid var(--border-r)', borderRadius: 6, cursor: 'pointer' }}>
                       Clear
                     </button>
                   )}
                 </div>
-              </Field>
+              </div>
 
               {/* Pin toggle */}
-              <label style={{ display:'flex', alignItems:'center', gap:7, cursor:'pointer', userSelect:'none', marginTop:2 }}>
-                <input
-                  type="checkbox" checked={pinned} onChange={e => setPinned(e.target.checked)}
-                  style={{ cursor:'pointer', accentColor:'var(--accent)' }}
-                />
-                <span style={{ fontFamily:"'VT323',monospace", fontSize:13, letterSpacing:'.08em', color: pinned ? 'var(--accent)' : 'var(--ink-4)' }}>
-                  {t.editInst.pin}
-                </span>
-              </label>
-
-              <div style={{ flex:1 }} />
-
-              <div style={{ display:'flex', gap:8, paddingTop:12, borderTop:'1px solid var(--line)' }}>
-                {onDelete && (
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={loading}
-                    style={{
-                      height:38, padding:'0 12px', borderRadius:3, border:'none', cursor: loading ? 'not-allowed' : 'pointer',
-                      background: confirmDelete ? 'rgba(217,59,59,.25)' : 'transparent',
-                      color: 'var(--redstone)',
-                      outline: `1px solid ${confirmDelete ? 'var(--redstone)' : 'rgba(217,59,59,.4)'}`,
-                      fontSize:12, fontWeight:700, flexShrink:0, transition:'background .15s',
-                    }}
-                  >
-                    {confirmDelete ? t.editInst.confirmDelete : t.editInst.delete}
-                  </button>
-                )}
-                {onRepair && instance?.isInstalled && (
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => { if (instance) { onOpenChange(false); onRepair(instance.id) } }}
-                    style={{
-                      height:38, padding:'0 12px', borderRadius:3, border:'1px solid var(--border-r)',
-                      cursor: loading ? 'not-allowed' : 'pointer',
-                      background:'var(--surface-2)', color:'var(--ink-3)',
-                      fontSize:12, fontWeight:600, flexShrink:0,
-                    }}
-                  >
-                    {t.editInst.repair}
-                  </button>
-                )}
-                {onDuplicate && (
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={async () => {
-                      if (!instance) return
-                      setLoading(true)
-                      try { await onDuplicate(instance.id); onOpenChange(false) }
-                      finally { setLoading(false) }
-                    }}
-                    style={{
-                      height:38, padding:'0 12px', borderRadius:3, border:'1px solid var(--border-r)',
-                      cursor: loading ? 'not-allowed' : 'pointer',
-                      background:'var(--surface-2)', color:'var(--ink-3)',
-                      fontSize:12, fontWeight:600, flexShrink:0,
-                    }}
-                  >
-                    {t.editInst.duplicate}
-                  </button>
-                )}
-                <Dialog.Close asChild>
-                  <button type="button" disabled={loading} style={cancelSt}>{t.editInst.cancel}</button>
-                </Dialog.Close>
-                <button type="submit" disabled={!name.trim() || loading} style={{
-                  flex:1,
-                  fontFamily:"'VT323',monospace", fontSize:18, letterSpacing:'.12em', color:'#fff',
-                  height:38, border:'none', borderRadius:3,
-                  background: (!name.trim() || loading) ? 'var(--surface-3)' : 'var(--accent)',
-                  cursor: (!name.trim() || loading) ? 'not-allowed' : 'pointer',
-                  boxShadow: (!name.trim() || loading) ? 'none' : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
-                  opacity: (!name.trim() || loading) ? 0.55 : 1,
-                }}>
-                  {loading ? t.editInst.saving : t.editInst.save}
-                </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor={pinId} className="ni-check" style={{ alignSelf: 'flex-start' }}>
+                  <input id={pinId} className="ni-check-input" type="checkbox" checked={pinned} onChange={e => setPinned(e.target.checked)} />
+                  <span className="ni-checkmark-box">
+                    <svg className="ni-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-11"/></svg>
+                  </span>
+                  <span className="ni-check-label">{t.editInst.pin}</span>
+                </label>
               </div>
 
             </form>
           </div>
+
+          {/* ── Footer ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 22px', borderTop: '1px solid var(--border-r)', background: 'var(--surface-2)', flexShrink: 0 }}>
+            {/* Danger actions */}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={loading}
+                style={{
+                  height: 42, padding: '0 14px', borderRadius: 10,
+                  background: confirmDelete ? 'rgba(217,59,59,.25)' : 'rgba(217,59,59,.15)',
+                  color: 'var(--lava, #d93b3b)',
+                  border: confirmDelete ? '1px solid rgba(217,59,59,.7)' : '1px solid rgba(217,59,59,.5)',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  fontSize: 13, fontWeight: 700, flexShrink: 0,
+                  transition: 'background .15s, border-color .15s',
+                  fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif",
+                }}
+              >
+                {confirmDelete ? t.editInst.confirmDelete : t.editInst.delete}
+              </button>
+            )}
+            {onRepair && instance?.isInstalled && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => { if (instance) { onOpenChange(false); onRepair(instance.id) } }}
+                className="ni-btn ni-btn-soft"
+              >
+                {t.editInst.repair}
+              </button>
+            )}
+            {onDuplicate && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={async () => {
+                  if (!instance) return
+                  setLoading(true)
+                  try { await onDuplicate(instance.id); onOpenChange(false) }
+                  finally { setLoading(false) }
+                }}
+                className="ni-btn ni-btn-soft"
+              >
+                {t.editInst.duplicate}
+              </button>
+            )}
+            <div style={{ flex: 1 }} />
+            <button type="button" className="ni-btn ni-btn-ghost" disabled={loading} onClick={() => { if (!loading) onOpenChange(false) }}>
+              {t.editInst.cancel}
+            </button>
+            <button type="submit" form="ei-form" className="ni-btn ni-btn-primary" disabled={!name.trim() || loading}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              {loading ? t.editInst.saving : t.editInst.save}
+            </button>
+          </div>
+
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
   )
-}
-
-function ImagePickerArea({ image, fallback, onClick }: { image: string; fallback: React.ReactNode; onClick: () => void }) {
-  const [hover, setHover] = useState(false)
-  return (
-    <div
-      style={{ width:'100%', height:140, position:'relative', cursor:'pointer', overflow:'hidden', flexShrink:0 }}
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      {image
-        ? <img src={image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-        : fallback
-      }
-      <div style={{
-        position:'absolute', inset:0,
-        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4,
-        background:'rgba(0,0,0,.52)',
-        opacity: hover ? 1 : 0,
-        transition:'opacity .14s',
-      }}>
-        <div style={{ fontFamily:"'VT323',monospace", fontSize:14, letterSpacing:'.1em', color:'#fff' }}>
-          {image ? 'CHANGE' : 'SET IMAGE'}
-        </div>
-        <div style={{ fontSize:10, color:'rgba(255,255,255,.6)' }}>click to browse</div>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-      <div style={{ fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.14em', color:'var(--ink-4)' }}>{label}</div>
-      {children}
-    </div>
-  )
-}
-
-const inputSt: React.CSSProperties = {
-  width:'100%', height:34,
-  background:'var(--bg)', border:'1px solid var(--border-r)',
-  color:'var(--ink)', padding:'0 10px',
-  outline:'none', fontSize:13, borderRadius:3,
-}
-
-const selectSt: React.CSSProperties = {
-  width:'100%', height:34,
-  background:'var(--bg)', border:'1px solid var(--border-r)',
-  color:'var(--ink)', padding:'0 10px',
-  outline:'none', fontSize:13, borderRadius:3,
-  appearance:'none', cursor:'pointer',
-}
-
-const cancelSt: React.CSSProperties = {
-  flex:1, height:38,
-  background:'var(--surface-2)', color:'var(--ink-3)',
-  border:'1px solid var(--border-r)', borderRadius:3,
-  cursor:'pointer', fontSize:13, fontWeight:500,
 }
