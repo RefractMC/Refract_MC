@@ -1,14 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useId } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type React from 'react'
 import type { ModLoader } from '@refract/core'
-import { api } from '@/lib/api'
-import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
-import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
 import { useT } from '@/i18n'
 
-const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
+const LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: '',         label: 'Vanilla'  },
   { value: 'fabric',   label: 'Fabric'   },
   { value: 'forge',    label: 'Forge'    },
@@ -16,17 +13,7 @@ const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
   { value: 'neoforge', label: 'NeoForge' },
 ]
 
-const MEMORY_ALL_QUICK = [1024, 2048, 4096, 8192, 16384, 32768]
-const MEMORY_MIN_MB = 512
-const MEMORY_STEP   = 512
-
-function mbLabel(mb: number) {
-  return mb >= 1024 ? `${mb / 1024}G` : `${mb}M`
-}
-
-function mbToGb(mb: number) {
-  return (mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)
-}
+const MEM_PRESETS = [1, 2, 4, 8, 16]
 
 interface CreateInput {
   name: string
@@ -48,309 +35,237 @@ interface Props {
 
 export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFile, onImportMultiMc }: Props) {
   const t = useT()
-  const [name, setName]           = useState('')
-  const [mcVersion, setMcVersion] = useState('1.21.1')
-  const [modLoader, setModLoader] = useState<ModLoader | ''>('')
-  const [memoryMb, setMemoryMb]   = useState(2048)
-  const [groupId, setGroupId]     = useState('')
-  const [coverImage, setCoverImage] = useState('')
-  const [customPath, setCustomPath] = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [systemMaxMb, setSystemMaxMb] = useState(16384)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const nameId = useId()
+  const verId  = useId()
+  const grpId  = useId()
 
-  useEffect(() => {
-    api.system.totalMemoryMb().then(mb => setSystemMaxMb(Math.max(1024, Math.floor(mb / 512) * 512))).catch(() => {})
-  }, [])
-
-  const MEMORY_MAX_MB = systemMaxMb
-  const MEMORY_QUICK = MEMORY_ALL_QUICK.filter(mb => mb <= systemMaxMb)
-
-  function setMemory(mb: number) {
-    setMemoryMb(Math.max(MEMORY_MIN_MB, Math.min(MEMORY_MAX_MB, mb)))
-  }
+  const [name, setName]               = useState('My Instance')
+  const [mcVersion, setMcVersion]     = useState('1.21.1')
+  const [showSnapshots, setSnap]      = useState(false)
+  const [modLoader, setModLoader]     = useState<ModLoader | ''>('')
+  const [memGB, setMemGB]             = useState(2)
+  const [groupId, setGroupId]         = useState('')
+  const [loading, setLoading]         = useState(false)
 
   function reset() {
-    setName('')
-    setMcVersion('1.21.1')
-    setModLoader('')
-    setMemoryMb(2048)
-    setGroupId('')
-    setCoverImage('')
-    setCustomPath('')
+    setName('My Instance'); setMcVersion('1.21.1'); setSnap(false)
+    setModLoader(''); setMemGB(2); setGroupId('')
   }
 
-  async function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try { setCoverImage(await compressImage(file)) } catch { /* ignore */ }
-    e.target.value = ''
-  }
+  function close() { if (!loading) { reset(); onOpenChange(false) } }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || loading) return
     setLoading(true)
     try {
-      await onCreate({ name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb, iconPath: coverImage || undefined, groupId: groupId.trim() || undefined, customPath: customPath.trim() || undefined })
-      onOpenChange(false)
-      reset()
-    } finally {
-      setLoading(false)
-    }
+      await onCreate({ name: name.trim(), minecraftVersion: mcVersion, modLoader: modLoader || undefined, memoryMb: memGB * 1024, groupId: groupId.trim() || undefined })
+      onOpenChange(false); reset()
+    } finally { setLoading(false) }
   }
 
-  const fillPct = ((memoryMb - MEMORY_MIN_MB) / (MEMORY_MAX_MB - MEMORY_MIN_MB)) * 100
+  const fillPct = ((memGB - 1) / (16 - 1)) * 100
+  const displayName = name.trim() || 'My Instance'
+  const loaderLabel = LOADERS.find(l => l.value === modLoader)?.label ?? 'Vanilla'
+
+  const IrisLogo = () => (
+    <svg viewBox="-110 -110 220 220" xmlns="http://www.w3.org/2000/svg" style={{ width: 34, height: 34, flexShrink: 0, filter: 'drop-shadow(0 2px 6px var(--ni-p-glow, var(--accent-tint)))' }}>
+      <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4"/>
+      <polygon points="0,-92 14,0 0,92 -14,0" fill="#3D0FA3" transform="rotate(30)"/>
+      <polygon points="0,-92 14,0 0,92 -14,0" fill="#8A52FF" transform="rotate(60)"/>
+      <polygon points="0,-92 14,0 0,92 -14,0" fill="#3D0FA3" transform="rotate(90)"/>
+      <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4" transform="rotate(120)"/>
+      <polygon points="0,-92 14,0 0,92 -14,0" fill="#8A52FF" transform="rotate(150)"/>
+      <circle r="24" fill="#1B044F"/>
+      <circle r="6" fill="#ECE4FF"/>
+    </svg>
+  )
 
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!loading) { if (!v) reset(); onOpenChange(v) } }}>
+    <Dialog.Root open={open} onOpenChange={v => { if (!loading) { if (!v) reset(); onOpenChange(v) } }}>
       <Dialog.Portal>
-        <Dialog.Overlay style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.72)', zIndex:40 }} />
-        <Dialog.Content style={{
-          position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
-          background:'var(--surface)', border:'1px solid var(--border-r)',
-          borderRadius:4, width:640, zIndex:50, outline:'none', overflow:'hidden',
-        }}>
-
-          {/* Title bar */}
-          <div style={{ background:'var(--surface-2)', borderBottom:'1px solid var(--line)', padding:'0 16px', height:38, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.14em', color:'var(--ink)', lineHeight:1 }}>{t.createInst.title}</span>
-            <Dialog.Close disabled={loading} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--ink-4)', fontSize:18, lineHeight:1, padding:'4px 6px', opacity:loading ? 0.5 : 1 }}>✕</Dialog.Close>
+        <Dialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 149 }} />
+        <Dialog.Content
+          aria-label="New instance"
+          className="ni-dialog"
+          onEscapeKeyDown={close}
+          onPointerDownOutside={close}
+        >
+          {/* ── Header ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderBottom: '1px solid var(--border-r)', background: 'linear-gradient(var(--surface-2), var(--surface))', flexShrink: 0 }}>
+            <IrisLogo />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1, color: 'var(--ink)' }}>New Instance</h2>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, letterSpacing: '.08em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+                Set it up · launch in seconds
+              </span>
+            </div>
+            <button className="ni-close" onClick={close} aria-label="Close" type="button">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18"/>
+              </svg>
+            </button>
           </div>
 
-          {/* Body */}
-          <div style={{ display:'flex' }}>
+          {/* ── Body ── */}
+          <div className="ni-body" style={{ flex: 1, minHeight: 0 }}>
 
-            {/* Preview column */}
-            <div style={{ width:160, flexShrink:0, borderRight:'1px solid var(--line)', display:'flex', flexDirection:'column' }}>
-              <ImagePickerArea image={coverImage} fallback={<PixelScene name={loaderToScene(modLoader || null)} style={{ width:'100%', height:140 }} />} onClick={() => fileInputRef.current?.click()} />
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleImagePick} />
-              <div style={{ padding:'10px 12px', display:'flex', flexDirection:'column', gap:5, flex:1 }}>
-                <div style={{ fontSize:12, fontWeight:600, color:'var(--ink)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {name || <span style={{ color:'var(--ink-4)' }}>My Instance</span>}
+            {/* Left: live preview */}
+            <aside className="ni-preview" style={{ padding: '22px 20px', background: 'var(--surface-2)', borderRight: '1px solid var(--border-r)', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                Live Preview
+              </div>
+
+              {/* Preview card */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 10px 30px -18px rgba(0,0,0,.5)' }}>
+                {/* Thumbnail: pixel skyline */}
+                <div style={{ height: 128, position: 'relative', overflow: 'hidden', background: 'linear-gradient(var(--sky-1, #3a2a66), var(--sky-2, #5a3fa6))' }}>
+                  {/* Stars */}
+                  <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(1.5px 1.5px at 22% 30%, #fff8, transparent), radial-gradient(1.5px 1.5px at 64% 20%, #ffffffaa, transparent), radial-gradient(1.5px 1.5px at 80% 44%, #fff7, transparent), radial-gradient(1.5px 1.5px at 40% 16%, #fff6, transparent)' }} />
+                  {/* Sun / accent glow */}
+                  <div style={{ position: 'absolute', top: 16, right: 18, width: 26, height: 26, borderRadius: '50%', background: 'var(--accent-hi, #8a52ff)', boxShadow: '0 0 22px 4px var(--accent-tint)' }} />
+                  {/* Skyline silhouette */}
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 44, height: 40, opacity: .55, background: 'linear-gradient(#2c1f4d,#2c1f4d) 6% 100%/14px 26px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 22% 100%/20px 38px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 44% 100%/16px 22px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 62% 100%/24px 32px no-repeat, linear-gradient(#2c1f4d,#2c1f4d) 84% 100%/16px 30px no-repeat' }} />
+                  {/* Ground */}
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 46, background: 'linear-gradient(#3aa05a,#3aa05a) 0 0/100% 9px no-repeat, linear-gradient(#7a5230,#5f3f24)', boxShadow: 'inset 0 1px 0 #4fbf6e' }} />
                 </div>
-                <div style={{ fontFamily:"'VT323',monospace", fontSize:13, color:'var(--ink-4)', letterSpacing:'.06em' }}>MC {mcVersion}</div>
-                <div style={{
-                  marginTop:2, alignSelf:'flex-start',
-                  background: modLoader ? 'var(--accent-tint)' : 'var(--surface-3)',
-                  border:`1px solid ${modLoader ? 'var(--accent)' : 'var(--border-r)'}`,
-                  borderRadius:3, padding:'1px 7px',
-                  fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.08em',
-                  color: modLoader ? 'var(--accent)' : 'var(--ink-4)',
-                }}>
-                  {modLoader ? modLoader.toUpperCase() : t.createInst.vanilla}
-                </div>
-                <div style={{ fontFamily:"'VT323',monospace", fontSize:12, color:'var(--ink-4)', letterSpacing:'.04em' }}>
-                  {mbLabel(memoryMb)} RAM
+                {/* Card body */}
+                <div style={{ padding: '13px 14px 15px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--ink-3)', letterSpacing: '.02em' }}>Minecraft {mcVersion}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ni-p-deep, var(--accent-hi))', background: 'var(--ni-p-tint, var(--accent-tint))', border: '1px solid var(--ni-p-tint-2, var(--accent-tint))', borderRadius: 6, padding: '3px 8px' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                      {loaderLabel}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 6, padding: '3px 8px', background: 'var(--bg)' }}>
+                      {memGB} GB
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Form column */}
-            <form onSubmit={handleSubmit} style={{ flex:1, padding:'16px 18px', display:'flex', flexDirection:'column', gap:14 }}>
+              <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5, margin: 0 }}>
+                This is how <strong style={{ color: 'var(--ink-2)', fontWeight: 600 }}>{displayName}</strong> will appear in your library. Java is installed automatically.
+              </p>
+            </aside>
 
-              <Field label={t.createInst.name}>
-                <input
-                  type="text" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="My Instance" autoFocus
-                  style={inputSt}
-                />
-              </Field>
+            {/* Right: form */}
+            <form id="ni-form" onSubmit={handleCreate} style={{ padding: '22px 24px 4px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-              <Field label={t.createInst.mcVersion}>
-                <McVersionSelect value={mcVersion} onChange={setMcVersion} selectStyle={selectSt} />
-              </Field>
+              {/* Name */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <label htmlFor={nameId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Instance name</label>
+                </div>
+                <input id={nameId} className="ni-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="My Instance" autoFocus autoComplete="off" spellCheck={false} />
+              </div>
 
-              <Field label={t.createInst.modLoader}>
-                <div style={{ display:'flex', gap:4 }}>
-                  {MOD_LOADERS.map(l => (
-                    <button key={l.value} type="button" onClick={() => setModLoader(l.value)} style={{
-                      flex:1, height:28, fontSize:11, fontWeight:500,
-                      color: modLoader === l.value ? 'var(--ink)' : 'var(--ink-3)',
-                      background: modLoader === l.value ? 'var(--accent-tint)' : 'var(--surface-3)',
-                      border:`1px solid ${modLoader === l.value ? 'var(--accent)' : 'var(--border-r)'}`,
-                      borderRadius:3, cursor:'pointer',
-                    }}>
+              {/* Version */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <label htmlFor={verId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Minecraft version</label>
+                  <label className="ni-check">
+                    <input className="ni-check-input" type="checkbox" checked={showSnapshots} onChange={e => setSnap(e.target.checked)} />
+                    <span className="ni-checkmark-box">
+                      <svg className="ni-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-11"/></svg>
+                    </span>
+                    <span className="ni-check-label">Snapshots</span>
+                  </label>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <McVersionSelect
+                    value={mcVersion}
+                    onChange={setMcVersion}
+                    selectClassName="ni-input"
+                    showSnapshots={showSnapshots}
+                    onShowSnapshotsChange={setSnap}
+                    hideBuiltinCheckbox
+                  />
+                  <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--ink-3)' }}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </span>
+                </div>
+              </div>
+
+              {/* Mod loader */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Mod loader</label>
+                <div className="ni-seg">
+                  {LOADERS.map(l => (
+                    <button
+                      key={l.value}
+                      type="button"
+                      className="ni-seg-btn"
+                      aria-pressed={modLoader === l.value ? 'true' : 'false'}
+                      onClick={() => setModLoader(l.value)}
+                    >
+                      <span className="ni-glyph" />
                       {l.label}
                     </button>
                   ))}
                 </div>
-              </Field>
+              </div>
 
-              <Field label={t.createInst.memory(mbToGb(memoryMb))}>
+              {/* Memory */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Memory</label>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--ni-p-deep, var(--accent-hi))', fontWeight: 600 }}>{memGB} GB allocated</span>
+                </div>
                 <input
-                  type="range" min={MEMORY_MIN_MB} max={MEMORY_MAX_MB} step={MEMORY_STEP}
-                  value={memoryMb} onChange={e => setMemory(Number(e.target.value))}
-                  style={{ width:'100%', height:4, appearance:'none', outline:'none', cursor:'pointer', borderRadius:2,
-                    background:`linear-gradient(to right, var(--accent) ${fillPct}%, var(--surface-3) 0%)` }}
+                  className="ni-slider"
+                  type="range" min={1} max={16} step={1}
+                  value={memGB}
+                  style={{ '--fill': `${fillPct}%` } as React.CSSProperties}
+                  onChange={e => setMemGB(Number(e.target.value))}
                 />
-                <div style={{ display:'flex', gap:4, marginTop:4, flexWrap:'wrap' }}>
-                  {MEMORY_QUICK.map(mb => (
-                    <button key={mb} type="button" onClick={() => setMemory(mb)} style={{
-                      flex:'1 1 auto', height:26, fontSize:11, fontWeight:500,
-                      color: memoryMb === mb ? 'var(--ink)' : 'var(--ink-4)',
-                      background: memoryMb === mb ? 'var(--accent-tint)' : 'var(--surface-3)',
-                      border:`1px solid ${memoryMb === mb ? 'var(--accent)' : 'var(--border-r)'}`,
-                      borderRadius:3, cursor:'pointer',
-                    }}>
-                      {mbLabel(mb)}
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 3 }}>
+                  {MEM_PRESETS.map(g => (
+                    <button key={g} type="button" className="ni-preset" aria-pressed={memGB === g ? 'true' : 'false'} onClick={() => setMemGB(g)}>
+                      {g}G
                     </button>
                   ))}
                 </div>
-              </Field>
+              </div>
 
-              <Field label={t.createInst.group}>
-                <input
-                  type="text"
-                  value={groupId}
-                  onChange={e => setGroupId(e.target.value)}
-                  placeholder={t.createInst.groupPlaceholder}
-                  style={inputSt}
-                />
-              </Field>
-
-              <Field label="LOCATION">
-                <div style={{ display:'flex', gap:5 }}>
-                  <input
-                    type="text"
-                    value={customPath}
-                    onChange={e => setCustomPath(e.target.value)}
-                    placeholder="Default (AppData)"
-                    style={{ ...inputSt, flex:1, fontSize:11 }}
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const p = await window.api.instance.browseFolder()
-                      if (p) setCustomPath(p)
-                    }}
-                    style={{ height:34, padding:'0 11px', background:'var(--surface-3)', color:'var(--ink)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontSize:12, whiteSpace:'nowrap' }}
-                  >
-                    Browse…
-                  </button>
-                  {customPath && (
-                    <button
-                      type="button"
-                      onClick={() => setCustomPath('')}
-                      title="Use default location"
-                      style={{ height:34, width:34, background:'var(--surface-3)', color:'var(--ink-4)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontSize:14, flexShrink:0 }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </Field>
-
-              <div style={{ flex:1 }} />
-
-              <div style={{ display:'flex', gap:8, paddingTop:12, borderTop:'1px solid var(--line)' }}>
-                <Dialog.Close asChild>
-                  <button type="button" disabled={loading} style={cancelSt}>{t.createInst.cancel}</button>
-                </Dialog.Close>
-                {onImportFile && (
-                  <button type="button" disabled={loading} onClick={async () => {
-                    const filePath = await window.api.modpack.openFileDialog()
-                    if (filePath) { onOpenChange(false); reset(); onImportFile(filePath) }
-                  }} style={{
-                    flex:1, height:38,
-                    fontFamily:"'VT323',monospace", fontSize:15, letterSpacing:'.1em',
-                    color: loading ? 'var(--ink-4)' : 'var(--ink)',
-                    background:'var(--surface-2)', border:'1px solid var(--border-r)',
-                    borderRadius:3, cursor: loading ? 'not-allowed' : 'pointer',
-                    opacity: loading ? 0.55 : 1,
-                  }}>
-                    {t.createInst.importZip}
-                  </button>
-                )}
-                {onImportMultiMc && (
-                  <button type="button" disabled={loading} onClick={() => { onOpenChange(false); reset(); onImportMultiMc() }} style={{
-                    flex:1, height:38,
-                    fontFamily:"'VT323',monospace", fontSize:15, letterSpacing:'.1em',
-                    color: loading ? 'var(--ink-4)' : 'var(--ink)',
-                    background:'var(--surface-2)', border:'1px solid var(--border-r)',
-                    borderRadius:3, cursor: loading ? 'not-allowed' : 'pointer',
-                    opacity: loading ? 0.55 : 1,
-                  }}>
-                    MultiMC / Prism
-                  </button>
-                )}
-                <button type="submit" disabled={!name.trim() || loading} style={{
-                  flex:1,
-                  fontFamily:"'VT323',monospace", fontSize:18, letterSpacing:'.12em', color:'#fff',
-                  height:38, border:'none', borderRadius:3,
-                  background: (!name.trim() || loading) ? 'var(--surface-3)' : 'var(--accent)',
-                  cursor: (!name.trim() || loading) ? 'not-allowed' : 'pointer',
-                  boxShadow: (!name.trim() || loading) ? 'none' : 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
-                  opacity: (!name.trim() || loading) ? 0.55 : 1,
-                }}>
-                  {loading ? t.createInst.creating : t.createInst.create}
-                </button>
+              {/* Group */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor={grpId} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  Group{' '}<span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--ink-4)', fontFamily: 'inherit' }}>(optional)</span>
+                </label>
+                <input id={grpId} className="ni-input" type="text" value={groupId} onChange={e => setGroupId(e.target.value)} placeholder="e.g. Modded, Vanilla, Survival…" autoComplete="off" />
               </div>
 
             </form>
           </div>
+
+          {/* ── Footer ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--border-r)', background: 'var(--surface-2)', flexShrink: 0 }}>
+            <button type="button" className="ni-btn ni-btn-ghost" onClick={close} disabled={loading}>{t.createInst.cancel}</button>
+            <div style={{ flex: 1 }} />
+            {onImportFile && (
+              <button type="button" className="ni-btn ni-btn-soft" disabled={loading} onClick={async () => {
+                const p = await window.api.modpack.openFileDialog()
+                if (p) { onOpenChange(false); reset(); onImportFile(p) }
+              }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 1z"/></svg>
+                {t.createInst.importZip}
+              </button>
+            )}
+            {onImportMultiMc && (
+              <button type="button" className="ni-btn ni-btn-soft" disabled={loading} onClick={() => { onOpenChange(false); reset(); onImportMultiMc() }}>
+                MultiMC / Prism
+              </button>
+            )}
+            <button type="submit" form="ni-form" className="ni-btn ni-btn-primary" disabled={!name.trim() || loading}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              {loading ? t.createInst.creating : t.createInst.create}
+            </button>
+          </div>
+
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
   )
-}
-
-function ImagePickerArea({ image, fallback, onClick }: { image: string; fallback: React.ReactNode; onClick: () => void }) {
-  const [hover, setHover] = useState(false)
-  return (
-    <div
-      style={{ width:'100%', height:140, position:'relative', cursor:'pointer', overflow:'hidden', flexShrink:0 }}
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      {image
-        ? <img src={image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-        : fallback
-      }
-      <div style={{
-        position:'absolute', inset:0,
-        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4,
-        background:'rgba(0,0,0,.52)',
-        opacity: hover ? 1 : 0,
-        transition:'opacity .14s',
-      }}>
-        <div style={{ fontFamily:"'VT323',monospace", fontSize:14, letterSpacing:'.1em', color:'#fff' }}>
-          {image ? 'CHANGE' : 'SET IMAGE'}
-        </div>
-        <div style={{ fontSize:10, color:'rgba(255,255,255,.6)' }}>click to browse</div>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-      <div style={{ fontFamily:"'VT323',monospace", fontSize:12, letterSpacing:'.14em', color:'var(--ink-4)' }}>{label}</div>
-      {children}
-    </div>
-  )
-}
-
-const inputSt: React.CSSProperties = {
-  width:'100%', height:34,
-  background:'var(--bg)', border:'1px solid var(--border-r)',
-  color:'var(--ink)', padding:'0 10px',
-  outline:'none', fontSize:13, borderRadius:3,
-}
-
-const selectSt: React.CSSProperties = {
-  width:'100%', height:34,
-  background:'var(--bg)', border:'1px solid var(--border-r)',
-  color:'var(--ink)', padding:'0 10px',
-  outline:'none', fontSize:13, borderRadius:3,
-  appearance:'none', cursor:'pointer',
-}
-
-const cancelSt: React.CSSProperties = {
-  flex:1, height:38,
-  background:'var(--surface-2)', color:'var(--ink-3)',
-  border:'1px solid var(--border-r)', borderRadius:3,
-  cursor:'pointer', fontSize:13, fontWeight:500,
 }

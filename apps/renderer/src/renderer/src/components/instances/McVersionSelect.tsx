@@ -7,12 +7,22 @@ interface Props {
   value: string
   onChange: (v: string) => void
   selectStyle?: React.CSSProperties
+  selectClassName?: string
+  showSnapshots?: boolean
+  onShowSnapshotsChange?: (v: boolean) => void
+  hideBuiltinCheckbox?: boolean
 }
 
-export function McVersionSelect({ value, onChange, selectStyle }: Props) {
+export function McVersionSelect({ value, onChange, selectStyle, selectClassName, showSnapshots: externalSnap, onShowSnapshotsChange, hideBuiltinCheckbox }: Props) {
   const [versions, setVersions] = useState<MinecraftVersion[]>([])
-  const [showSnapshots, setShowSnapshots] = useState(false)
+  const [internalSnap, setInternalSnap] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  const showSnapshots = externalSnap !== undefined ? externalSnap : internalSnap
+  const setShowSnapshots = (v: boolean) => {
+    if (onShowSnapshotsChange) onShowSnapshotsChange(v)
+    else setInternalSnap(v)
+  }
 
   useEffect(() => {
     api.mc.versions()
@@ -32,6 +42,7 @@ export function McVersionSelect({ value, onChange, selectStyle }: Props) {
         onChange={e => onChange(e.target.value)}
         disabled={loading}
         style={{ ...selectStyle, opacity: loading ? 0.6 : 1 }}
+        className={selectClassName}
       >
         {loading ? (
           <option value={value}>{value} (loading…)</option>
@@ -41,17 +52,19 @@ export function McVersionSelect({ value, onChange, selectStyle }: Props) {
           </option>
         ))}
       </select>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
-        <input
-          type="checkbox"
-          checked={showSnapshots}
-          onChange={e => setShowSnapshots(e.target.checked)}
-          style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
-        />
-        <span style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.08em', color: 'var(--ink-4)' }}>
-          SHOW SNAPSHOTS
-        </span>
-      </label>
+      {!hideBuiltinCheckbox && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+          <input
+            type="checkbox"
+            checked={showSnapshots}
+            onChange={e => setShowSnapshots(e.target.checked)}
+            style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
+          />
+          <span style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.08em', color: 'var(--ink-4)' }}>
+            SHOW SNAPSHOTS
+          </span>
+        </label>
+      )}
     </div>
   )
 }
