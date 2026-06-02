@@ -1232,6 +1232,7 @@ function ContentBrowser() {
 // ─── CurseForge modpack card ──────────────────────────────────────────────────
 
 function CFModpackCard({ project, installing, onInstall }: { project: CFProject; installing: boolean; onInstall: () => void }) {
+  const t = useT()
   const [hover, setHover] = useState(false)
   return (
     <div
@@ -1263,7 +1264,7 @@ function CFModpackCard({ project, installing, onInstall }: { project: CFProject;
           {project.categories.slice(0, 2).map(c => <Tag key={c.id} color="var(--ink-4)">{c.name}</Tag>)}
         </div>
         <button onClick={onInstall} disabled={installing} className="glow-hover" style={{ fontFamily: "'VT323',monospace", fontSize: 18, letterSpacing: '.08em', color: installing ? 'var(--ink-4)' : '#fff', background: installing ? 'var(--surface-3)' : '#f16436', border: 'none', cursor: installing ? 'not-allowed' : 'pointer', padding: '0 28px', height: 36, borderRadius: 3, flexShrink: 0, boxShadow: installing ? 'none' : 'inset 0 -2px 0 rgba(0,0,0,.3)' }}>
-          {installing ? '…' : 'INSTALL'}
+          {installing ? '…' : t.content.install}
         </button>
       </div>
     </div>
