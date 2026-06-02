@@ -171,22 +171,28 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     catch { /* ignore */ }
   }, [instance])
 
+  // Track which tabs have already been loaded this session — avoids re-fetching on tab revisit
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set())
+
   useEffect(() => {
     if (!open) return
-    setItems([]); setWorlds([]); setScreenshots([]); setModUpdates([]); setServers([]); setProfiles([]); setTab('all'); setError(null); setSelectedMods(new Set())
+    setItems([]); setWorlds([]); setScreenshots([]); setModUpdates([]); setServers([]); setProfiles([])
+    setTab('all'); setError(null); setSelectedMods(new Set()); setLoadedTabs(new Set())
     load()
   }, [open, load])
 
-  useEffect(() => { setSelectedMods(new Set()); setModSearch('') }, [tab])
+  useEffect(() => { setSelectedMods(new Set()); setModSearch?.('') }, [tab])
 
   useEffect(() => {
     if (!open) return
-    if (tab === 'worlds') loadWorlds()
-    else if (tab === 'screenshots') loadScreenshots()
-    else if (tab === 'updates') loadUpdates()
-    else if (tab === 'servers') loadServers()
-    else if (tab === 'mod' || tab === 'all') loadProfiles()
-  }, [tab, open, loadWorlds, loadScreenshots, loadUpdates, loadServers, loadProfiles])
+    const loaded = (key: string) => loadedTabs.has(key)
+    const mark   = (key: string) => setLoadedTabs(prev => new Set([...prev, key]))
+    if (tab === 'worlds'      && !loaded('worlds'))      { loadWorlds();      mark('worlds') }
+    else if (tab === 'screenshots' && !loaded('screenshots')) { loadScreenshots(); mark('screenshots') }
+    else if (tab === 'updates'     && !loaded('updates'))     { loadUpdates();     mark('updates') }
+    else if (tab === 'servers'     && !loaded('servers'))     { loadServers();     mark('servers') }
+    else if ((tab === 'mod' || tab === 'all') && !loaded('profiles')) { loadProfiles(); mark('profiles') }
+  }, [tab, open, loadedTabs, loadWorlds, loadScreenshots, loadUpdates, loadServers, loadProfiles])
 
   if (!open || !instance) return null
 

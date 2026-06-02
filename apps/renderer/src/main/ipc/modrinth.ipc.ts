@@ -8,6 +8,9 @@ import { resolveInstanceDir, getInstanceById } from '../services/instance-store'
 import { searchMods, searchContent, getProjectVersions, fetchGameVersions } from '@refract/core'
 import type { ModrinthSearchOptions, ModrinthVersion } from '@refract/core'
 
+let gameVersionsCache: { data: Awaited<ReturnType<typeof fetchGameVersions>>; at: number } | null = null
+const GV_TTL = 60 * 60 * 1000  // 1 hour
+
 interface UpdateInfo { filename: string; downloadUrl: string; newFilename: string }
 interface UpdateResult { filename: string; success: boolean; error?: string }
 interface ModUpdateEntry {
@@ -73,7 +76,12 @@ export function registerModrinthIpc(): void {
     uninstallMod(String(instanceId), String(projectId))
   )
 
-  handleIpc('modrinth.gameVersions', () => fetchGameVersions())
+  handleIpc('modrinth.gameVersions', async () => {
+    if (gameVersionsCache && Date.now() - gameVersionsCache.at < GV_TTL) return gameVersionsCache.data
+    const data = await fetchGameVersions()
+    gameVersionsCache = { data, at: Date.now() }
+    return data
+  })
 
   handleIpc('modrinth.searchContent', async (_event, opts) =>
     searchContent(opts as ModrinthSearchOptions)

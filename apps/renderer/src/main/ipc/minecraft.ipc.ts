@@ -92,8 +92,17 @@ function zipPath(src: string, dst: string): Promise<void> {
   })
 }
 
+// ── In-process caches (cleared on app restart) ────────────────────────────
+let versionListCache: { data: Awaited<ReturnType<typeof fetchVersionList>>; at: number } | null = null
+const VERSION_TTL = 30 * 60 * 1000  // 30 min
+
 export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
-  handleIpc('mc.versions', () => fetchVersionList())
+  handleIpc('mc.versions', async () => {
+    if (versionListCache && Date.now() - versionListCache.at < VERSION_TTL) return versionListCache.data
+    const data = await fetchVersionList()
+    versionListCache = { data, at: Date.now() }
+    return data
+  })
 
   handleIpc('mc.java', async () => {
     const detected = await detectJavaInstallations()
