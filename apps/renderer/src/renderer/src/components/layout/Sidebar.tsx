@@ -490,7 +490,6 @@ export function Sidebar() {
     { to: '/',          label: t.nav.library, iconSrc: libraryIcon,    exact: true  },
     { to: '/browse/',   label: t.nav.browse,  iconSrc: browseModsIcon, exact: false },
     { to: '/modpacks/', label: t.nav.content, iconSrc: modpacksIcon,   exact: false },
-    { to: '/account/',  label: t.nav.account, iconSrc: accountIcon,    exact: false },
   ]
   return (
     <aside style={{
@@ -505,7 +504,12 @@ export function Sidebar() {
         <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.12em', color:'var(--ink)', lineHeight:1 }}>REFRACT</span>
       </div>
 
-      <AvatarBlock />
+      <Link to="/account" style={{ textDecoration:'none', display:'block', borderRadius:4, transition:'background 120ms' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,.05)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+      >
+        <AvatarBlock />
+      </Link>
 
       {/* Nav */}
       <div style={{ fontSize:10, fontWeight:600, letterSpacing:'.16em', textTransform:'uppercase', color:'var(--ink-4)', padding:'10px 8px 6px' }}>{t.nav.header}</div>

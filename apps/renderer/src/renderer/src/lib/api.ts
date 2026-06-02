@@ -187,9 +187,6 @@ function createBrowserApi(): RefractAPI {
       duplicate:     async () => null,
       importMultiMc: async () => { throw new Error('MultiMC import requires the Electron app.') },
     },
-    system: {
-      totalMemoryMb: async () => 16384,
-    },
     window: {
       minimize: () => undefined,
       maximize: () => undefined,

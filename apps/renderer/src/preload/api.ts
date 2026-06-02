@@ -66,9 +66,6 @@ export const api = {
     duplicate:      (id: string)                               => ipcRenderer.invoke('instance.duplicate', id),
     importMultiMc:  (): Promise<import('@refract/core').Instance | null> => ipcRenderer.invoke('instance.importMultiMc'),
   },
-  system: {
-    totalMemoryMb: (): Promise<number> => ipcRenderer.invoke('system.totalMemoryMb'),
-  },
   window: {
     minimize: (): void => ipcRenderer.send('window:minimize'),
     maximize: (): void => ipcRenderer.send('window:maximize'),

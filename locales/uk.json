@@ -279,7 +279,14 @@
     "activeLabel": "АКТИВНИЙ",
     "save": "Зберегти",
     "licenseVerified": "Ліцензія Java підтверджена. Мультиплеєр увімкнено.",
-    "offlineAccess": "Офлайн-гра увімкнена. Для мультиплеєра потрібен ліцензований акаунт."
+    "offlineAccess": "Офлайн-гра увімкнена. Для мультиплеєра потрібен ліцензований акаунт.",
+    "yggdrasilSection": "Власний сервер авторизації",
+    "yggdrasilDesc": "Увійдіть через Yggdrasil-сумісний сервер авторизації (наприклад, Ely.by, AuthMe або власний). Токени зберігаються зашифровано на цьому пристрої.",
+    "yggdrasilUrlPlaceholder": "URL сервера авторизації (напр. https://authserver.ely.by)",
+    "yggdrasilUserPlaceholder": "Логін або email",
+    "yggdrasilPassPlaceholder": "Пароль",
+    "yggdrasilSignIn": "УВІЙТИ",
+    "yggdrasilSigningIn": "ВХІД…"
   },
   "createInst": {
     "title": "НОВИЙ ЕКЗЕМПЛЯР",

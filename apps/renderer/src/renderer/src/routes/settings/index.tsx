@@ -86,7 +86,7 @@ function Settings() {
 
   useEffect(() => {
     refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)))
-    api.system.totalMemoryMb().then(mb => setMemoryMaxMb(Math.max(1024, Math.floor(mb / 512) * 512))).catch(() => {})
+    api.system.ramGb().then(gb => setMemoryMaxMb(Math.max(1024, gb * 1024))).catch(() => {})
   }, [])
 
   async function scanJava() {

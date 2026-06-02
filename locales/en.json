@@ -279,7 +279,14 @@
     "activeLabel": "ACTIVE",
     "save": "Save",
     "licenseVerified": "Java license verified. Online multiplayer enabled.",
-    "offlineAccess": "Offline play enabled. No Microsoft login required — multiplayer servers need a licensed account."
+    "offlineAccess": "Offline play enabled. No Microsoft login required — multiplayer servers need a licensed account.",
+    "yggdrasilSection": "Custom Auth Server",
+    "yggdrasilDesc": "Sign in using a custom Yggdrasil-compatible auth server (e.g. Ely.by, AuthMe, or a self-hosted instance). Tokens are stored encrypted on this device.",
+    "yggdrasilUrlPlaceholder": "Auth server URL (e.g. https://authserver.ely.by)",
+    "yggdrasilUserPlaceholder": "Username or email",
+    "yggdrasilPassPlaceholder": "Password",
+    "yggdrasilSignIn": "SIGN IN",
+    "yggdrasilSigningIn": "SIGNING IN…"
   },
   "createInst": {
     "title": "NEW INSTANCE",

@@ -365,31 +365,30 @@ function Account() {
           </div>
 
           <div style={{ background:'var(--surface-2)', border:'1px solid var(--border-r)', borderRadius:4, padding:16 }}>
-            <h2 style={{ margin:'0 0 4px', color:'var(--ink)', fontSize:16 }}>Custom Auth Server</h2>
+            <h2 style={{ margin:'0 0 4px', color:'var(--ink)', fontSize:16 }}>{t.account.yggdrasilSection}</h2>
             <div style={{ color:'var(--ender)', fontFamily:"'VT323',monospace", fontSize:14, letterSpacing:'.08em', marginBottom:8 }}>YGGDRASIL</div>
             <p style={{ margin:'0 0 12px', color:'var(--ink-3)', fontSize:13, lineHeight:1.5 }}>
-              Sign in using a custom Yggdrasil-compatible auth server (e.g. Ely.by, AuthMe, or a self-hosted instance).
-              Tokens are stored encrypted on this device.
+              {t.account.yggdrasilDesc}
             </p>
             <div style={{ display:'grid', gap:8 }}>
               <input
                 value={yggServer}
                 onChange={e => setYggServer(e.target.value)}
-                placeholder="Auth server URL (e.g. https://authserver.ely.by)"
+                placeholder={t.account.yggdrasilUrlPlaceholder}
                 style={{ height:36, background:'var(--bg)', border:'1px solid var(--border-r)', color:'var(--ink)', padding:'0 10px', outline:'none', fontSize:12 }}
               />
               <div style={{ display:'flex', gap:8 }}>
                 <input
                   value={yggUsername}
                   onChange={e => setYggUsername(e.target.value)}
-                  placeholder="Username or email"
+                  placeholder={t.account.yggdrasilUserPlaceholder}
                   style={{ flex:1, minWidth:0, height:36, background:'var(--bg)', border:'1px solid var(--border-r)', color:'var(--ink)', padding:'0 10px', outline:'none', fontSize:12 }}
                 />
                 <input
                   type="password"
                   value={yggPassword}
                   onChange={e => setYggPassword(e.target.value)}
-                  placeholder="Password"
+                  placeholder={t.account.yggdrasilPassPlaceholder}
                   onKeyDown={e => { if (e.key === 'Enter') void loginYggdrasil() }}
                   style={{ flex:1, minWidth:0, height:36, background:'var(--bg)', border:'1px solid var(--border-r)', color:'var(--ink)', padding:'0 10px', outline:'none', fontSize:12 }}
                 />
@@ -404,7 +403,7 @@ function Account() {
                   opacity: (!!busy || !yggServer.trim() || !yggUsername.trim() || !yggPassword) ? .5 : 1,
                 }}
               >
-                {busy === 'yggdrasil-login' ? 'SIGNING IN…' : 'SIGN IN'}
+                {busy === 'yggdrasil-login' ? t.account.yggdrasilSigningIn : t.account.yggdrasilSignIn}
               </button>
             </div>
           </div>

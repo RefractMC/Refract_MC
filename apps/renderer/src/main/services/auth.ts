@@ -203,7 +203,7 @@ function toSafeAccount(account: AppConfig['accounts'][number]): SafeAccount {
   return {
     ...safe,
     canManageContent: true,
-    canPlayMinecraft: authenticated,
+    canPlayMinecraft: true,          // offline accounts can play on offline-mode servers
     licenseStatus: authenticated ? 'verified' : 'guest',
   }
 }
