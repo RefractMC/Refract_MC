@@ -26,6 +26,10 @@ export const api = {
     logout:            (uuid: string)             => ipcRenderer.invoke('auth.logout', uuid),
     yggdrasilLogin:    (serverUrl: string, username: string, password: string) =>
       ipcRenderer.invoke('auth.yggdrasil.login', serverUrl, username, password),
+    browseSkin: (): Promise<string | null> =>
+      ipcRenderer.invoke('auth.browseSkin'),
+    uploadSkin: (uuid: string, imagePath: string, variant: 'classic' | 'slim'): Promise<void> =>
+      ipcRenderer.invoke('auth.uploadSkin', uuid, imagePath, variant),
   },
   theme: {
     list:    ()                         => ipcRenderer.invoke('theme.list'),

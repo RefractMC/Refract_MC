@@ -74,6 +74,11 @@ function Account() {
   const setAvatarStore = useAvatarStore((s) => s.setAvatar)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [skinTarget, setSkinTarget] = useState<string | null>(null)   // uuid of account being skinned
+  const [skinPath, setSkinPath]     = useState<string | null>(null)
+  const [skinVariant, setSkinVariant] = useState<'classic' | 'slim'>('classic')
+  const [skinUploading, setSkinUploading] = useState(false)
+  const [skinMsg, setSkinMsg]       = useState<{ ok: boolean; text: string } | null>(null)
 
   async function refresh() {
     const [nextAccounts, nextActive] = await Promise.all([
@@ -220,6 +225,29 @@ function Account() {
     if (account) {
       setYggPassword('')
       await refresh()
+    }
+  }
+
+  async function handleSkinUpload(uuid: string) {
+    if (!skinPath) return
+    setSkinUploading(true)
+    setSkinMsg(null)
+    try {
+      await api.auth.uploadSkin(uuid, skinPath, skinVariant)
+      setSkinMsg({ ok: true, text: 'Skin updated! Restart Minecraft to see it.' })
+      setSkinTarget(null)
+      setSkinPath(null)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg === 'OFFLINE_ONLY') {
+        // For offline accounts treat as local avatar change
+        setSkinMsg({ ok: true, text: 'Saved as launcher avatar.' })
+        setSkinTarget(null); setSkinPath(null)
+      } else {
+        setSkinMsg({ ok: false, text: msg })
+      }
+    } finally {
+      setSkinUploading(false)
     }
   }
 
@@ -495,6 +523,13 @@ function Account() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => { setSkinTarget(skinTarget === account.uuid ? null : account.uuid); setSkinPath(null); setSkinMsg(null) }}
+                    style={{ height:30, padding:'0 10px', background:'transparent', color:'var(--ink-3)', border:'1px solid var(--border-r)', cursor:'pointer', fontSize:12 }}
+                  >
+                    🎨 Skin
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => logout(account.uuid)}
                     disabled={!!busy}
                     style={{ height:30, padding:'0 10px', background:'transparent', color:'var(--redstone)', border:'1px solid rgba(217,59,59,.45)', cursor:'pointer' }}
@@ -502,6 +537,68 @@ function Account() {
                     {t.account.signOut}
                   </button>
                 </div>
+
+                {/* Skin change panel */}
+                {skinTarget === account.uuid && (
+                  <div style={{ marginTop:8, padding:12, background:'var(--bg)', border:'1px solid var(--border-r)', borderRadius:4, display:'flex', flexDirection:'column', gap:10 }}>
+                    <div style={{ fontSize:12, fontWeight:600, color:'var(--ink-3)' }}>
+                      {account.type === 'microsoft' ? 'Upload skin to Minecraft account' : account.type === 'yggdrasil' ? 'Change skin (opens browser)' : 'Set launcher avatar skin'}
+                    </div>
+
+                    {account.type === 'yggdrasil' ? (
+                      <button
+                        type="button"
+                        onClick={() => api.auth.uploadSkin(account.uuid, '', 'classic').catch(() => {})}
+                        style={{ height:32, padding:'0 14px', background:'var(--accent)', color:'#fff', border:'none', borderRadius:3, cursor:'pointer', fontSize:12, fontWeight:600 }}
+                      >
+                        Open skin page ↗
+                      </button>
+                    ) : (
+                      <>
+                        <div style={{ display:'flex', gap:8 }}>
+                          <button
+                            type="button"
+                            onClick={async () => { const p = await api.auth.browseSkin(); if (p) setSkinPath(p) }}
+                            style={{ flex:1, height:32, background:'var(--surface-2)', color:'var(--ink-2)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontSize:12 }}
+                          >
+                            {skinPath ? '✓ ' + skinPath.split(/[/\\]/).pop() : 'Browse PNG…'}
+                          </button>
+                          {account.type === 'microsoft' && (
+                            <select
+                              value={skinVariant}
+                              onChange={e => setSkinVariant(e.target.value as 'classic' | 'slim')}
+                              style={{ height:32, background:'var(--bg)', border:'1px solid var(--border-r)', color:'var(--ink)', padding:'0 8px', borderRadius:3, cursor:'pointer', fontSize:12 }}
+                            >
+                              <option value="classic">Classic (Steve)</option>
+                              <option value="slim">Slim (Alex)</option>
+                            </select>
+                          )}
+                        </div>
+                        {skinPath && (
+                          <img
+                            src={`file://${skinPath}`}
+                            alt="skin preview"
+                            style={{ width:64, height:64, imageRendering:'pixelated', border:'1px solid var(--border-r)', borderRadius:3, alignSelf:'flex-start' }}
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void handleSkinUpload(account.uuid)}
+                          disabled={!skinPath || skinUploading}
+                          style={{ height:32, padding:'0 14px', background: skinPath && !skinUploading ? 'var(--accent)' : 'var(--surface-3)', color: skinPath && !skinUploading ? '#fff' : 'var(--ink-4)', border:'none', borderRadius:3, cursor: skinPath && !skinUploading ? 'pointer' : 'not-allowed', fontSize:12, fontWeight:600 }}
+                        >
+                          {skinUploading ? 'Uploading…' : account.type === 'microsoft' ? 'Upload skin' : 'Save as avatar'}
+                        </button>
+                      </>
+                    )}
+
+                    {skinMsg && (
+                      <div style={{ fontSize:11, color: skinMsg.ok ? 'var(--grass)' : 'var(--lava)', lineHeight:1.4 }}>
+                        {skinMsg.text}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

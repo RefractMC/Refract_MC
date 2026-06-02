@@ -1,5 +1,6 @@
-import { safeStorage, shell } from 'electron'
+﻿import { safeStorage, shell } from 'electron'
 import { randomUUID } from 'crypto'
+import { readFileSync } from 'fs'
 import { getConfig, saveConfig, type AppConfig } from './config'
 
 const MS_DEVICE_CODE_URL = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode'
@@ -418,4 +419,39 @@ export async function loginYggdrasil(serverUrl: string, username: string, passwo
   saveConfig(config)
 
   return toSafeAccount(account)
+}
+
+
+export async function uploadSkin(uuid: string, imagePath: string, variant: 'classic' | 'slim'): Promise<void> {
+  const config = getConfig()
+  const account = config.accounts.find(a => a.uuid === uuid)
+  if (!account) throw new Error('Account not found')
+
+  if (account.type === 'microsoft') {
+    const tokenData = await getOrRefreshMinecraftToken(account)
+    const imageBytes = readFileSync(imagePath)
+    const blob = new Blob([imageBytes], { type: 'image/png' })
+    const form = new FormData()
+    form.append('variant', variant)
+    form.append('file', blob, 'skin.png')
+    const res = await fetch('https://api.minecraftservices.com/minecraft/profile/skins', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenData.token}` },
+      body: form,
+    })
+    if (!res.ok) {
+      let msg = res.statusText
+      try { const j = await res.json() as { error?: string; errorMessage?: string }; msg = j.errorMessage ?? j.error ?? msg } catch { /* ignore */ }
+      throw new Error(`Skin upload failed: ${msg}`)
+    }
+    return
+  }
+
+  if (account.type === 'yggdrasil' && account.yggdrasilServer) {
+    shell.openExternal(account.yggdrasilServer.replace('authserver.', '').replace(/\/auth.*$/, '').replace(/\/+$/, '') + '/skins')
+    return
+  }
+
+  // Offline — caller should handle saving as local avatar
+  throw new Error('OFFLINE_ONLY')
 }
