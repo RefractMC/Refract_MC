@@ -26,6 +26,19 @@ export function registerAuthIpc(): void {
     loginYggdrasil(String(serverUrl), String(username), String(password))
   )
 
+  handleIpc('auth.fetchSkinTextureUrl', async (_event, uuid) => {
+    try {
+      const id = String(uuid).replace(/-/g, '')
+      const res = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${id}`)
+      if (!res.ok) return null
+      const profile = await res.json() as { properties?: Array<{ name: string; value: string }> }
+      const prop = profile.properties?.find(p => p.name === 'textures')
+      if (!prop) return null
+      const textures = JSON.parse(Buffer.from(prop.value, 'base64').toString('utf-8')) as { textures?: { SKIN?: { url?: string } } }
+      return textures.textures?.SKIN?.url ?? null
+    } catch { return null }
+  })
+
   handleIpc('auth.browseSkin', async () => {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       title: 'Select Minecraft Skin',

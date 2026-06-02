@@ -144,6 +144,7 @@ function createBrowserApi(): RefractAPI {
         })
       },
       yggdrasilLogin: async () => { throw new Error('Yggdrasil login requires the Electron app.') },
+      fetchSkinTextureUrl: async () => null,
       browseSkin: async () => null,
       uploadSkin: async () => { throw new Error('Skin upload requires the Electron app.') },
     },

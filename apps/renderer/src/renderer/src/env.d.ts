@@ -113,6 +113,7 @@ declare global {
           licenseStatus: 'verified' | 'guest'
         }>
         logout: (uuid: string) => Promise<void>
+        fetchSkinTextureUrl: (uuid: string) => Promise<string | null>
         browseSkin: () => Promise<string | null>
         uploadSkin: (uuid: string, imagePath: string, variant: 'classic' | 'slim') => Promise<void>
         yggdrasilLogin: (serverUrl: string, username: string, password: string) => Promise<{

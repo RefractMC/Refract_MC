@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { api, type DeviceLogin, type SafeAccount } from '@/lib/api'
+import { SkinViewer3D } from '@/components/ui/SkinViewer3D'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import { useT, type T } from '@/i18n'
@@ -74,11 +75,12 @@ function Account() {
   const setAvatarStore = useAvatarStore((s) => s.setAvatar)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const [skinTarget, setSkinTarget] = useState<string | null>(null)   // uuid of account being skinned
-  const [skinPath, setSkinPath]     = useState<string | null>(null)
+  const [skinTarget, setSkinTarget]   = useState<string | null>(null)
+  const [skinPath, setSkinPath]       = useState<string | null>(null)
+  const [skinTextureUrl, setSkinTexUrl] = useState<string | null>(null)  // 3D preview URL
   const [skinVariant, setSkinVariant] = useState<'classic' | 'slim'>('classic')
   const [skinUploading, setSkinUploading] = useState(false)
-  const [skinMsg, setSkinMsg]       = useState<{ ok: boolean; text: string } | null>(null)
+  const [skinMsg, setSkinMsg]         = useState<{ ok: boolean; text: string } | null>(null)
 
   async function refresh() {
     const [nextAccounts, nextActive] = await Promise.all([
@@ -523,7 +525,14 @@ function Account() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setSkinTarget(skinTarget === account.uuid ? null : account.uuid); setSkinPath(null); setSkinMsg(null) }}
+                    onClick={async () => {
+                      if (skinTarget === account.uuid) { setSkinTarget(null); return }
+                      setSkinTarget(account.uuid); setSkinPath(null); setSkinMsg(null); setSkinTexUrl(null)
+                      if (account.type !== 'offline') {
+                        const url = await api.auth.fetchSkinTextureUrl(account.uuid).catch(() => null)
+                        setSkinTexUrl(url)
+                      }
+                    }}
                     style={{ height:30, padding:'0 10px', background:'transparent', color:'var(--ink-3)', border:'1px solid var(--border-r)', cursor:'pointer', fontSize:12 }}
                   >
                     🎨 Skin
@@ -558,7 +567,10 @@ function Account() {
                         <div style={{ display:'flex', gap:8 }}>
                           <button
                             type="button"
-                            onClick={async () => { const p = await api.auth.browseSkin(); if (p) setSkinPath(p) }}
+                            onClick={async () => {
+                              const p = await api.auth.browseSkin()
+                              if (p) { setSkinPath(p); setSkinTexUrl(`file://${p}`) }
+                            }}
                             style={{ flex:1, height:32, background:'var(--surface-2)', color:'var(--ink-2)', border:'1px solid var(--border-r)', borderRadius:3, cursor:'pointer', fontSize:12 }}
                           >
                             {skinPath ? '✓ ' + skinPath.split(/[/\\]/).pop() : 'Browse PNG…'}
@@ -574,12 +586,11 @@ function Account() {
                             </select>
                           )}
                         </div>
-                        {skinPath && (
-                          <img
-                            src={`file://${skinPath}`}
-                            alt="skin preview"
-                            style={{ width:64, height:64, imageRendering:'pixelated', border:'1px solid var(--border-r)', borderRadius:3, alignSelf:'flex-start' }}
-                          />
+                        {/* 3D skin viewer — shows current skin or newly selected one */}
+                        {(skinTextureUrl || skinPath) && (
+                          <div style={{ display:'flex', justifyContent:'center', background:'var(--surface-2)', borderRadius:8, padding:8, border:'1px solid var(--border-r)' }}>
+                            <SkinViewer3D skinUrl={skinTextureUrl} width={160} height={240} walk rotate />
+                          </div>
                         )}
                         <button
                           type="button"
