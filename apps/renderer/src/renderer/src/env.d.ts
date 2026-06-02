@@ -8,6 +8,14 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      skins: {
+        list:    () => Promise<Array<{ id: string; name: string; filename: string; variant: 'classic' | 'slim'; addedAt: string }>>
+        browse:  () => Promise<string | null>
+        add:     (name: string, sourcePath: string, variant: string) => Promise<{ id: string; name: string; filename: string; variant: 'classic' | 'slim'; addedAt: string }>
+        delete:  (id: string) => Promise<void>
+        getPath: (filename: string) => Promise<string>
+        apply:   (skinId: string, accountUuid: string) => Promise<void>
+      }
       system: {
         ramGb: () => Promise<number>
       }

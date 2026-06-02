@@ -74,6 +74,14 @@ function createInstance(input: CreateInstanceInput): Instance {
 
 function createBrowserApi(): RefractAPI {
   return {
+    skins: {
+      list:    async () => [],
+      browse:  async () => null,
+      add:     async () => { throw new Error('Skins require the Electron app.') },
+      delete:  async () => undefined,
+      getPath: async () => '',
+      apply:   async () => { throw new Error('Skins require the Electron app.') },
+    },
     system: {
       ramGb: async () => 16,
     },

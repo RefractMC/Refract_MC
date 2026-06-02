@@ -38,6 +38,14 @@ export const api = {
     install: (sourcePath: string)       => ipcRenderer.invoke('theme.install', sourcePath),
     delete:  (fileName: string)         => ipcRenderer.invoke('theme.delete', fileName),
   },
+  skins: {
+    list:    () => ipcRenderer.invoke('skins.list'),
+    browse:  (): Promise<string | null> => ipcRenderer.invoke('skins.browse'),
+    add:     (name: string, sourcePath: string, variant: string) => ipcRenderer.invoke('skins.add', name, sourcePath, variant),
+    delete:  (id: string): Promise<void> => ipcRenderer.invoke('skins.delete', id),
+    getPath: (filename: string): Promise<string> => ipcRenderer.invoke('skins.getPath', filename),
+    apply:   (skinId: string, accountUuid: string): Promise<void> => ipcRenderer.invoke('skins.apply', skinId, accountUuid),
+  },
   updater: {
     onAvailable:  (cb: (v: { version: string }) => void) => {
       const h = (_: IpcRendererEvent, v: { version: string }) => cb(v)

@@ -10,6 +10,7 @@ import browseModsIconRaw from '@/assets/browse-mods.svg?raw'
 import modpacksIconRaw   from '@/assets/modpacks.svg?raw'
 import accountIconRaw    from '@/assets/account.svg?raw'
 import settingsIconRaw   from '@/assets/settings.svg?raw'
+import skinsIconRaw      from '@/assets/skins.svg?raw'
 
 function svgDataUrl(raw: string) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`
@@ -20,6 +21,7 @@ const browseModsIcon = svgDataUrl(browseModsIconRaw)
 const modpacksIcon   = svgDataUrl(modpacksIconRaw)
 const accountIcon    = svgDataUrl(accountIconRaw)
 const settingsIcon   = svgDataUrl(settingsIconRaw)
+const skinsIcon      = svgDataUrl(skinsIconRaw)
 
 function NavIcon({ src, size = 18 }: { src: string; size?: number }) {
   return (
@@ -490,6 +492,7 @@ export function Sidebar() {
     { to: '/',          label: t.nav.library, iconSrc: libraryIcon,    exact: true  },
     { to: '/browse/',   label: t.nav.browse,  iconSrc: browseModsIcon, exact: false },
     { to: '/modpacks/', label: t.nav.content, iconSrc: modpacksIcon,   exact: false },
+    { to: '/skins',     label: 'Skins',        iconSrc: skinsIcon,      exact: false },
   ]
   return (
     <aside style={{
