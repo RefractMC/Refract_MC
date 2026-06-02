@@ -176,7 +176,10 @@
     "searchPlaceholder": "Search {{label}}…",
     "modrinth": "Modrinth ↗",
     "cancel": "Cancel",
-    "installModpackTitle": "INSTALL MODPACK"
+    "installModpackTitle": "INSTALL MODPACK",
+    "cfModpacksFound": "{{n}} CurseForge modpacks found",
+    "cfNoModpacks": "No modpacks found. Try a different search.",
+    "cfInstallTitle": "INSTALL CURSEFORGE MODPACK"
   },
   "settings": {
     "title": "Settings",

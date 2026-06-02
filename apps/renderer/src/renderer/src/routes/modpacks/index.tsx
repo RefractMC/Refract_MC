@@ -1096,7 +1096,7 @@ function ContentBrowser() {
       {/* Results count */}
       <div style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
         {loading ? t.content.searching : (tab === 'modpack' && cfSource === 'curseforge')
-          ? `${cfTotal.toLocaleString()} CurseForge modpacks found`
+          ? t.content.cfModpacksFound.replace('{{n}}', cfTotal.toLocaleString())
           : t.content.found(total, tabLabels[tab])}
       </div>
 
@@ -1114,7 +1114,7 @@ function ContentBrowser() {
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.content.loading}</div>
       ) : tab === 'modpack' && cfSource === 'curseforge' ? (
         cfHasKey && (cfResults.length === 0
-          ? <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>No modpacks found. Try a different search.</div>
+          ? <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.content.cfNoModpacks}</div>
           : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
               {cfResults.map(p => (
                 <CFModpackCard
@@ -1277,6 +1277,7 @@ function CFModpackInstallModal({ project, onClose, onInstall }: {
   onClose: () => void
   onInstall: (name: string, fileId: number) => void
 }) {
+  const t = useT()
   const [name, setName]       = useState(project.name)
   const [files, setFiles]     = useState<CFFile[]>([])
   const [loading, setLoading] = useState(true)
@@ -1302,20 +1303,20 @@ function CFModpackInstallModal({ project, onClose, onInstall }: {
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
           {project.logo?.thumbnailUrl && <img src={project.logo.thumbnailUrl} alt="" style={{ width: 32, height: 32, border: '1px solid var(--border-r)', borderRadius: 3 }} />}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 14, color: '#f16436', letterSpacing: '.1em' }}>INSTALL CURSEFORGE MODPACK</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 14, color: '#f16436', letterSpacing: '.1em' }}>{t.content.cfInstallTitle}</div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{project.name}</div>
           </div>
           <button onClick={onClose} style={{ color: 'var(--ink-4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
         <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>INSTANCE NAME</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>{t.content.instanceName}</div>
             <input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', height: 34, background: 'var(--bg)', border: '1px solid var(--border-r)', color: 'var(--ink)', padding: '0 10px', outline: 'none', fontSize: 13, borderRadius: 3 }} />
           </div>
           <div>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>VERSION</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 5 }}>{t.content.version}</div>
             {loading
-              ? <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>Loading versions…</div>
+              ? <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{t.content.loadingVersions}</div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
                   {files.map(f => {
                     const isSel = selFile === f.id
@@ -1335,9 +1336,9 @@ function CFModpackInstallModal({ project, onClose, onInstall }: {
           </div>
         </div>
         <div style={{ padding: '12px 18px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ height: 34, padding: '0 14px', background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
+          <button onClick={onClose} style={{ height: 34, padding: '0 14px', background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}>{t.content.cancel}</button>
           <button disabled={!canInstall} onClick={() => canInstall && onInstall(name.trim(), selFile!)} className="glow-hover" style={{ height: 34, padding: '0 20px', fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.1em', color: canInstall ? '#fff' : 'var(--ink-4)', background: canInstall ? '#f16436' : 'var(--surface-3)', border: 'none', borderRadius: 3, cursor: canInstall ? 'pointer' : 'not-allowed', boxShadow: canInstall ? 'inset 0 -2px 0 rgba(0,0,0,.3)' : 'none' }}>
-            INSTALL
+            {t.content.install}
           </button>
         </div>
       </div>

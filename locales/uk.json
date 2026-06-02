@@ -176,7 +176,10 @@
     "searchPlaceholder": "Пошук: {{label}}…",
     "modrinth": "Modrinth ↗",
     "cancel": "Скасувати",
-    "installModpackTitle": "ВСТАНОВИТИ МОДПАК"
+    "installModpackTitle": "ВСТАНОВИТИ МОДПАК",
+    "cfModpacksFound": "Знайдено {{n}} модпаків CurseForge",
+    "cfNoModpacks": "Модпаків не знайдено. Спробуйте інший запит.",
+    "cfInstallTitle": "ВСТАНОВИТИ МОДПАК CURSEFORGE"
   },
   "settings": {
     "title": "Налаштування",
