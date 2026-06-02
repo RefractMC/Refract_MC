@@ -88,18 +88,18 @@ function SkinsPage_() {
     if (selected?.id === id) { if (next[0]) pick(next[0]); else { setSelected(null); setSkinUrl(null) } }
   }
 
+  const msAccount = accounts.find(a => a.type === 'microsoft') ?? (activeAccount?.type === 'microsoft' ? activeAccount : null)
+
   async function handleApply() {
-    if (!selected || !activeAccount) return
+    if (!selected || !msAccount) return
     setApplying(true); setMsg(null)
     try {
-      await api.skins.apply(selected.id, activeAccount.uuid)
-      setMsg({ ok: true, text: `Skin applied to ${activeAccount.username}! Restart Minecraft to see it.` })
+      await api.skins.apply(selected.id, msAccount.uuid)
+      setMsg({ ok: true, text: `Skin applied to ${msAccount.username}! Restart Minecraft to see it.` })
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
     } finally { setApplying(false) }
   }
-
-  const msAccount = accounts.find(a => a.type === 'microsoft') ?? activeAccount
 
   return (
     <div style={{ display: 'flex', height: '100%', background: 'var(--bg)', gap: 0 }}>
