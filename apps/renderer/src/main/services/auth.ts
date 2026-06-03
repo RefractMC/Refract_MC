@@ -428,7 +428,7 @@ export async function uploadSkin(uuid: string, imagePath: string, variant: 'clas
   if (!account) throw new Error('Account not found')
 
   if (account.type === 'microsoft') {
-    const tokenData = await getOrRefreshMinecraftToken(account)
+    const tokenData = await getOrRefreshMinecraftToken(uuid)
     const imageBytes = readFileSync(imagePath)
     const blob = new Blob([imageBytes], { type: 'image/png' })
     const form = new FormData()
