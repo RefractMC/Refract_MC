@@ -114,7 +114,7 @@ function AvatarBlock() {
   const hasSkin = !!account && account.type !== 'offline'
 
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'4px 6px 14px', borderBottom:'1px solid var(--sb-line)', marginBottom:10 }}>
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'0px 6px 14px', borderBottom:'1px solid var(--sb-line)', marginBottom:10 }}>
       {/* Avatar */}
       <div style={{ width:38, height:38, flexShrink:0, border:'1px solid #000', position:'relative', overflow:'hidden', background:'#1a1f2e', imageRendering:'pixelated' }}>
         {hasSkin && !skinFailed ? (
@@ -502,7 +502,7 @@ export function Sidebar() {
       padding:'14px 12px 12px', minHeight:0, overflowY:'auto',
     }}>
       {/* Brand mark */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'0 6px 14px', borderBottom:'1px solid var(--sb-line)', marginBottom:12 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'0 6px 2px', borderBottom:'1px solid var(--sb-line)', marginBottom:0 }}>
         <RefractLogo size={32} />
         <span style={{ fontFamily:"'VT323',monospace", fontSize:20, letterSpacing:'.12em', color:'var(--ink)', lineHeight:1 }}>REFRACT</span>
       </div>
