@@ -132,7 +132,7 @@
     "cfSelectFile": "Оберіть версію",
     "cfNoFiles": "Файлів не знайдено.",
     "cfLoadingFiles": "Завантаження файлів…",
-    "cfInstallMod": "ВСТАНОВИТИ МОД",
+    "cfInstallMod": "ВСТАНОВИТИ",
     "cfSelectInstance": "1. Оберіть екземпляр",
     "cfSelectVersion": "2. Оберіть файл",
     "cfInstallBtn": "ВСТАНОВИТИ"
