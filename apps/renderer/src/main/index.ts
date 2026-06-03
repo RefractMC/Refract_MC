@@ -11,6 +11,11 @@ import { launchInstance } from './services/minecraft/launcher'
 
 installProcessErrorLogging()
 
+// Reduce GPU/renderer memory footprint
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
+app.commandLine.appendSwitch('disable-software-rasterizer')
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512')
+
 // Pin userData to "Refract" so renaming productName never loses user data
 app.setPath('userData', join(app.getPath('appData'), 'Refract'))
 

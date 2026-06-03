@@ -9,6 +9,7 @@ interface Props {
   rotate?: boolean
 }
 
+// Named export kept for lazy() wrapper; add default export so React.lazy works
 export function SkinViewer3D({ skinUrl, width = 180, height = 280, walk = true, rotate = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const viewerRef = useRef<SkinViewer | null>(null)
@@ -41,3 +42,5 @@ export function SkinViewer3D({ skinUrl, width = 180, height = 280, walk = true, 
     />
   )
 }
+
+export default SkinViewer3D

@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+﻿import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { api, type DeviceLogin, type SafeAccount } from '@/lib/api'
-import { SkinViewer3D } from '@/components/ui/SkinViewer3D'
+import { SkinViewer3DLazy as SkinViewer3D } from '@/components/ui/SkinViewer3DLazy'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import { useT, type T } from '@/i18n'
@@ -622,3 +622,4 @@ function Account() {
     </div>
   )
 }
+

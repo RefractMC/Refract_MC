@@ -1,7 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
+﻿import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
 import { api, type SafeAccount } from '@/lib/api'
-import { SkinViewer3D } from '@/components/ui/SkinViewer3D'
+import { SkinViewer3DLazy as SkinViewer3D } from '@/components/ui/SkinViewer3DLazy'
 import { useT } from '@/i18n'
 
 export const Route = createFileRoute('/skins/')({ component: SkinsPage })
@@ -373,3 +373,4 @@ function SkinListItem({ skin, selected, onSelect, onDelete, renaming, renameVal,
     </div>
   )
 }
+
