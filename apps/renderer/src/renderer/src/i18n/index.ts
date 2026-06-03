@@ -85,6 +85,13 @@ function build(l: Locale) {
       updateAll: (n: number) => i(l.instanceDetail.updateAll, { n }),
       players:   (online: number, max: number) => i(l.instanceDetail.players, { online, max }),
     },
+
+    skins: {
+      ...l.skins,
+      addedOn:    (date: string)     => i(l.skins.addedOn, { date }),
+      useSkinAs:  (username: string) => i(l.skins.useSkinAs, { username }),
+      skinApplied:(username: string) => i(l.skins.skinApplied, { username }),
+    },
   }
 }
 

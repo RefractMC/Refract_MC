@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
 import { api, type SafeAccount } from '@/lib/api'
 import { SkinViewer3D } from '@/components/ui/SkinViewer3D'
+import { useT } from '@/i18n'
 
 export const Route = createFileRoute('/skins/')({ component: SkinsPage })
 
@@ -22,6 +23,7 @@ export default function SkinsPage() {
 }
 
 function SkinsPage_() {
+  const t = useT()
   const [skins, setSkins]           = useState<SavedSkinClient[]>([])
   const [selected, setSelected]     = useState<SavedSkinClient | null>(null)
   const [skinUrl, setSkinUrl]       = useState<string | null>(null)
@@ -95,7 +97,7 @@ function SkinsPage_() {
     setApplying(true); setMsg(null)
     try {
       await api.skins.apply(selected.id, msAccount.uuid)
-      setMsg({ ok: true, text: `Skin applied to ${msAccount.username}! Restart Minecraft to see it.` })
+      setMsg({ ok: true, text: t.skins.skinApplied(msAccount.username) })
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
     } finally { setApplying(false) }
@@ -114,7 +116,7 @@ function SkinsPage_() {
       }}>
         {/* Header */}
         <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid var(--line)' }}>
-          <div style={{ fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.1em', color: 'var(--ink)' }}>MY SKINS</div>
+          <div style={{ fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.1em', color: 'var(--ink)' }}>{t.skins.mySkins}</div>
         </div>
 
         {/* List */}
@@ -142,7 +144,7 @@ function SkinsPage_() {
 
           {skins.length === 0 && (
             <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12, lineHeight: 1.5 }}>
-              No skins yet.<br />Click "Add skin" to get started.
+              {t.skins.noSkinsYet}
             </div>
           )}
         </div>
@@ -160,7 +162,7 @@ function SkinsPage_() {
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
-            Add skin
+            {t.skins.addSkin}
           </button>
         </div>
       </div>
@@ -171,7 +173,7 @@ function SkinsPage_() {
         {newPath ? (
           /* ── New skin upload panel ── */
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32 }}>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 20, letterSpacing: '.1em', color: 'var(--ink)' }}>NEW SKIN</div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 20, letterSpacing: '.1em', color: 'var(--ink)' }}>{t.skins.newSkin}</div>
             <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
               {/* 3D preview */}
               <div style={{ background: 'var(--surface-2)', borderRadius: 12, padding: 16, border: '1px solid var(--border-r)' }}>
@@ -180,7 +182,7 @@ function SkinsPage_() {
               {/* Form */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 240 }}>
                 <div>
-                  <label style={{ display: 'block', fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 6 }}>SKIN NAME</label>
+                  <label style={{ display: 'block', fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 6 }}>{t.skins.skinName}</label>
                   <input
                     value={newName}
                     onChange={e => setNewName(e.target.value)}
@@ -188,7 +190,7 @@ function SkinsPage_() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 6 }}>MODEL</label>
+                  <label style={{ display: 'block', fontFamily: "'VT323',monospace", fontSize: 12, letterSpacing: '.12em', color: 'var(--ink-4)', marginBottom: 6 }}>{t.skins.model}</label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {(['classic', 'slim'] as const).map(v => (
                       <button key={v} onClick={() => setNewVariant(v)} style={{
@@ -198,17 +200,17 @@ function SkinsPage_() {
                         border: `1px solid ${newVariant === v ? 'var(--accent)' : 'var(--border-r)'}`,
                         borderRadius: 6, cursor: 'pointer',
                       }}>
-                        {v === 'classic' ? 'Classic' : 'Slim'}
+                        {v === 'classic' ? t.skins.classic : t.skins.slim}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button onClick={handleAdd} disabled={!newName.trim() || adding} style={{ flex: 1, height: 38, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 14, opacity: adding ? .6 : 1 }}>
-                    {adding ? 'Saving…' : 'Save skin'}
+                    {adding ? t.skins.saving : t.skins.saveSkin}
                   </button>
                   <button onClick={() => { setNewPath(null); setNewUrl(null); setNewName('') }} style={{ height: 38, padding: '0 16px', background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
-                    Cancel
+                    {t.skins.cancel}
                   </button>
                 </div>
               </div>
@@ -226,7 +228,7 @@ function SkinsPage_() {
             <div style={{ textAlign: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>{selected.name}</div>
               <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>
-                {selected.variant === 'classic' ? 'Classic (Steve)' : 'Slim (Alex)'} · Added {fmtDate(selected.addedAt)}
+                {selected.variant === 'classic' ? t.skins.classicSteve : t.skins.slimAlex} · {t.skins.addedOn(fmtDate(selected.addedAt))}
               </div>
             </div>
 
@@ -246,14 +248,14 @@ function SkinsPage_() {
                     opacity: applying ? .6 : 1,
                   }}
                 >
-                  {applying ? 'Applying…' : msAccount.type === 'microsoft' ? `Use skin as ${msAccount.username}` : 'Microsoft account required'}
+                  {applying ? t.skins.applying : msAccount.type === 'microsoft' ? t.skins.useSkinAs(msAccount.username) : t.skins.microsoftRequired}
                 </button>
               )}
               <button
                 onClick={() => handleDelete(selected.id)}
                 style={{ height: 42, padding: '0 18px', background: 'transparent', color: 'var(--lava)', border: '1px solid rgba(217,59,59,.4)', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
               >
-                Delete
+                {t.skins.delete}
               </button>
             </div>
 
@@ -285,6 +287,7 @@ function SkinListItem({ skin, selected, onSelect, onDelete, renaming, renameVal,
   onRenameCommit: () => void
   nameInputRef?: React.RefObject<HTMLInputElement>
 }) {
+  const t = useT()
   const [hover, setHover] = useState(false)
 
   return (
@@ -336,7 +339,7 @@ function SkinListItem({ skin, selected, onSelect, onDelete, renaming, renameVal,
           </div>
         )}
         <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 1 }}>
-          {skin.variant === 'classic' ? 'Classic' : 'Slim'}
+          {skin.variant === 'classic' ? t.skins.classic : t.skins.slim}
         </div>
       </div>
 

@@ -492,7 +492,7 @@ export function Sidebar() {
     { to: '/',          label: t.nav.library, iconSrc: libraryIcon,    exact: true  },
     { to: '/browse/',   label: t.nav.browse,  iconSrc: browseModsIcon, exact: false },
     { to: '/modpacks/', label: t.nav.content, iconSrc: modpacksIcon,   exact: false },
-    { to: '/skins',     label: 'Skins',        iconSrc: skinsIcon,      exact: false },
+    { to: '/skins',     label: t.skins.navLabel, iconSrc: skinsIcon,     exact: false },
   ]
   return (
     <aside style={{

@@ -236,14 +236,14 @@ function Account() {
     setSkinMsg(null)
     try {
       await api.auth.uploadSkin(uuid, skinPath, skinVariant)
-      setSkinMsg({ ok: true, text: 'Skin updated! Restart Minecraft to see it.' })
+      setSkinMsg({ ok: true, text: t.skins.skinUpdated })
       setSkinTarget(null)
       setSkinPath(null)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg === 'OFFLINE_ONLY') {
         // For offline accounts treat as local avatar change
-        setSkinMsg({ ok: true, text: 'Saved as launcher avatar.' })
+        setSkinMsg({ ok: true, text: t.skins.savedAsAvatar })
         setSkinTarget(null); setSkinPath(null)
       } else {
         setSkinMsg({ ok: false, text: msg })
@@ -551,7 +551,7 @@ function Account() {
                 {skinTarget === account.uuid && (
                   <div style={{ marginTop:8, padding:12, background:'var(--bg)', border:'1px solid var(--border-r)', borderRadius:4, display:'flex', flexDirection:'column', gap:10 }}>
                     <div style={{ fontSize:12, fontWeight:600, color:'var(--ink-3)' }}>
-                      {account.type === 'microsoft' ? 'Upload skin to Minecraft account' : account.type === 'yggdrasil' ? 'Change skin (opens browser)' : 'Set launcher avatar skin'}
+                      {account.type === 'microsoft' ? t.skins.uploadTitle : account.type === 'yggdrasil' ? t.skins.yggdrasilTitle : t.skins.offlineTitle}
                     </div>
 
                     {account.type === 'yggdrasil' ? (
@@ -560,7 +560,7 @@ function Account() {
                         onClick={() => api.auth.uploadSkin(account.uuid, '', 'classic').catch(() => {})}
                         style={{ height:32, padding:'0 14px', background:'var(--accent)', color:'#fff', border:'none', borderRadius:3, cursor:'pointer', fontSize:12, fontWeight:600 }}
                       >
-                        Open skin page ↗
+                        {t.skins.openSkinPage}
                       </button>
                     ) : (
                       <>
@@ -602,7 +602,7 @@ function Account() {
                           disabled={!skinPath || skinUploading}
                           style={{ height:32, padding:'0 14px', background: skinPath && !skinUploading ? 'var(--accent)' : 'var(--surface-3)', color: skinPath && !skinUploading ? '#fff' : 'var(--ink-4)', border:'none', borderRadius:3, cursor: skinPath && !skinUploading ? 'pointer' : 'not-allowed', fontSize:12, fontWeight:600 }}
                         >
-                          {skinUploading ? 'Uploading…' : account.type === 'microsoft' ? 'Upload skin' : 'Save as avatar'}
+                          {skinUploading ? t.skins.uploading : account.type === 'microsoft' ? t.skins.uploadSkin : t.skins.saveAsAvatar}
                         </button>
                       </>
                     )}
