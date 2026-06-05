@@ -34,6 +34,12 @@ function readForgeJson(versionId: string): VersionJson | null {
   try { return JSON.parse(readFileSync(p, 'utf-8')) as VersionJson } catch { return null }
 }
 
+function readQuiltJson(versionId: string): VersionJson | null {
+  const p = join(paths.versions, `${versionId}-quilt`, `${versionId}-quilt.json`)
+  if (!existsSync(p)) return null
+  try { return JSON.parse(readFileSync(p, 'utf-8')) as VersionJson } catch { return null }
+}
+
 async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Promise<{ exe: string; version: number }> {
   if (instanceJavaPath) {
     if (existsSync(instanceJavaPath)) return { exe: instanceJavaPath, version: requiredMajor }
@@ -103,9 +109,13 @@ export async function launchInstance(
   if (isForge && !forgeJson) {
     throw new Error('Forge is not fully installed. Please reinstall this instance.')
   }
+  const quiltJson = instance.modLoader === 'quilt' ? readQuiltJson(instance.minecraftVersion) : null
+  if (instance.modLoader === 'quilt' && !quiltJson) {
+    throw new Error('Quilt is not fully installed. Please reinstall this instance.')
+  }
   const fabricJson = instance.modLoader === 'fabric'
     ? readFabricJson(instance.minecraftVersion)
-    : forgeJson ?? undefined
+    : forgeJson ?? quiltJson ?? undefined
 
   const requiredJava = versionJson.javaVersion?.majorVersion ?? 8
   const { exe: javaExe, version: javaVersion } = await resolveJava(requiredJava, instance.javaPath)

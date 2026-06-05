@@ -188,6 +188,10 @@ export const api = {
       ipcRenderer.invoke('mc.neoforgeVersions', mcVersion),
     fabricVersions: (mcVersion: string): Promise<string[]> =>
       ipcRenderer.invoke('mc.fabricVersions', mcVersion),
+    quiltVersions: (mcVersion: string): Promise<string[]> =>
+      ipcRenderer.invoke('mc.quiltVersions', mcVersion),
+    cancelInstall: (): Promise<void> =>
+      ipcRenderer.invoke('mc.cancelInstall'),
     java:      () => ipcRenderer.invoke('mc.java'),
     isRunning: (instanceId: string): Promise<boolean> => ipcRenderer.invoke('mc.isRunning', instanceId),
     install:   (instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) =>

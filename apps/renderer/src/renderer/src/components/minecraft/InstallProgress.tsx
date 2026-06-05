@@ -11,6 +11,7 @@ interface Props {
 export function InstallProgress({ instanceId, instanceName, onDone, onError }: Props) {
   const [step, setStep] = useState('Starting…')
   const [percent, setPercent] = useState(0)
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => {
     const unsub = api.mc.onProgress((data) => {
@@ -25,6 +26,11 @@ export function InstallProgress({ instanceId, instanceName, onDone, onError }: P
     })
     return () => { unsub(); unsubExit() }
   }, [instanceId, onDone, onError])
+
+  function handleCancel() {
+    setCancelling(true)
+    api.mc.cancelInstall().catch(() => {})
+  }
 
   return (
     <div style={{
@@ -46,7 +52,9 @@ export function InstallProgress({ instanceId, instanceName, onDone, onError }: P
         <div style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600 }}>{instanceName}</div>
 
         <div>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>{step}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
+            {cancelling ? 'Cancelling…' : step}
+          </div>
           <div style={{
             height: 8,
             background: 'var(--surface-2)',
@@ -55,9 +63,9 @@ export function InstallProgress({ instanceId, instanceName, onDone, onError }: P
             <div style={{
               height: '100%',
               width: `${percent}%`,
-              background: 'var(--accent)',
+              background: cancelling ? 'var(--ink-4)' : 'var(--accent)',
               transition: 'width 200ms linear',
-              boxShadow: 'inset 0 -2px 0 var(--accent-lo), inset 0 2px 0 var(--accent-hi)',
+              boxShadow: cancelling ? 'none' : 'inset 0 -2px 0 var(--accent-lo), inset 0 2px 0 var(--accent-hi)',
             }} />
           </div>
           <div style={{ fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--ink-4)', marginTop: 4, textAlign: 'right' }}>
@@ -65,8 +73,27 @@ export function InstallProgress({ instanceId, instanceName, onDone, onError }: P
           </div>
         </div>
 
-        <div style={{ fontSize: 11, color: 'var(--ink-4)', textAlign: 'center', lineHeight: 1.4 }}>
-          This may take a few minutes depending on your connection.
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
+            {cancelling ? 'Finishing current operation…' : 'This may take a few minutes depending on your connection.'}
+          </div>
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            style={{
+              flexShrink: 0,
+              padding: '5px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              borderRadius: 7,
+              border: '1px solid var(--border-r)',
+              background: 'var(--surface-2)',
+              color: cancelling ? 'var(--ink-4)' : 'var(--ink-3)',
+              cursor: cancelling ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {cancelling ? 'Cancelling…' : 'Cancel'}
+          </button>
         </div>
       </div>
     </div>

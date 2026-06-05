@@ -1405,8 +1405,10 @@ function Library() {
           }}
           onError={(err) => {
             setInstalling(null)
-            setLaunchToast(`Install failed: ${err}`)
-            setTimeout(() => setLaunchToast(null), 4000)
+            if (!err.toLowerCase().includes('cancel')) {
+              setLaunchToast(`Install failed: ${err}`)
+              setTimeout(() => setLaunchToast(null), 4000)
+            }
           }}
         />
       )}

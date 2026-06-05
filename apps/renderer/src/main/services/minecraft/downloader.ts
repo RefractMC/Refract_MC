@@ -22,6 +22,7 @@ type ProgressCallback = (p: InstallProgress) => void
 const OS = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'osx' : 'linux'
 const RESOURCES_URL = 'https://resources.download.minecraft.net'
 const FABRIC_META_URL = 'https://meta.fabricmc.net/v2'
+const QUILT_META_URL  = 'https://meta.quiltmc.org/v3'
 
 function mavenCoordToPath(name: string): string {
   const parts = name.split(':')
@@ -56,26 +57,28 @@ export function libraryPath(libPath: string): string {
 async function downloadLibraries(
   libs: Library[],
   onProgress: ProgressCallback,
-  step: string
+  step: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const allowed = libs.filter(lib => isLibraryAllowed(lib, OS))
   const total = allowed.length
   let current = 0
 
   for (const lib of allowed) {
+    if (signal?.aborted) throw new Error('Install cancelled')
     current++
     onProgress({ step, current, total, percent: (current / total) * 100 })
 
     if (lib.downloads?.artifact) {
       const dest = resolve(paths.libraries, lib.downloads.artifact.path)
       if (relative(paths.libraries, dest).startsWith('..')) continue
-      await downloadFile(lib.downloads.artifact.url, dest)
+      await downloadFile(lib.downloads.artifact.url, dest, undefined, signal)
     } else if (lib.name && lib.url) {
       const relPath = mavenCoordToPath(lib.name)
       const dest = resolve(paths.libraries, relPath)
       if (relative(paths.libraries, dest).startsWith('..')) continue
       const baseUrl = lib.url.endsWith('/') ? lib.url : lib.url + '/'
-      await downloadFile(baseUrl + relPath.replace(/\\/g, '/'), dest)
+      await downloadFile(baseUrl + relPath.replace(/\\/g, '/'), dest, undefined, signal)
     }
   }
 }
@@ -137,10 +140,11 @@ async function extractJar(jarPath: string, destDir: string, _exclude: string[]):
 
 async function downloadAssets(
   versionJson: VersionJson,
-  onProgress: ProgressCallback
+  onProgress: ProgressCallback,
+  signal?: AbortSignal
 ): Promise<void> {
   const indexPath = join(paths.assets, 'indexes', `${versionJson.assetIndex.id}.json`)
-  await downloadFile(versionJson.assetIndex.url, indexPath)
+  await downloadFile(versionJson.assetIndex.url, indexPath, undefined, signal)
 
   const index = JSON.parse(require('fs').readFileSync(indexPath, 'utf-8')) as AssetIndex
   const objects = Object.values(index.objects)
@@ -149,11 +153,12 @@ async function downloadAssets(
 
   // Download in batches of 10
   for (let i = 0; i < objects.length; i += 10) {
+    if (signal?.aborted) throw new Error('Install cancelled')
     const batch = objects.slice(i, i + 10)
     await Promise.all(batch.map(async (obj) => {
       const prefix = obj.hash.slice(0, 2)
       const dest = join(paths.assets, 'objects', prefix, obj.hash)
-      await downloadFile(`${RESOURCES_URL}/${prefix}/${obj.hash}`, dest)
+      await downloadFile(`${RESOURCES_URL}/${prefix}/${obj.hash}`, dest, undefined, signal)
     }))
     current = Math.min(i + 10, total)
     onProgress({ step: 'Downloading assets', current, total, percent: (current / total) * 100 })
@@ -173,6 +178,14 @@ export async function fetchFabricLoaderVersions(mcVersion: string): Promise<Arra
   return fetchJson(
     `${FABRIC_META_URL}/versions/loader/${mcVersion}`
   )
+}
+
+export async function fetchQuiltLoaderVersions(mcVersion: string): Promise<Array<{ loader: { version: string } }>> {
+  return fetchJson(`${QUILT_META_URL}/versions/loader/${mcVersion}`)
+}
+
+async function fetchQuiltVersionJson(mcVersion: string, loaderVersion: string): Promise<VersionJson> {
+  return fetchJson(`${QUILT_META_URL}/versions/loader/${mcVersion}/${loaderVersion}/profile/json`)
 }
 
 interface ForgeInstallProfile {
@@ -294,7 +307,8 @@ async function installForge(
   versionId: string,
   forgeVersion: string,
   isNeoForge: boolean,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  signal?: AbortSignal
 ): Promise<void> {
   const report = (step: string, pct: number) =>
     onProgress?.({ step, current: pct, total: 100, percent: pct })
@@ -317,7 +331,7 @@ async function installForge(
 
   try {
     report('Downloading Forge installer', 0)
-    await downloadFile(installerUrl, installerPath, ({ percent: p }) => report('Downloading Forge installer', p * 0.3))
+    await downloadFile(installerUrl, installerPath, ({ percent: p }) => report('Downloading Forge installer', p * 0.3), signal)
 
     // Extract installer (it's a ZIP/JAR)
     report('Extracting Forge installer', 30)
@@ -350,14 +364,14 @@ async function installForge(
 
     // Download Forge libraries
     report('Downloading Forge libraries', 35)
-    await downloadLibraries(forgeJson.libraries, onProgress, 'Downloading Forge libraries')
+    await downloadLibraries(forgeJson.libraries, onProgress ?? (() => {}), 'Downloading Forge libraries', signal)
 
     // Also download install_profile libraries (the processor tools)
     if (existsSync(profileSrc)) {
       const profile = JSON.parse(readFileSync(profileSrc, 'utf-8')) as ForgeInstallProfile
       if (profile.libraries?.length) {
         report('Downloading Forge tools', 55)
-        await downloadLibraries(profile.libraries, onProgress, 'Downloading Forge tools')
+        await downloadLibraries(profile.libraries, onProgress ?? (() => {}), 'Downloading Forge tools', signal)
       }
 
       // Copy embedded maven libraries from installer into our libraries dir
@@ -398,13 +412,14 @@ export async function installMinecraft(
   versionUrl: string,
   modLoader?: string,
   modLoaderVersion?: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  signal?: AbortSignal
 ): Promise<void> {
   const report = (p: InstallProgress) => onProgress?.(p)
 
   // 1. Download version JSON
   report({ step: 'Fetching version data', current: 0, total: 1, percent: 0 })
-  const versionJson = await fetchJson<VersionJson>(versionUrl)
+  const versionJson = await fetchJson<VersionJson>(versionUrl, signal)
   const vJsonPath = versionJsonPath(versionId)
   mkdirSync(require('path').dirname(vJsonPath), { recursive: true })
   require('fs').writeFileSync(vJsonPath, JSON.stringify(versionJson, null, 2))
@@ -412,11 +427,11 @@ export async function installMinecraft(
 
   // 2. Download client jar
   report({ step: 'Downloading client', current: 0, total: 1, percent: 0 })
-  await downloadFile(versionJson.downloads.client.url, clientJarPath(versionId))
+  await downloadFile(versionJson.downloads.client.url, clientJarPath(versionId), undefined, signal)
   report({ step: 'Downloading client', current: 1, total: 1, percent: 100 })
 
   // 3. Download vanilla libraries
-  await downloadLibraries(versionJson.libraries, report, 'Downloading libraries')
+  await downloadLibraries(versionJson.libraries, report, 'Downloading libraries', signal)
 
   // 4. Extract natives
   report({ step: 'Extracting natives', current: 0, total: 1, percent: 0 })
@@ -424,7 +439,7 @@ export async function installMinecraft(
   report({ step: 'Extracting natives', current: 1, total: 1, percent: 100 })
 
   // 5. Download assets
-  await downloadAssets(versionJson, report)
+  await downloadAssets(versionJson, report, signal)
 
   // 6. Fabric loader
   if (modLoader === 'fabric') {
@@ -442,8 +457,28 @@ export async function installMinecraft(
     mkdirSync(require('path').dirname(fabricJsonPath), { recursive: true })
     require('fs').writeFileSync(fabricJsonPath, JSON.stringify(fabricJson, null, 2))
 
-    await downloadLibraries(fabricJson.libraries, report, 'Downloading Fabric libraries')
+    await downloadLibraries(fabricJson.libraries, report, 'Downloading Fabric libraries', signal)
     report({ step: 'Installing Fabric loader', current: 1, total: 1, percent: 100 })
+  }
+
+  // 6b. Quilt loader
+  if (modLoader === 'quilt') {
+    report({ step: 'Installing Quilt loader', current: 0, total: 1, percent: 0 })
+
+    let quiltLoaderVer = modLoaderVersion
+    if (!quiltLoaderVer) {
+      const loaders = await fetchQuiltLoaderVersions(versionId)
+      quiltLoaderVer = loaders[0]?.loader.version
+      if (!quiltLoaderVer) throw new Error('No Quilt loader found for ' + versionId)
+    }
+
+    const quiltJson = await fetchQuiltVersionJson(versionId, quiltLoaderVer)
+    const quiltJsonPath = join(paths.versions, `${versionId}-quilt`, `${versionId}-quilt.json`)
+    mkdirSync(require('path').dirname(quiltJsonPath), { recursive: true })
+    require('fs').writeFileSync(quiltJsonPath, JSON.stringify(quiltJson, null, 2))
+
+    await downloadLibraries(quiltJson.libraries, report, 'Downloading Quilt libraries', signal)
+    report({ step: 'Installing Quilt loader', current: 1, total: 1, percent: 100 })
   }
 
   // 7. Forge / NeoForge
@@ -455,7 +490,7 @@ export async function installMinecraft(
         ? await fetchNeoForgeLatestVersion(versionId)
         : await fetchForgeLatestVersion(versionId)
     }
-    await installForge(instanceId, versionId, forgeVer, modLoader === 'neoforge', onProgress)
+    await installForge(instanceId, versionId, forgeVer, modLoader === 'neoforge', onProgress, signal)
   }
 
   report({ step: 'Done', current: 1, total: 1, percent: 100 })

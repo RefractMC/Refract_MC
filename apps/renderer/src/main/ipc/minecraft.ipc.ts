@@ -6,7 +6,7 @@ import { spawn } from 'child_process'
 import { handleIpc } from './handle'
 import { fetchVersionList } from '@refract/core'
 import { detectJavaInstallations } from '@refract/core/java-manager'
-import { installMinecraft, fetchForgeVersionList, fetchNeoForgeVersionList, fetchFabricLoaderVersions } from '../services/minecraft/downloader'
+import { installMinecraft, fetchForgeVersionList, fetchNeoForgeVersionList, fetchFabricLoaderVersions, fetchQuiltLoaderVersions } from '../services/minecraft/downloader'
 import { launchInstance, stopInstance, isInstanceRunning } from '../services/minecraft/launcher'
 import { resolveInstanceDir } from '../services/instance-store'
 import { loadManagedJavas } from '../services/java-manager'
@@ -104,7 +104,10 @@ type ForgeVersions = Awaited<ReturnType<typeof fetchForgeVersionList>>
 const forgeVersionCache = new Map<string, { data: ForgeVersions; at: number }>()
 const neoforgeVersionCache = new Map<string, { data: string[]; at: number }>()
 const fabricVersionCache = new Map<string, { data: string[]; at: number }>()
+const quiltVersionCache  = new Map<string, { data: string[]; at: number }>()
 const LOADER_VERSION_TTL = 10 * 60 * 1000  // 10 min
+
+let activeInstallController: AbortController | null = null
 
 export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
   handleIpc('mc.versions', async () => {
@@ -142,6 +145,16 @@ export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
     return data
   })
 
+  handleIpc('mc.quiltVersions', async (_event, mcVersion) => {
+    const key = String(mcVersion)
+    const cached = quiltVersionCache.get(key)
+    if (cached && Date.now() - cached.at < LOADER_VERSION_TTL) return cached.data
+    const loaders = await fetchQuiltLoaderVersions(key)
+    const data = loaders.map(l => l.loader.version)
+    quiltVersionCache.set(key, { data, at: Date.now() })
+    return data
+  })
+
   handleIpc('mc.java', async () => {
     if (javaCache && Date.now() - javaCache.at < JAVA_TTL) {
       const managed = loadManagedJavas()
@@ -158,23 +171,33 @@ export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
   handleIpc('mc.isRunning', (_event, instanceId) => isInstanceRunning(String(instanceId)))
 
   handleIpc('mc.install', async (_event, instanceId, versionId, versionUrl, modLoader, modLoaderVersion) => {
-    await installMinecraft(
-      String(instanceId),
-      String(versionId),
-      String(versionUrl),
-      modLoader ? String(modLoader) : undefined,
-      modLoaderVersion ? String(modLoaderVersion) : undefined,
-      (progress) => {
-        mainWindow.webContents.send('mc:progress', { instanceId, ...progress })
-      }
-    )
+    const controller = new AbortController()
+    activeInstallController = controller
+    try {
+      await installMinecraft(
+        String(instanceId),
+        String(versionId),
+        String(versionUrl),
+        modLoader ? String(modLoader) : undefined,
+        modLoaderVersion ? String(modLoaderVersion) : undefined,
+        (progress) => {
+          mainWindow.webContents.send('mc:progress', { instanceId, ...progress })
+        },
+        controller.signal
+      )
+      // Mark instance as installed
+      const instanceStore = await import('../services/instance-store')
+      instanceStore.updateInstance(String(instanceId), {
+        isInstalled: true,
+        modLoaderVersion: modLoaderVersion ? String(modLoaderVersion) : undefined,
+      })
+    } finally {
+      activeInstallController = null
+    }
+  })
 
-    // Mark instance as installed
-    const instanceStore = await import('../services/instance-store')
-    instanceStore.updateInstance(String(instanceId), {
-      isInstalled: true,
-      modLoaderVersion: modLoaderVersion ? String(modLoaderVersion) : undefined,
-    })
+  handleIpc('mc.cancelInstall', () => {
+    activeInstallController?.abort()
   })
 
   handleIpc('mc.repair', async (_event, instanceId) => {

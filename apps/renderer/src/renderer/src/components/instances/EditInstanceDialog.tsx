@@ -100,12 +100,14 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   useEffect(() => {
     setLoaderVersions([])
     setLoaderVersionRecommended(undefined)
-    if (modLoader !== 'forge' && modLoader !== 'neoforge' && modLoader !== 'fabric') return
+    if (modLoader !== 'forge' && modLoader !== 'neoforge' && modLoader !== 'fabric' && modLoader !== 'quilt') return
     setLoaderVersionsLoading(true)
     const p = modLoader === 'neoforge'
       ? api.mc.neoforgeVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
       : modLoader === 'fabric'
       ? api.mc.fabricVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      : modLoader === 'quilt'
+      ? api.mc.quiltVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
       : api.mc.forgeVersions(mcVersion).then(({ versions, recommended }) => {
           setLoaderVersions(versions)
           setLoaderVersionRecommended(recommended)
@@ -320,11 +322,11 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 </div>
               </div>
 
-              {/* Loader version picker — Fabric / Forge / NeoForge */}
-              {(modLoader === 'fabric' || modLoader === 'forge' || modLoader === 'neoforge') && (
+              {/* Loader version picker — Fabric / Quilt / Forge / NeoForge */}
+              {(modLoader === 'fabric' || modLoader === 'quilt' || modLoader === 'forge' || modLoader === 'neoforge') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
-                    {modLoader === 'neoforge' ? 'NeoForge' : modLoader === 'fabric' ? 'Fabric' : 'Forge'} version
+                    {modLoader === 'neoforge' ? 'NeoForge' : modLoader === 'fabric' ? 'Fabric' : modLoader === 'quilt' ? 'Quilt' : 'Forge'} version
                   </label>
                   <div style={{ position: 'relative' }}>
                     <select
