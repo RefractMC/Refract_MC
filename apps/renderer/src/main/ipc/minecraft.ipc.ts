@@ -6,7 +6,7 @@ import { spawn } from 'child_process'
 import { handleIpc } from './handle'
 import { fetchVersionList } from '@refract/core'
 import { detectJavaInstallations } from '@refract/core/java-manager'
-import { installMinecraft, fetchForgeVersionList, fetchNeoForgeVersionList } from '../services/minecraft/downloader'
+import { installMinecraft, fetchForgeVersionList, fetchNeoForgeVersionList, fetchFabricLoaderVersions } from '../services/minecraft/downloader'
 import { launchInstance, stopInstance, isInstanceRunning } from '../services/minecraft/launcher'
 import { resolveInstanceDir } from '../services/instance-store'
 import { loadManagedJavas } from '../services/java-manager'
@@ -103,6 +103,7 @@ const JAVA_TTL = 5 * 60 * 1000  // 5 min — invalidated automatically on downlo
 type ForgeVersions = Awaited<ReturnType<typeof fetchForgeVersionList>>
 const forgeVersionCache = new Map<string, { data: ForgeVersions; at: number }>()
 const neoforgeVersionCache = new Map<string, { data: string[]; at: number }>()
+const fabricVersionCache = new Map<string, { data: string[]; at: number }>()
 const LOADER_VERSION_TTL = 10 * 60 * 1000  // 10 min
 
 export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
@@ -128,6 +129,16 @@ export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
     if (cached && Date.now() - cached.at < LOADER_VERSION_TTL) return cached.data
     const data = await fetchNeoForgeVersionList(key)
     neoforgeVersionCache.set(key, { data, at: Date.now() })
+    return data
+  })
+
+  handleIpc('mc.fabricVersions', async (_event, mcVersion) => {
+    const key = String(mcVersion)
+    const cached = fabricVersionCache.get(key)
+    if (cached && Date.now() - cached.at < LOADER_VERSION_TTL) return cached.data
+    const loaders = await fetchFabricLoaderVersions(key)
+    const data = loaders.map(l => l.loader.version)
+    fabricVersionCache.set(key, { data, at: Date.now() })
     return data
   })
 
