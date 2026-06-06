@@ -422,6 +422,118 @@ export async function loginYggdrasil(serverUrl: string, username: string, passwo
 }
 
 
+export interface CapeInfo {
+  id: string
+  state: 'ACTIVE' | 'INACTIVE'
+  url: string
+  alias: string
+  dataUrl?: string
+  isRender?: boolean
+}
+
+const WIKI_CAPE_FILES: Record<string, string> = {
+  'migrator': 'Migrator_Cape.png',
+  'vanilla': 'Vanilla_Cape.png',
+  'pan': 'The_Pan_Cape.png',
+  'common': 'Common_Cape_BE.png',
+  'mojang': 'Mojang_Cape.png',
+  'mojangstudios': 'Mojang_Studios_Cape.png', 'mojang studios': 'Mojang_Studios_Cape.png',
+  'prismarine': 'Prismarine_Cape.png', 'prismarine cape': 'Prismarine_Cape.png',
+  'cherryblossom': 'Cherry_Blossom_Cape_JE.png', 'cherry blossom': 'Cherry_Blossom_Cape_JE.png',
+  'minecon2011': 'MINECON_2011_Cape.png', 'minecon 2011': 'MINECON_2011_Cape.png',
+  'minecon2012': 'MINECON_2012_Cape.png', 'minecon 2012': 'MINECON_2012_Cape.png',
+  'minecon2013': 'MINECON_2013_Cape.png', 'minecon 2013': 'MINECON_2013_Cape.png',
+  'minecon2015': 'MINECON_2015_Cape.png', 'minecon 2015': 'MINECON_2015_Cape.png',
+  'minecon2016': 'MINECON_2016_Cape.png', 'minecon 2016': 'MINECON_2016_Cape.png',
+  'follower': "Follower's_Cape_JE.png", "follower's cape": "Follower's_Cape_JE.png",
+  'purpleheart': 'Purple_Heart_Cape_JE.png', 'purple heart': 'Purple_Heart_Cape_JE.png',
+  '15thanniversary': '15th_Anniversary_Cape_JE.png', '15th anniversary': '15th_Anniversary_Cape_JE.png',
+  'mcc15thyear': 'MCC_15th_Year_Cape_JE.png', 'mcc 15th year': 'MCC_15th_Year_Cape_JE.png',
+  'cobalt': 'Cobalt_Cape_render.png',
+  'turtle': 'Turtle_Cape.png',
+  'valentine': 'Valentine_Cape.png',
+  'millionthcustomer': 'Millionth_Customer_Cape.png', 'millionth customer': 'Millionth_Customer_Cape.png',
+  'mojiramoderator': 'Moderator_Cape.png', 'mojira moderator': 'Moderator_Cape.png',
+  'realsmapmaker': 'Realms_MapMaker_Cape.png', 'realms mapmaker': 'Realms_MapMaker_Cape.png',
+  'birthday': 'Birthday_Cape.png',
+  'translator': 'Translator_Cape.png',
+  'chinesetranslator': 'Translator_Cape.png', 'chinese translator': 'Translator_Cape.png',
+  'scrollschampion': 'Scrolls_Champion_Cape.png', 'scrolls champion': 'Scrolls_Champion_Cape.png',
+  'progresspride': 'Progress_Pride_Cape_rv3.png', 'progress pride': 'Progress_Pride_Cape_rv3.png',
+  'founder': "Founder's_Cape.png",
+  'copper': 'Copper_Cape_JE.png',
+  'mojangoffice': 'Mojang_Office_Cape_JE.png', 'mojang office': 'Mojang_Office_Cape_JE.png',
+  'home': 'Home_Cape_JE.png',
+  'menace': 'Menace_Cape_JE.png',
+  'builder': 'Builder_Cape_JE.png',
+  'crafter': 'Crafter_Cape_JE.png',
+  'minecraftexperience': 'Minecraft_Experience_Cape_JE.png', 'minecraft experience': 'Minecraft_Experience_Cape_JE.png',
+  'moonlighttrail': 'Moonlight_Trail_Cape_JE.png', 'moonlight trail': 'Moonlight_Trail_Cape_JE.png',
+  'zombiehorse': 'Zombie_Horse_Cape_JE.png', 'zombie horse': 'Zombie_Horse_Cape_JE.png',
+}
+
+function wikiImageUrl(alias: string): string | null {
+  const lower = alias.toLowerCase()
+  const file = WIKI_CAPE_FILES[lower] ?? WIKI_CAPE_FILES[lower.replace(/\s+/g, '')]
+  if (!file) return null
+  return `https://minecraft.wiki/w/Special:Redirect/file/${encodeURIComponent(file)}`
+}
+
+export async function fetchAccountCapes(uuid: string): Promise<CapeInfo[]> {
+  const tokenData = await getOrRefreshMinecraftToken(uuid)
+  if (tokenData.token === 'offline') return []
+  const res = await fetch(MC_PROFILE_URL, {
+    headers: { Authorization: `Bearer ${tokenData.token}` },
+  })
+  if (!res.ok) return []
+  const profile = await res.json() as { capes?: Omit<CapeInfo, 'dataUrl'>[] }
+  const rawCapes = profile.capes ?? []
+  return Promise.all(rawCapes.map(async (cape) => {
+    const wikiUrl = wikiImageUrl(cape.alias)
+    const imageUrl = wikiUrl ?? cape.url
+    try {
+      const texRes = await fetch(imageUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+      })
+      if (texRes.ok) {
+        const buf = await texRes.arrayBuffer()
+        const mime = (texRes.headers.get('content-type') ?? 'image/png').split(';')[0].trim()
+        const dataUrl = `data:${mime};base64,` + Buffer.from(buf).toString('base64')
+        return { ...cape, dataUrl, isRender: !!wikiUrl }
+      }
+    } catch { /* ignore */ }
+    return { ...cape }
+  }))
+}
+
+export async function setActiveCape(uuid: string, capeId: string | null): Promise<void> {
+  const tokenData = await getOrRefreshMinecraftToken(uuid)
+  if (tokenData.token === 'offline') throw new Error('Offline accounts cannot manage capes')
+  const url = 'https://api.minecraftservices.com/minecraft/profile/capes/active'
+  if (capeId === null) {
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${tokenData.token}` },
+    })
+    if (!res.ok && res.status !== 204) {
+      let msg = res.statusText
+      try { const j = await res.json() as { error?: string }; msg = j.error ?? msg } catch { /* ignore */ }
+      throw new Error(`Failed to hide cape: ${msg}`)
+    }
+    return
+  }
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${tokenData.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capeId }),
+  })
+  if (!res.ok) {
+    let msg = res.statusText
+    try { const j = await res.json() as { error?: string; errorMessage?: string }; msg = j.errorMessage ?? j.error ?? msg } catch { /* ignore */ }
+    throw new Error(`Failed to set cape: ${msg}`)
+  }
+}
+
 export async function uploadSkin(uuid: string, imagePath: string, variant: 'classic' | 'slim'): Promise<void> {
   const config = getConfig()
   const account = config.accounts.find(a => a.uuid === uuid)

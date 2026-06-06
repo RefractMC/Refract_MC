@@ -81,6 +81,11 @@ function Account() {
   const [skinVariant, setSkinVariant] = useState<'classic' | 'slim'>('classic')
   const [skinUploading, setSkinUploading] = useState(false)
   const [skinMsg, setSkinMsg]         = useState<{ ok: boolean; text: string } | null>(null)
+  const [capeTarget, setCapeTarget]   = useState<string | null>(null)
+  const [capes, setCapes]             = useState<Array<{ id: string; state: string; url: string; alias: string; dataUrl?: string; isRender?: boolean }>>([])
+  const [capesLoading, setCapesLoading] = useState(false)
+  const [capeUpdating, setCapeUpdating] = useState(false)
+  const [capeMsg, setCapeMsg]         = useState<{ ok: boolean; text: string } | null>(null)
 
   async function refresh() {
     const [nextAccounts, nextActive] = await Promise.all([
@@ -250,6 +255,20 @@ function Account() {
       }
     } finally {
       setSkinUploading(false)
+    }
+  }
+
+  async function handleSetCape(uuid: string, capeId: string | null) {
+    setCapeUpdating(true)
+    setCapeMsg(null)
+    try {
+      await api.auth.setCape(uuid, capeId)
+      setCapes(prev => prev.map(c => ({ ...c, state: c.id === capeId ? 'ACTIVE' : 'INACTIVE' })))
+      setCapeMsg({ ok: true, text: capeId ? 'Cape activated.' : 'Cape hidden.' })
+    } catch (e) {
+      setCapeMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setCapeUpdating(false)
     }
   }
 
@@ -527,6 +546,7 @@ function Account() {
                     type="button"
                     onClick={async () => {
                       if (skinTarget === account.uuid) { setSkinTarget(null); return }
+                      setCapeTarget(null)
                       setSkinTarget(account.uuid); setSkinPath(null); setSkinMsg(null); setSkinTexUrl(null)
                       if (account.type !== 'offline') {
                         const url = await api.auth.fetchSkinTextureUrl(account.uuid).catch(() => null)
@@ -535,8 +555,28 @@ function Account() {
                     }}
                     style={{ height:30, padding:'0 10px', background:'transparent', color:'var(--ink-3)', border:'1px solid var(--border-r)', cursor:'pointer', fontSize:12 }}
                   >
-                    🎨 Skin
+                    Skin
                   </button>
+                  {account.type === 'microsoft' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (capeTarget === account.uuid) { setCapeTarget(null); return }
+                        setSkinTarget(null)
+                        setCapeTarget(account.uuid)
+                        setCapeMsg(null)
+                        setCapesLoading(true)
+                        try {
+                          const list = await api.auth.fetchCapes(account.uuid)
+                          setCapes(list)
+                        } catch { setCapes([]) }
+                        finally { setCapesLoading(false) }
+                      }}
+                      style={{ height:30, padding:'0 10px', background:'transparent', color:'var(--ink-3)', border:'1px solid var(--border-r)', cursor:'pointer', fontSize:12 }}
+                    >
+                      Cape
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => logout(account.uuid)}
@@ -546,6 +586,76 @@ function Account() {
                     {t.account.signOut}
                   </button>
                 </div>
+
+                {/* Cape panel */}
+                {capeTarget === account.uuid && (
+                  <div style={{ marginTop:8, padding:12, background:'var(--bg)', border:'1px solid var(--border-r)', borderRadius:4, display:'flex', flexDirection:'column', gap:10 }}>
+                    <div style={{ fontSize:12, fontWeight:600, color:'var(--ink-3)', letterSpacing:'.06em' }}>CAPES</div>
+                    {capesLoading ? (
+                      <div style={{ color:'var(--ink-4)', fontSize:12 }}>Loading capes…</div>
+                    ) : capes.length === 0 ? (
+                      <div style={{ color:'var(--ink-4)', fontSize:12, lineHeight:1.5 }}>
+                        No capes on this account. Capes are earned through special Minecraft events.
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:2 }}>
+                        {/* Hide cape option */}
+                        <button
+                          type="button"
+                          title="Hide cape"
+                          disabled={capeUpdating}
+                          onClick={() => void handleSetCape(account.uuid, null)}
+                          style={{
+                            flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                            padding:'6px 8px', background:'var(--surface-2)',
+                            border:`1px solid ${capes.every(c => c.state !== 'ACTIVE') ? 'var(--accent)' : 'var(--border-r)'}`,
+                            borderRadius:4, cursor: capeUpdating ? 'not-allowed' : 'pointer',
+                            opacity: capeUpdating ? .6 : 1,
+                          }}
+                        >
+                          <div style={{
+                            width:50, height:80, background:'var(--surface-3)',
+                            border:'1px solid var(--border-r)', borderRadius:2,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            color:'var(--ink-4)', fontSize:18,
+                          }}>—</div>
+                          <span style={{ fontSize:9, color:'var(--ink-3)', whiteSpace:'nowrap' }}>None</span>
+                        </button>
+
+                        {capes.map(cape => (
+                          <button
+                            key={cape.id}
+                            type="button"
+                            title={cape.alias}
+                            disabled={capeUpdating}
+                            onClick={() => void handleSetCape(account.uuid, cape.id)}
+                            style={{
+                              flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                              padding:'6px 8px', background:'var(--surface-2)',
+                              border:`1px solid ${cape.state === 'ACTIVE' ? 'var(--accent)' : 'var(--border-r)'}`,
+                              borderRadius:4, cursor: capeUpdating ? 'not-allowed' : 'pointer',
+                              opacity: capeUpdating ? .6 : 1,
+                            }}
+                          >
+                            <img
+                              src={cape.dataUrl ?? cape.url}
+                              alt={cape.alias}
+                              style={{ display:'block', width:50, height:80, objectFit:'contain' }}
+                            />
+                            <span style={{ fontSize:9, color: cape.state === 'ACTIVE' ? 'var(--accent)' : 'var(--ink-3)', maxWidth:58, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {cape.alias}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {capeMsg && (
+                      <div style={{ fontSize:11, color: capeMsg.ok ? 'var(--grass)' : 'var(--lava)', lineHeight:1.4 }}>
+                        {capeMsg.text}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Skin change panel */}
                 {skinTarget === account.uuid && (

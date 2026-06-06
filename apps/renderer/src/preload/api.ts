@@ -32,6 +32,10 @@ export const api = {
       ipcRenderer.invoke('auth.browseSkin'),
     uploadSkin: (uuid: string, imagePath: string, variant: 'classic' | 'slim'): Promise<void> =>
       ipcRenderer.invoke('auth.uploadSkin', uuid, imagePath, variant),
+    fetchCapes: (uuid: string): Promise<Array<{ id: string; state: string; url: string; alias: string; dataUrl?: string; isRender?: boolean }>> =>
+      ipcRenderer.invoke('auth.fetchCapes', uuid),
+    setCape: (uuid: string, capeId: string | null): Promise<void> =>
+      ipcRenderer.invoke('auth.setCape', uuid, capeId),
   },
   theme: {
     list:    ()                         => ipcRenderer.invoke('theme.list'),

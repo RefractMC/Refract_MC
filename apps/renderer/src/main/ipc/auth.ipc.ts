@@ -9,6 +9,8 @@ import {
   setActiveAccount,
   loginYggdrasil,
   uploadSkin,
+  fetchAccountCapes,
+  setActiveCape,
 } from '../services/auth'
 import { dialog } from 'electron'
 import { handleIpc } from './handle'
@@ -50,5 +52,11 @@ export function registerAuthIpc(): void {
 
   handleIpc('auth.uploadSkin', async (_event, uuid, imagePath, variant) =>
     uploadSkin(String(uuid), String(imagePath), (String(variant) as 'classic' | 'slim'))
+  )
+
+  handleIpc('auth.fetchCapes', async (_event, uuid) => fetchAccountCapes(String(uuid)))
+
+  handleIpc('auth.setCape', async (_event, uuid, capeId) =>
+    setActiveCape(String(uuid), capeId == null ? null : String(capeId))
   )
 }
