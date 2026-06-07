@@ -5,7 +5,6 @@ import { api, type SafeAccount } from '@/lib/api'
 import { useT } from '@/i18n'
 import { useThemeStore } from '@/stores/theme'
 import { SkinViewer3DLazy } from '../ui/SkinViewer3DLazy'
-import type { Instance } from '@refract/core'
 import discordIcon          from '@/assets/discord-icon.webp'
 import libraryIconRaw    from '@/assets/instance-library.svg?raw'
 import browseModsIconRaw from '@/assets/browse-mods.svg?raw'
@@ -205,7 +204,6 @@ function SkinPopup({ friend, onClose }: { friend: Friend; onClose: () => void })
 function FriendsPanel() {
   const t = useT()
   const [friends, setFriends] = useState<Friend[]>([])
-  const [instances, setInstances] = useState<Instance[]>([])
   const [adding, setAdding] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -217,7 +215,6 @@ function FriendsPanel() {
   useEffect(() => {
     api.friends.list().then(list => setFriends(list as Friend[])).catch(() => {})
     api.auth.active().then(a => setMyUsername(a?.username ?? null)).catch(() => {})
-    api.instance.list().then(setInstances).catch(() => {})
   }, [])
 
   const handleNoteChange = useCallback(async (uuid: string, note: string) => {
@@ -365,7 +362,7 @@ function FriendsPanel() {
         </div>
       ) : (
         friends.map(friend => (
-          <FriendRow key={friend.uuid} friend={friend} instances={instances} onRemove={() => removeFriend(friend.uuid)} onNoteChange={(note) => handleNoteChange(friend.uuid, note)} onSkinClick={() => setSkinTarget(friend)} />
+          <FriendRow key={friend.uuid} friend={friend} onRemove={() => removeFriend(friend.uuid)} onNoteChange={(note) => handleNoteChange(friend.uuid, note)} onSkinClick={() => setSkinTarget(friend)} />
         ))
       )}
       {skinTarget && <SkinPopup friend={skinTarget} onClose={() => setSkinTarget(null)} />}
@@ -373,9 +370,8 @@ function FriendsPanel() {
   )
 }
 
-function FriendRow({ friend, instances, onRemove, onNoteChange, onSkinClick }: {
+function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
   friend: Friend
-  instances: Instance[]
   onRemove: () => void
   onNoteChange: (note: string) => void
   onSkinClick: () => void
@@ -411,12 +407,6 @@ function FriendRow({ friend, instances, onRemove, onNoteChange, onSkinClick }: {
     const trimmed = noteDraft.trim()
     if (trimmed !== (friend.note ?? '')) onNoteChange(trimmed)
   }
-
-  // installed instances shared with this friend (same MC version)
-  const sharedInstances = instances.filter(i => i.isInstalled)
-  const versionChips = [...new Set(sharedInstances.map(i =>
-    i.modLoader ? `${i.minecraftVersion} ${i.modLoader}` : i.minecraftVersion
-  ))].slice(0, 3)
 
   return (
     <div
@@ -487,19 +477,6 @@ function FriendRow({ friend, instances, onRemove, onNoteChange, onSkinClick }: {
         </div>
       ) : null}
 
-      {/* Shared instances chips */}
-      {versionChips.length > 0 && hovered && (
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 4, paddingLeft: 32 }}>
-          {versionChips.map(v => (
-            <span key={v} style={{ fontSize: 9, padding: '1px 5px', background: 'var(--accent-tint)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 2, whiteSpace: 'nowrap' }}>
-              {v}
-            </span>
-          ))}
-          {sharedInstances.length > versionChips.length && (
-            <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>+{sharedInstances.length - versionChips.length}</span>
-          )}
-        </div>
-      )}
     </div>
   )
 }
