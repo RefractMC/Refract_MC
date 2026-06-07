@@ -267,10 +267,9 @@ export async function completeMicrosoftLogin(deviceCode: string): Promise<SafeAc
   })
 
   const userHash = xbl.DisplayClaims.xui[0]?.uhs
-  const xuid = xbl.DisplayClaims.xui[0]?.xid ?? ''
   if (!userHash) throw new Error('Xbox Live response did not include a user hash.')
 
-  const xsts = await postJson<{ Token: string }>(XSTS_AUTH_URL, {
+  const xsts = await postJson<{ Token: string; DisplayClaims: { xui: Array<{ xid?: string }> } }>(XSTS_AUTH_URL, {
     Properties: {
       SandboxId: 'RETAIL',
       UserTokens: [xbl.Token],
@@ -278,6 +277,8 @@ export async function completeMicrosoftLogin(deviceCode: string): Promise<SafeAc
     RelyingParty: 'rp://api.minecraftservices.com/',
     TokenType: 'JWT',
   })
+
+  const xuid = xsts.DisplayClaims.xui[0]?.xid ?? ''
 
   const mcToken = await postJson<{ access_token: string; expires_in: number }>(MC_AUTH_URL, {
     identityToken: `XBL3.0 x=${userHash};${xsts.Token}`,
