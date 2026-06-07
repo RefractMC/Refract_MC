@@ -85,6 +85,9 @@ export const api = {
     export:         (id: string): Promise<string | null>       => ipcRenderer.invoke('instance.export', id),
     duplicate:      (id: string)                               => ipcRenderer.invoke('instance.duplicate', id),
     importMultiMc:  (): Promise<import('@refract/core').Instance | null> => ipcRenderer.invoke('instance.importMultiMc'),
+    scanExternal:   ()             => ipcRenderer.invoke('instance.scanExternal'),
+    linkExternal:   (ext: unknown) => ipcRenderer.invoke('instance.linkExternal', ext),
+    importExternal: (ext: unknown) => ipcRenderer.invoke('instance.importExternal', ext),
   },
   window: {
     minimize: (): void => ipcRenderer.send('window:minimize'),

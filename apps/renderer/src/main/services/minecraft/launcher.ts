@@ -131,7 +131,7 @@ export async function launchInstance(
   const requiredJava = versionJson.javaVersion?.majorVersion ?? 8
   const { exe: javaExe, version: javaVersion } = await resolveJava(requiredJava, instance.javaPath)
 
-  const gameDir = join(resolveInstanceDir(instanceId), 'minecraft')
+  const gameDir = instance.externalGameDir ?? join(resolveInstanceDir(instanceId), 'minecraft')
   mkdirSync(join(gameDir, 'mods'), { recursive: true })
   mkdirSync(join(gameDir, 'saves'), { recursive: true })
 

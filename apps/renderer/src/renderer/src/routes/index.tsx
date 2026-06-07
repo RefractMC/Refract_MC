@@ -18,6 +18,8 @@ export const Route = createFileRoute('/')({
   component: Library,
 })
 
+type ExternalInstance = import('../env').ExternalInstance
+
 type ActiveAccount = Awaited<ReturnType<typeof api.auth.active>>
 
 const CHANGELOG_URL = 'https://raw.githubusercontent.com/RefractMC/Refract_MC/main/CHANGELOG.md'
@@ -642,6 +644,9 @@ function Library() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null)
   const [noLicenseTarget, setNoLicenseTarget] = useState<Instance | null>(null)
+  const [syncOpen, setSyncOpen] = useState(false)
+  const [externalInstances, setExternalInstances] = useState<ExternalInstance[] | null>(null)
+  const [externalScanning, setExternalScanning] = useState(false)
 
   const queryClient = useQueryClient()
   const { data: instances = [], isLoading } = useInstances()
@@ -1010,6 +1015,26 @@ function Library() {
                   </NavBtn>
                 </>
               )}
+              <button
+                onClick={() => setSyncOpen(true)}
+                title="Sync instances from other launchers"
+                style={{
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 13, fontWeight: 600,
+                  color: 'var(--ink)',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border-r)',
+                  borderRadius: 8,
+                  padding: '8px 14px',
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  transition: 'background 100ms',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-3)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-2)' }}
+              >
+                ⇄ Sync
+              </button>
               <button
                 onClick={() => setCreateOpen(true)}
                 style={{
@@ -1490,6 +1515,34 @@ function Library() {
           onNewInstance={() => { setOnboardingStep(3); setCreateOpen(true) }}
         />
       )}
+
+      {syncOpen && (
+        <SyncPanel
+          instances={externalInstances}
+          scanning={externalScanning}
+          onClose={() => setSyncOpen(false)}
+          onScan={async () => {
+            setExternalScanning(true)
+            try {
+              const found = await window.api.instance.scanExternal()
+              setExternalInstances(found)
+            } catch { setExternalInstances([]) }
+            finally { setExternalScanning(false) }
+          }}
+          onLink={async (ext) => {
+            const inst = await window.api.instance.linkExternal(ext)
+            await queryClient.invalidateQueries({ queryKey: ['instances'] })
+            void recordActivity(`Linked "${inst.name}" from ${ext.sourceName}`)
+            return inst
+          }}
+          onImport={async (ext) => {
+            const inst = await window.api.instance.importExternal(ext)
+            await queryClient.invalidateQueries({ queryKey: ['instances'] })
+            void recordActivity(`Imported "${inst.name}" from ${ext.sourceName}`)
+            return inst
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1501,6 +1554,160 @@ function fmtSeconds(s: number): string {
   if (h === 0) return `${m}m`
   if (m === 0) return `${h}h`
   return `${h}h ${m}m`
+}
+
+const SOURCE_META: Record<string, { label: string; color: string }> = {
+  prism:      { label: 'Prism Launcher', color: '#e67e22' },
+  multimc:    { label: 'MultiMC',        color: '#4caf50' },
+  modrinth:   { label: 'Modrinth',       color: '#1bd96a' },
+  atlauncher: { label: 'ATLauncher',     color: '#3ea5d6' },
+  curseforge: { label: 'CurseForge',     color: '#f16436' },
+  gdlauncher: { label: 'GDLauncher',     color: '#8e44ad' },
+}
+
+interface SyncPanelProps {
+  instances: ExternalInstance[] | null
+  scanning: boolean
+  onClose: () => void
+  onScan: () => Promise<void>
+  onLink: (ext: ExternalInstance) => Promise<Instance>
+  onImport: (ext: ExternalInstance) => Promise<Instance>
+}
+
+function SyncPanel({ instances, scanning, onClose, onScan, onLink, onImport }: SyncPanelProps) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [done, setDone] = useState<Set<string>>(new Set())
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleAction(ext: ExternalInstance, action: 'link' | 'import') {
+    const key = `${ext.source}:${ext.name}:${action}`
+    setBusy(key)
+    setErr(null)
+    try {
+      if (action === 'link') await onLink(ext)
+      else await onImport(ext)
+      setDone(prev => { const n = new Set(prev); n.add(`${ext.source}:${ext.name}`); return n })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const bySource: Record<string, ExternalInstance[]> = {}
+  for (const inst of instances ?? []) {
+    if (!bySource[inst.source]) bySource[inst.source] = []
+    bySource[inst.source].push(inst)
+  }
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <div style={{ width: 580, maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', overflow: 'hidden' }}>
+        {/* header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--line)' }}>
+          <div>
+            <div style={{ fontFamily: "'VT323',monospace", fontSize: 22, letterSpacing: '.1em', color: 'var(--accent)' }}>SYNC INSTANCES</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>Detect instances from other launchers and launch or import them</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4 }}>✕</button>
+        </div>
+
+        {/* scan button */}
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => { void onScan() }}
+            disabled={scanning}
+            style={{ fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.08em', padding: '6px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: scanning ? 'default' : 'pointer', opacity: scanning ? .6 : 1 }}
+          >
+            {scanning ? 'SCANNING…' : 'SCAN LAUNCHERS'}
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+            Prism · MultiMC · Modrinth · ATLauncher · CurseForge · GDLauncher
+          </span>
+        </div>
+
+        {/* body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 20px' }}>
+          {err && <div style={{ marginBottom: 10, fontSize: 12, color: '#ff6b6b', background: 'rgba(255,100,100,.1)', border: '1px solid rgba(255,100,100,.2)', borderRadius: 6, padding: '8px 12px' }}>{err}</div>}
+
+          {instances === null && !scanning && (
+            <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 13, padding: '32px 0' }}>
+              Click <strong>SCAN LAUNCHERS</strong> to detect installed instances
+            </div>
+          )}
+
+          {instances !== null && instances.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 13, padding: '32px 0' }}>
+              No instances found. Make sure Prism Launcher, Modrinth App, or other supported launchers are installed.
+            </div>
+          )}
+
+          {Object.entries(bySource).map(([source, list]) => {
+            const meta = SOURCE_META[source] ?? { label: source, color: 'var(--accent)' }
+            return (
+              <div key={source} style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: meta.color }}>{meta.label}</span>
+                  <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>— {list.length} instance{list.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {list.map(ext => {
+                    const key = `${ext.source}:${ext.name}`
+                    const isDone = done.has(key)
+                    const isLinkBusy = busy === `${key}:link`
+                    const isImportBusy = busy === `${key}:import`
+                    return (
+                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: isDone ? 'rgba(var(--accent-rgb),.06)' : 'var(--surface-2)', border: `1px solid ${isDone ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ext.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
+                            MC {ext.minecraftVersion}
+                            {ext.modLoader && <span style={{ marginLeft: 6, color: 'var(--accent)' }}>{ext.modLoader}{ext.modLoaderVersion ? ` ${ext.modLoaderVersion}` : ''}</span>}
+                          </div>
+                        </div>
+                        {isDone ? (
+                          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>✓ Added</span>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <button
+                              disabled={!!busy}
+                              onClick={() => { void handleAction(ext, 'link') }}
+                              title="Link — launch directly from this launcher's folder (no copying)"
+                              style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--surface-3)', border: '1px solid var(--border-r)', borderRadius: 6, color: 'var(--ink)', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
+                            >
+                              {isLinkBusy ? '…' : '⇄ Link'}
+                            </button>
+                            <button
+                              disabled={!!busy}
+                              onClick={() => { void handleAction(ext, 'import') }}
+                              title="Import — copy mods/saves into Refract (independent copy)"
+                              style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--accent)', border: 'none', borderRadius: 6, color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
+                            >
+                              {isImportBusy ? '…' : '↓ Import'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* legend */}
+        <div style={{ padding: '10px 20px', borderTop: '1px solid var(--line)', display: 'flex', gap: 16, fontSize: 10, color: 'var(--ink-4)' }}>
+          <span><strong style={{ color: 'var(--ink)' }}>⇄ Link</strong> — launches from the original folder, mods stay in sync automatically</span>
+          <span><strong style={{ color: 'var(--ink)' }}>↓ Import</strong> — copies mods/saves/configs into Refract (independent)</span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function computeStreak(instances: Instance[]): { streak: number; savesLeft: number } {

@@ -3,6 +3,17 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { Instance, CreateInstanceInput } from '@refract/core'
 
+export interface ExternalInstance {
+  source: 'prism' | 'multimc' | 'modrinth' | 'atlauncher' | 'curseforge' | 'gdlauncher'
+  sourceName: string
+  name: string
+  minecraftVersion: string
+  modLoader?: string
+  modLoaderVersion?: string
+  instanceDir: string
+  gameDir: string
+}
+
 declare global {
   const __APP_VERSION__: string
   interface Window {
@@ -169,6 +180,9 @@ declare global {
         export:       (id: string) => Promise<string | null>
         duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
         importMultiMc:  () => Promise<import('@refract/core').Instance | null>
+        scanExternal:   () => Promise<ExternalInstance[]>
+        linkExternal:   (ext: ExternalInstance) => Promise<import('@refract/core').Instance>
+        importExternal: (ext: ExternalInstance) => Promise<import('@refract/core').Instance>
       }
       system: {
         totalMemoryMb: () => Promise<number>

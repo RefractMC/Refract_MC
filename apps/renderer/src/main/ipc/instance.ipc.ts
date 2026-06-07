@@ -14,6 +14,7 @@ import { spawn } from 'child_process'
 import { resolveInstanceDir } from '../services/instance-store'
 import { importMultiMcInstance } from '../services/multimc-import'
 import { paths } from '../services/paths'
+import { scanExternalInstances, type ExternalInstance } from '../services/external-launchers'
 
 function zipDirectory(src: string, dst: string): Promise<void> {
   const psEscape = (s: string) => s.replace(/'/g, "''")
@@ -104,6 +105,53 @@ export function registerInstanceIpc(): void {
     if (canceled || !filePath) return null
     await zipDirectory(instanceDir, filePath)
     return filePath
+  })
+
+  handleIpc('instance.scanExternal', () => scanExternalInstances())
+
+  handleIpc('instance.linkExternal', (_event, ext) => {
+    const e = ext as ExternalInstance
+    const instance = createAndSaveInstance({
+      name: e.name,
+      minecraftVersion: e.minecraftVersion,
+      modLoader: e.modLoader as import('@refract/core').ModLoader | undefined,
+      modLoaderVersion: e.modLoaderVersion,
+      memoryMb: 2048,
+      isInstalled: false,
+      externalGameDir: e.gameDir,
+      externalSource: e.sourceName,
+    })
+    return instance
+  })
+
+  handleIpc('instance.importExternal', (_event, ext) => {
+    const e = ext as ExternalInstance
+    const { readdirSync: rSync } = require('fs') as typeof import('fs')
+    const { cpSync: cp } = require('fs') as typeof import('fs')
+    const COPY_DIRS = ['mods', 'resourcepacks', 'shaderpacks', 'config', 'saves', 'datapacks']
+
+    const instance = createAndSaveInstance({
+      name: e.name,
+      minecraftVersion: e.minecraftVersion,
+      modLoader: e.modLoader as import('@refract/core').ModLoader | undefined,
+      modLoaderVersion: e.modLoaderVersion,
+      memoryMb: 2048,
+      isInstalled: false,
+      group: 'Imported',
+    })
+
+    const destBase = join(resolveInstanceDir(instance.id), 'minecraft')
+    for (const dir of COPY_DIRS) {
+      const src = join(e.gameDir, dir)
+      if (!existsSync(src)) continue
+      const dest = join(destBase, dir)
+      mkdirSync(dest, { recursive: true })
+      for (const entry of rSync(src)) {
+        try { cp(join(src, entry), join(dest, entry), { recursive: true }) } catch { /* skip locked */ }
+      }
+    }
+
+    return instance
   })
 
   handleIpc('instance.browseFolder', async () => {

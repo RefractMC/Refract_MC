@@ -31,6 +31,8 @@ export interface Instance {
   mods?: InstalledMod[]
   isInstalled?: boolean
   pinned?: boolean
+  externalGameDir?: string  // when set, launch uses this dir instead of the default managed path
+  externalSource?: string   // human label, e.g. "Prism Launcher"
 }
 
 export type CreateInstanceInput = Omit<Instance, 'id' | 'createdAt' | 'totalTimePlayed' | 'mods' | 'isInstalled'>

@@ -200,7 +200,10 @@ function createBrowserApi(): RefractAPI {
       browseFolder:  async () => null,
       export:        async () => null,
       duplicate:     async () => null,
-      importMultiMc: async () => { throw new Error('MultiMC import requires the Electron app.') },
+      importMultiMc:  async () => { throw new Error('MultiMC import requires the Electron app.') },
+      scanExternal:   async () => [],
+      linkExternal:   async () => { throw new Error('Link requires the Electron app.') },
+      importExternal: async () => { throw new Error('Import requires the Electron app.') },
     },
     window: {
       minimize: () => undefined,
