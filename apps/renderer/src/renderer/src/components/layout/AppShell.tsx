@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react'
+import { useLocation } from '@tanstack/react-router'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation()
   return (
     <div style={{
       height: '100vh',
@@ -37,7 +39,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             animation:'ambient-2 24s ease-in-out infinite alternate',
           }} />
         </div>
-        <div style={{ flex:1, minHeight:0, overflowY:'auto', overflowX:'hidden', padding:'24px 28px 28px', position:'relative', zIndex:1 }}>
+        <div
+          key={pathname}
+          style={{ flex:1, minHeight:0, overflowY:'auto', overflowX:'hidden', padding:'24px 28px 28px', position:'relative', zIndex:1, animation:'page-enter 210ms cubic-bezier(.25,.46,.45,.94) both' }}
+        >
           {children}
         </div>
         <StatusBar />

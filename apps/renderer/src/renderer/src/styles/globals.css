@@ -90,6 +90,18 @@ body::before {
 .drag-region    { -webkit-app-region: drag; }
 .no-drag-region { -webkit-app-region: no-drag; }
 
+/* ── Page transition ─────────────────────────────────────────────────────── */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.993);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* ── Ambient background animation ───────────────────────────────────────── */
 @keyframes ambient-1 {
   0%   { transform: translate(0, 0) scale(1); }
