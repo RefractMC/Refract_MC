@@ -513,7 +513,8 @@ export function Sidebar() {
       background:'var(--sb)', borderRight:'1px solid var(--line)',
       display:'flex', flexDirection:'column',
       padding: compact ? '14px 8px 12px' : '14px 12px 12px',
-      minHeight:0, overflowY:'auto',
+      transition: 'padding 220ms cubic-bezier(.4,0,.2,1)',
+      minHeight:0, overflow:'hidden',
     }}>
       {/* Brand */}
       <div style={{ display:'flex', alignItems:'center', justifyContent: compact ? 'center' : 'flex-start', gap:10, padding:'0 6px 10px', borderBottom:'1px solid var(--sb-line)', marginBottom:6 }}>

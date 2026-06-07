@@ -11,6 +11,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       gridTemplateColumns: 'var(--sidebar-width) 1fr',
       gridTemplateRows: 'var(--titlebar-height) 1fr',
       overflow: 'hidden',
+      transition: 'grid-template-columns 220ms cubic-bezier(.4,0,.2,1)',
       background: 'var(--bg)',
       position: 'relative',
       zIndex: 1,
