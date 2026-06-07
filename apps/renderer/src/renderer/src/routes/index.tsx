@@ -1503,6 +1503,44 @@ function fmtSeconds(s: number): string {
   return `${h}h ${m}m`
 }
 
+function computeStreak(instances: Instance[]): { streak: number; savesLeft: number } {
+  const played = new Set<string>()
+  for (const inst of instances) {
+    for (const [date, secs] of Object.entries(inst.playtimeLog ?? {})) {
+      if (secs > 0) played.add(date)
+    }
+  }
+  if (played.size === 0) return { streak: 0, savesLeft: 2 }
+
+  const now = new Date()
+  const todayStr = now.toISOString().slice(0, 10)
+  const currentMonth = todayStr.slice(0, 7)
+  const missedPerMonth: Record<string, number> = {}
+  let streak = 0
+
+  // Grace period: if today not played yet, start walking from yesterday
+  const startI = played.has(todayStr) ? 0 : 1
+
+  for (let i = startI; i < 400; i++) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    const month = dateStr.slice(0, 7)
+
+    if (played.has(dateStr)) {
+      streak++
+    } else {
+      // Gap: within streak or before first played day — consume a monthly save
+      missedPerMonth[month] = (missedPerMonth[month] ?? 0) + 1
+      if (missedPerMonth[month] > 2) break
+      // else: save covers this day, continue
+    }
+  }
+
+  const savesLeft = Math.max(0, 2 - (missedPerMonth[currentMonth] ?? 0))
+  return { streak, savesLeft }
+}
+
 function PlaytimePanel({ instances }: { instances: Instance[] }) {
   const sorted = [...instances]
     .filter(i => i.totalTimePlayed > 0)
@@ -1530,6 +1568,7 @@ function PlaytimePanel({ instances }: { instances: Instance[] }) {
   const maxDay = Math.max(...days.map(d => d.seconds), 1)
 
   const totalHours = Math.floor(grandTotal / 3600)
+  const { streak, savesLeft } = computeStreak(instances)
 
   if (sorted.length === 0 && grandTotal === 0) {
     return (
@@ -1586,6 +1625,36 @@ function PlaytimePanel({ instances }: { instances: Instance[] }) {
           })}
         </div>
       </div>
+
+      {/* Streak */}
+      {streak > 0 && (() => {
+        const streakColor = streak >= 90 ? '#a020f0' : streak >= 31 ? '#ff2200' : '#ff9966'
+        return (
+          <div style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ fontSize: 24, lineHeight: 1 }}>🔥</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: streakColor, lineHeight: 1 }}>{streak}</span>
+                <span style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.04em' }}>day streak</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {[0, 1].map(idx => (
+                  <div key={idx} title={idx < savesLeft ? 'Save available' : 'Save used'} style={{
+                    width: 10, height: 10, borderRadius: '50%',
+                    background: idx < savesLeft ? streakColor : 'var(--surface-2)',
+                    border: `1.5px solid ${idx < savesLeft ? streakColor : 'var(--line)'}`,
+                    boxShadow: idx < savesLeft ? `0 0 6px ${streakColor}88` : 'none',
+                    transition: 'background 300ms, border-color 300ms, box-shadow 300ms',
+                  }} />
+                ))}
+              </div>
+              <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>{savesLeft}/2 saves left</span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Total */}
       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-4)', textAlign: 'right' }}>
