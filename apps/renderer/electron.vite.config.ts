@@ -27,7 +27,11 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: workspaceExclude })],
+    // Bundle @electron-toolkit/preload into the preload instead of leaving it
+    // an external runtime require: with sandbox enabled, a preload's require()
+    // is restricted to "electron" + core modules, so a third-party require
+    // throws and the whole preload (and thus window.api) fails to load.
+    plugins: [externalizeDepsPlugin({ exclude: [...workspaceExclude, '@electron-toolkit/preload'] })],
     resolve: { alias: workspaceAlias },
   },
   renderer: {
