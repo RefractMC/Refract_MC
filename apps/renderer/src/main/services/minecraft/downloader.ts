@@ -184,7 +184,9 @@ async function downloadAssets(
     const virtualDir = join(paths.assets, 'virtual', versionJson.assetIndex.id)
     for (const [name, obj] of Object.entries(index.objects)) {
       const src = join(paths.assets, 'objects', obj.hash.slice(0, 2), obj.hash)
-      const dst = join(virtualDir, name)
+      const dst = resolve(virtualDir, name)
+      // The index is network-fetched: reject object names that escape the dir.
+      if (relative(virtualDir, dst).startsWith('..')) continue
       if (!existsSync(src) || existsSync(dst)) continue
       mkdirSync(dirname(dst), { recursive: true })
       try { copyFileSync(src, dst) } catch { /* ignore */ }
@@ -205,7 +207,9 @@ export function linkLegacyResources(versionJson: VersionJson, gameDir: string): 
   const resourcesDir = join(gameDir, 'resources')
   for (const [name, obj] of Object.entries(index.objects)) {
     const src = join(paths.assets, 'objects', obj.hash.slice(0, 2), obj.hash)
-    const dst = join(resourcesDir, name)
+    const dst = resolve(resourcesDir, name)
+    // The index is network-fetched: reject object names that escape the dir.
+    if (relative(resourcesDir, dst).startsWith('..')) continue
     if (!existsSync(src) || existsSync(dst)) continue
     mkdirSync(dirname(dst), { recursive: true })
     try { copyFileSync(src, dst) } catch { /* ignore */ }
