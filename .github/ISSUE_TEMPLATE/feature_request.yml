@@ -1,0 +1,49 @@
+name: ✨ Feature request
+description: Suggest a new feature or an improvement to Refract.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the idea! Tell us what you're trying to achieve and we'll figure out the best way to support it.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched [existing issues](https://github.com/RefractMC/Refract_MC/issues?q=is%3Aissue) and this hasn't already been requested.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do, and what's getting in the way today?
+      placeholder: I manage a lot of instances and there's no way to group them by …
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Refract to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you've thought about.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Mockups, links to how other launchers do it, etc.
+    validations:
+      required: false

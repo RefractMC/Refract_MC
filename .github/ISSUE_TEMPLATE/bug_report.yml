@@ -1,0 +1,121 @@
+name: 🐛 Bug report
+description: Report something that is broken or behaving incorrectly in Refract.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please fill in as much as you can —
+        the version, mod loader, and logs fields are what let us reproduce and fix issues quickly.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched [existing issues](https://github.com/RefractMC/Refract_MC/issues?q=is%3Aissue) and this hasn't been reported.
+          required: true
+        - label: I'm on the latest version of Refract (or I've noted my version below).
+          required: true
+        - label: I tried **Repair** on the instance (if this is a launch/install problem).
+          required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen instead.
+      placeholder: When I launch NeoForge 1.21.1, the game crashes immediately instead of opening.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps so we can see it happen too.
+      placeholder: |
+        1. Create a new instance with …
+        2. Click Play
+        3. See the error
+    validations:
+      required: true
+
+  - type: input
+    id: refract-version
+    attributes:
+      label: Refract version
+      description: Find it in Settings, or the title-bar / About. e.g. 1.1.0
+      placeholder: "1.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: mc-version
+    attributes:
+      label: Minecraft version
+      placeholder: "1.21.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options:
+        - None (Vanilla)
+        - Fabric
+        - Quilt
+        - Forge
+        - NeoForge
+    validations:
+      required: true
+
+  - type: input
+    id: loader-version
+    attributes:
+      label: Mod loader version
+      description: Leave blank for Vanilla. e.g. NeoForge 21.1.233
+      placeholder: "21.1.233"
+    validations:
+      required: false
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      description: Paste the first line of `java -version`, or the Java you selected in the instance.
+      placeholder: 'openjdk version "21.0.4" 2024-07-16'
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / crash report
+      description: |
+        Paste the launcher log and/or the game's crash report. This is auto-formatted, no backticks needed.
+        Logs live in the instance folder (Console / crash-reports), or via the in-app Console.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, mod list, or other context that might help.
+    validations:
+      required: false

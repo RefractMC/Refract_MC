@@ -1,0 +1,6 @@
+# Force every issue through a template so reports stay consistent.
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & discussion
+    url: https://github.com/RefractMC/Refract_MC/discussions
+    about: For usage questions, ideas, and general chat — please use Discussions instead of opening an issue.
