@@ -82,23 +82,42 @@ function substituteVars(str: string, vars: Record<string, string>): string {
   return str.replace(/\$\{(\w+)\}/g, (_, key) => vars[key] ?? `\${${key}}`)
 }
 
+// "group:artifact:version[:classifier@ext]" → "group:artifact[:classifier]".
+// Dropping the version lets us detect two libraries that are the same artifact
+// at different versions; keeping the classifier prevents a natives jar (e.g.
+// lwjgl:natives-windows) from collapsing onto its plain counterpart.
+function mavenKey(name: string): string {
+  const [group, artifact, , classifierExt] = name.split(':')
+  const classifier = classifierExt ? classifierExt.split('@')[0] : ''
+  return classifier ? `${group}:${artifact}:${classifier}` : `${group}:${artifact}`
+}
+
 function buildClasspath(ctx: LaunchContext): string {
   const sep = process.platform === 'win32' ? ';' : ':'
-  const jars: string[] = []
   const allLibs = [...ctx.versionJson.libraries]
   if (ctx.fabricJson) allLibs.push(...ctx.fabricJson.libraries)
 
+  // Dedupe by maven group:artifact(:classifier) so a vanilla library and a
+  // loader-overlay library that ship different versions of the same artifact
+  // (ASM, log4j, guava…) don't both land on the classpath — duplicates make the
+  // JVM resolve whichever appears first, which silently broke older Forge. The
+  // overlay is appended after vanilla, so the later set() wins: the loader's
+  // chosen version replaces vanilla's while keeping its classpath position.
+  const jars = new Map<string, string>()
   for (const lib of allLibs) {
     if (lib.rules && !ruleApplies(lib.rules)) continue
+    let jarPath: string
     if (lib.downloads?.artifact) {
-      jars.push(join(ctx.librariesDir, lib.downloads.artifact.path))
-    } else if (lib.name && lib.url) {
-      jars.push(join(ctx.librariesDir, mavenCoordToPath(lib.name)))
+      jarPath = join(ctx.librariesDir, lib.downloads.artifact.path)
+    } else if (lib.url) {
+      jarPath = join(ctx.librariesDir, mavenCoordToPath(lib.name))
+    } else {
+      continue
     }
+    jars.set(mavenKey(lib.name), jarPath)
   }
 
-  jars.push(ctx.clientJar)
-  return jars.join(sep)
+  return [...jars.values(), ctx.clientJar].join(sep)
 }
 
 export function buildLaunchCommand(ctx: LaunchContext): string[] {
