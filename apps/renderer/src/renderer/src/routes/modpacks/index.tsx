@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type React from 'react'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { api } from '@/lib/api'
+import { htmlToText } from '@/lib/sanitize'
 import type { ModrinthProject, ModrinthVersion, ModrinthSortIndex, ModrinthProjectType, Instance, CFProject, CFFile, CFProjectDetail } from '@refract/core'
 import { useT } from '@/i18n'
 
@@ -84,9 +85,7 @@ function stripMarkdown(text: string): string {
     .replace(/[^\S\n]*\n[^\S\n]*/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[​-‍﻿‎‏]/g, '')
-  const div = document.createElement('div')
-  div.innerHTML = md
-  return (div.textContent ?? '').trim()
+  return htmlToText(md).trim()
 }
 
 function tabColor(tab: ContentTab): string {
