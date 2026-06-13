@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { existsSync, readFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, statSync } from 'fs'
 import { spawn, exec, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 
@@ -55,11 +55,17 @@ function readQuiltJson(versionId: string): VersionJson | null {
 
 async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Promise<{ exe: string; version: number }> {
   if (instanceJavaPath) {
-    if (existsSync(instanceJavaPath)) return { exe: instanceJavaPath, version: requiredMajor }
-    const exeWin  = join(instanceJavaPath, 'bin', 'java.exe')
-    if (existsSync(exeWin)) return { exe: exeWin, version: requiredMajor }
-    const exeUnix = join(instanceJavaPath, 'bin', 'java')
-    if (existsSync(exeUnix)) return { exe: exeUnix, version: requiredMajor }
+    // The stored path may be the java executable itself or the JDK home dir.
+    // Only spawn it directly when it's a file — spawning a directory throws
+    // ENOENT. Trim stray whitespace that can sneak in from manual entry.
+    const candidate = instanceJavaPath.trim()
+    if (candidate) {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return { exe: candidate, version: requiredMajor }
+      const exeWin  = join(candidate, 'bin', 'java.exe')
+      if (existsSync(exeWin)) return { exe: exeWin, version: requiredMajor }
+      const exeUnix = join(candidate, 'bin', 'java')
+      if (existsSync(exeUnix)) return { exe: exeUnix, version: requiredMajor }
+    }
   }
 
   const [detected, managed] = await Promise.all([
@@ -70,8 +76,14 @@ async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Pr
   const installs = [...detected, ...managed.filter(j => !seen.has(j.path))]
     .sort((a, b) => b.version - a.version)
 
-  // Prefer exact version match; never fall back to an incompatible version
-  const match = installs.find(j => j.version >= requiredMajor)
+  // Prefer the closest Java at or above the requirement (smallest eligible
+  // major), not the newest installed. Forge/NeoForge's module bootstrap is
+  // built against a specific Java and can misbehave on a much newer JDK, so
+  // handing Minecraft 21 a stray Java 24/25 is worse than the exact match.
+  const eligible = installs.filter(j => j.version >= requiredMajor)
+  const match = eligible.length
+    ? eligible.reduce((best, j) => (j.version < best.version ? j : best))
+    : undefined
   if (match) {
     const exe = join(match.path, 'bin', 'java.exe')
     if (existsSync(exe)) return { exe, version: match.version }
@@ -179,6 +191,26 @@ export async function launchInstance(
   const args = rawArgs.filter(arg =>
     !versionGatedFlags.some(({ flag, minJava }) => arg.startsWith(flag) && javaVersion < minJava)
   )
+
+  // Preflight the loader module path: a Forge/NeoForge "-p" entry pointing at a
+  // jar that was never downloaded makes the JVM silently drop the module and
+  // crash deep inside BootstrapLauncher ("Unknown module: cpw.mods.
+  // securejarhandler"). Catch it here and tell the user to repair instead.
+  if (isForge) {
+    const pIdx = args.indexOf('-p')
+    const modulePath = pIdx >= 0 ? args[pIdx + 1] : undefined
+    if (modulePath) {
+      const cpSep = process.platform === 'win32' ? ';' : ':'
+      const missing = modulePath.split(cpSep).filter(jar => jar && !existsSync(jar))
+      if (missing.length > 0) {
+        throw new Error(
+          `This ${instance.modLoader} install is incomplete — ${missing.length} loader ` +
+          `librar${missing.length === 1 ? 'y is' : 'ies are'} missing. ` +
+          'Please repair or reinstall this instance.'
+        )
+      }
+    }
+  }
 
   const proc = spawn(exe, args, {
     cwd: gameDir,
