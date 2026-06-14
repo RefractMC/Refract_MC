@@ -24,6 +24,7 @@ export interface AppConfig {
     encryptedAccessToken?: string
     encryptedRefreshToken?: string
     yggdrasilServer?: string
+    needsReauth?: boolean
   }>
 }
 

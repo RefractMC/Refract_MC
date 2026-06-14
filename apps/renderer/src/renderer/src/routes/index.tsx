@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useRef } from 'react'
 import type React from 'react'
@@ -650,6 +650,7 @@ function Library() {
   const [externalScanning, setExternalScanning] = useState(false)
 
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { data: instances = [], isLoading } = useInstances()
   const createInstance = useCreateInstance()
   const updateInstance = useUpdateInstance()
@@ -818,7 +819,16 @@ function Library() {
       setRunningIds(prev => new Set([...prev, instance.id]))
       void recordActivity(`Launched "${instance.name}"`)
     } catch (e) {
-      setLaunchToast(`Launch failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      // Expired sign-in: show the friendly message and send them to Accounts
+      // to re-authenticate, instead of dumping the raw AADSTS error.
+      if (msg.includes('AUTH_EXPIRED')) {
+        setLaunchToast(t.home.sessionExpired)
+        setTimeout(() => setLaunchToast(null), 4000)
+        navigate({ to: '/account' })
+        return
+      }
+      setLaunchToast(`Launch failed: ${msg}`)
       setTimeout(() => setLaunchToast(null), 4000)
     }
   }

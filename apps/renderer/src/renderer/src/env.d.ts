@@ -56,6 +56,7 @@ declare global {
             canManageContent: boolean
             canPlayMinecraft: boolean
             licenseStatus: 'verified' | 'guest'
+            needsReauth?: boolean
           }>
         }>
         set: (key: string, value: unknown) => Promise<void>
@@ -83,6 +84,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         }>>
         active: () => Promise<{
           uuid: string
@@ -93,6 +95,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         } | null>
         microsoftBegin: () => Promise<{
           deviceCode: string
@@ -111,6 +114,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         }>
         createOffline: (username: string) => Promise<{
           uuid: string
@@ -121,6 +125,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         }>
         renameOffline: (uuid: string, username: string) => Promise<{
           uuid: string
@@ -131,6 +136,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         }>
         setActive: (uuid: string) => Promise<{
           uuid: string
@@ -141,6 +147,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         }>
         logout: (uuid: string) => Promise<void>
         fetchSkinTextureUrl: (uuid: string) => Promise<string | null>
@@ -157,6 +164,7 @@ declare global {
           canManageContent: boolean
           canPlayMinecraft: boolean
           licenseStatus: 'verified' | 'guest'
+          needsReauth?: boolean
         }>
       }
       theme: {

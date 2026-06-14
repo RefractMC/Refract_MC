@@ -19,7 +19,9 @@
     "addFriend": "Add",
     "addedToday": "Added today",
     "addedYesterday": "Added yesterday",
-    "addedDaysAgo": "Added {{n}}d ago"
+    "addedDaysAgo": "Added {{n}}d ago",
+    "collapse": "Collapse menu",
+    "expand": "Expand menu"
   },
   "home": {
     "stillUp": "Still up,",
@@ -56,6 +58,7 @@
     "activity": "Activity",
     "noActivity": "No recent activity",
     "signInFirst": "Create a profile first — go to Accounts and add a guest or Microsoft profile.",
+    "sessionExpired": "Your Microsoft session expired — please sign in again.",
     "loading": "Loading…",
     "crashTitle": "MINECRAFT CRASHED",
     "viewConsole": "View Console",
@@ -318,6 +321,8 @@
     "activeLabel": "ACTIVE",
     "save": "Save",
     "licenseVerified": "Java license verified. Online multiplayer enabled.",
+    "sessionExpired": "Session expired — sign in again",
+    "signInAgain": "Sign in again",
     "offlineAccess": "Offline play enabled. No Microsoft login required — multiplayer servers need a licensed account.",
     "yggdrasilSection": "Custom Auth Server",
     "yggdrasilDesc": "Sign in using a custom Yggdrasil-compatible auth server (e.g. Ely.by, AuthMe, or a self-hosted instance). Tokens are stored encrypted on this device.",

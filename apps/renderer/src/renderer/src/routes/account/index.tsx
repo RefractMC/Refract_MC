@@ -529,6 +529,20 @@ function Account() {
                       )}
                       <div style={{ color:badge.color, fontFamily:"'VT323',monospace", fontSize:15, letterSpacing:'.08em', marginTop:2 }}>{badge.label}</div>
                       <div style={{ color:'var(--ink-4)', fontSize:11, lineHeight:1.35, marginTop:4 }}>{accessText(account, t)}</div>
+                      {account.needsReauth && (
+                        account.type === 'microsoft' ? (
+                          <button
+                            type="button"
+                            onClick={() => { void startMicrosoft() }}
+                            disabled={!!busy}
+                            style={{ marginTop:6, fontSize:11, fontWeight:600, color:'#fff', background:'var(--lava)', border:'none', borderRadius:3, padding:'4px 9px', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
+                          >
+                            ⚠ {t.account.signInAgain}
+                          </button>
+                        ) : (
+                          <div style={{ marginTop:6, fontSize:11, color:'var(--lava)', fontWeight:600 }}>⚠ {t.account.sessionExpired}</div>
+                        )
+                      )}
                     </div>
                   </div>
                   {isActive && <div style={{ color:'var(--accent)', fontFamily:"'VT323',monospace", fontSize:15, flexShrink:0 }}>{t.account.activeLabel}</div>}

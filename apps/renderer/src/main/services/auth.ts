@@ -22,7 +22,13 @@ export interface SafeAccount {
   canManageContent: boolean
   canPlayMinecraft: boolean
   licenseStatus: 'verified' | 'guest'
+  needsReauth?: boolean
 }
+
+// Thrown when a session can no longer be refreshed and the user must sign in
+// again. The renderer maps this stable code to a friendly, localized message
+// and the re-login flow.
+export const AUTH_EXPIRED = 'AUTH_EXPIRED'
 
 export interface MicrosoftDeviceLogin {
   deviceCode: string
@@ -135,11 +141,14 @@ export async function getOrRefreshMinecraftToken(accountUuid: string): Promise<{
         account.encryptedAccessToken = encrypt(refreshed.accessToken)
         account.encryptedRefreshToken = encrypt(refreshed.clientToken)
         account.expiresAt = Date.now() + 24 * 60 * 60 * 1000
+        account.needsReauth = false
         saveConfig(config)
         return { token: refreshed.accessToken, xuid: '', clientId: '' }
       } catch { /* fall through */ }
     }
-    throw new Error('Yggdrasil session expired. Please sign in again via Accounts.')
+    account.needsReauth = true
+    saveConfig(config)
+    throw new Error(AUTH_EXPIRED)
   }
 
   if (account.type !== 'microsoft') {
@@ -158,17 +167,33 @@ export async function getOrRefreshMinecraftToken(accountUuid: string): Promise<{
     if (!isExpired && account.encryptedAccessToken) {
       try { return { token: decrypt(account.encryptedAccessToken), xuid: account.xuid ?? '', clientId } } catch { /* fall through */ }
     }
-    throw new Error('Minecraft session expired. Please sign in again via Accounts.')
+    account.needsReauth = true
+    saveConfig(config)
+    throw new Error(AUTH_EXPIRED)
   }
 
   const refreshToken = decrypt(account.encryptedRefreshToken)
 
-  const msToken = await postForm<MicrosoftTokenResponse>(MS_TOKEN_URL, {
-    grant_type: 'refresh_token',
-    client_id: clientId,
-    refresh_token: refreshToken,
-    scope: MS_SCOPE,
-  })
+  let msToken: MicrosoftTokenResponse
+  try {
+    msToken = await postForm<MicrosoftTokenResponse>(MS_TOKEN_URL, {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refreshToken,
+      scope: MS_SCOPE,
+    })
+  } catch (e) {
+    // A failed refresh almost always means the long-lived grant expired or was
+    // revoked (AADSTS70000 / invalid_grant). Flag the account so the UI prompts
+    // a re-login, and surface the stable AUTH_EXPIRED code.
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/invalid_grant|aadsts70000|expired|interaction_required|invalid_request/i.test(msg)) {
+      account.needsReauth = true
+      saveConfig(config)
+      throw new Error(AUTH_EXPIRED)
+    }
+    throw e
+  }
 
   const xbl = await postJson<{ Token: string; DisplayClaims: { xui: Array<{ uhs: string; xid?: string }> } }>(XBL_AUTH_URL, {
     Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `d=${msToken.access_token}` },
@@ -193,6 +218,7 @@ export async function getOrRefreshMinecraftToken(accountUuid: string): Promise<{
   account.encryptedAccessToken = encrypt(mcToken.access_token)
   if (msToken.refresh_token) account.encryptedRefreshToken = encrypt(msToken.refresh_token)
   account.expiresAt = Date.now() + mcToken.expires_in * 1000
+  account.needsReauth = false
   saveConfig(config)
 
   return { token: mcToken.access_token, xuid, clientId }
