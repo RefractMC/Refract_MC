@@ -401,6 +401,17 @@ function Settings() {
             </div>
           </Panel>
 
+          <Panel title={t.privacy.title}>
+            <div style={{ display:'grid', gap:12 }}>
+              <Field label={t.privacy.analytics} note={t.privacy.analyticsNote}>
+                <Segmented>
+                  <SegmentButton active={config?.analyticsEnabled !== false} disabled={false} onClick={() => { api.config.set('analyticsEnabled', true).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: true } : c); showToast(t.privacy.analyticsOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={config?.analyticsEnabled === false} disabled={false} onClick={() => { api.config.set('analyticsEnabled', false).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: false } : c); showToast(t.privacy.analyticsOff) }}>{t.settings.off}</SegmentButton>
+                </Segmented>
+              </Field>
+            </div>
+          </Panel>
+
           <Panel title={t.settings.accountAccess}>
             <input ref={avatarInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleAvatarPick} />
             <div style={{ display:'grid', gap:14 }}>

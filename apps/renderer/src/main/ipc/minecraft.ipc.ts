@@ -10,6 +10,7 @@ import { installMinecraft, fetchForgeVersionList, fetchNeoForgeVersionList, fetc
 import { launchInstance, stopInstance, isInstanceRunning } from '../services/minecraft/launcher'
 import { resolveGameDir } from '../services/instance-store'
 import { loadManagedJavas } from '../services/java-manager'
+import { trackEvent } from '../services/analytics'
 
 export interface ServerEntry { name: string; ip: string; icon?: string }
 
@@ -208,6 +209,7 @@ export function registerMinecraftIpc(mainWindow: BrowserWindow): void {
         isInstalled: true,
         ...(result.modLoaderVersion ? { modLoaderVersion: result.modLoaderVersion } : {}),
       })
+      trackEvent('install', { mod_loader: modLoader ? String(modLoader) : 'vanilla', mc_version: String(versionId) })
     } finally {
       installControllers.delete(id)
     }

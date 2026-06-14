@@ -728,6 +728,11 @@ function Library() {
     api.config.set('onboardingDone', true).catch(() => {})
   }
 
+  function dismissAnalyticsNotice() {
+    setAppConfig(c => c ? { ...c, analyticsNoticeShown: true } : c)
+    api.config.set('analyticsNoticeShown', true).catch(() => {})
+  }
+
   async function recordActivity(label: string): Promise<void> {
     try {
       const entry = await api.activity.add(label)
@@ -1543,6 +1548,14 @@ function Library() {
             return inst
           }}
         />
+      )}
+
+      {appConfig && appConfig.analyticsNoticeShown === false && onboardingStep === null && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 70, maxWidth: 560, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.5)' }}>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', flex: 1, lineHeight: 1.5 }}>{t.privacy.noticeText}</span>
+          <Link to="/settings" onClick={() => dismissAnalyticsNotice()} style={{ fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>{t.privacy.noticeOpenSettings}</Link>
+          <button onClick={() => dismissAnalyticsNotice()} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>{t.privacy.noticeDismiss}</button>
+        </div>
       )}
     </div>
   )

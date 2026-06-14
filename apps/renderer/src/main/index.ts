@@ -8,6 +8,7 @@ import { installProcessErrorLogging, logError } from './services/logger'
 import { notify } from './services/notifications'
 import { listInstances } from './services/instance-store'
 import { launchInstance } from './services/minecraft/launcher'
+import { initAnalytics } from './services/analytics'
 
 installProcessErrorLogging()
 
@@ -80,6 +81,7 @@ function buildTrayMenu(mainWindow: BrowserWindow, tray: Tray): void {
 app.whenReady().then(() => {
   ensureAppDirs()
   loadConfig()
+  initAnalytics()
   if (process.platform === 'win32') app.setAppUserModelId('com.refract')
   app.on('browser-window-created', (_, window) => {
     window.webContents.on('before-input-event', (event, input) => {

@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { paths } from './paths'
+import { trackEvent } from './analytics'
 
 export type LogLevel = 'info' | 'warn' | 'error'
 
@@ -46,6 +47,9 @@ export function logError(source: string, error: unknown): void {
     source,
     ...serializeError(error),
   })
+  // Forward an anonymized error signal — the source label only, never the
+  // message or stack (those can contain file paths or tokens).
+  try { trackEvent('app_error', { source }) } catch { /* never let telemetry break logging */ }
 }
 
 export function installProcessErrorLogging(): void {

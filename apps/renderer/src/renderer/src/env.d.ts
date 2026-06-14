@@ -43,6 +43,8 @@ declare global {
           startMinimized?: boolean
           launchMinimizesToTray?: boolean
           reopenOnGameExit?: boolean
+          analyticsEnabled?: boolean
+          analyticsNoticeShown?: boolean
           systemRamGb?: number
           curseforgeApiKey?: string
           accounts: Array<{
@@ -57,6 +59,9 @@ declare global {
           }>
         }>
         set: (key: string, value: unknown) => Promise<void>
+      }
+      analytics: {
+        track: (name: string, params?: Record<string, string | number>) => void
       }
       log: {
         write: (entry: {

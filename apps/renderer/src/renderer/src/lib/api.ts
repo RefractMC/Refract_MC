@@ -94,6 +94,9 @@ function createBrowserApi(): RefractAPI {
         saveConfig({ ...config, [key]: value })
       },
     },
+    analytics: {
+      track: () => undefined,
+    },
     log: {
       write: (entry) => {
         if (entry.level === 'error') logger.error(entry.source, entry.stack ? `${entry.message}\n${entry.stack}` : entry.message)

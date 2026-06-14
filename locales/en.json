@@ -472,5 +472,16 @@
     "failed":            "Failed",
     "legendLink":        "launches from the original folder, mods stay in sync automatically",
     "legendImport":      "copies mods/saves/configs into Refract (independent)"
+  },
+
+  "privacy": {
+    "title":             "Privacy",
+    "analytics":         "Anonymous analytics",
+    "analyticsNote":     "Send anonymous usage events (launches, installs, errors) to help improve Refract. No personal data, accounts, or file paths are collected.",
+    "analyticsOn":       "Analytics enabled",
+    "analyticsOff":      "Analytics disabled",
+    "noticeText":        "Refract collects anonymous usage analytics to help improve the app. No personal data is collected — you can turn this off any time in Settings → Privacy.",
+    "noticeDismiss":     "Got it",
+    "noticeOpenSettings":"Privacy settings"
   }
 }

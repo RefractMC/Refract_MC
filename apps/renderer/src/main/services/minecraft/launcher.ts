@@ -17,6 +17,7 @@ import { loadManagedJavas } from '../java-manager'
 import { versionJsonPath, clientJarPath, nativesDir, forgeJsonPath, linkLegacyResources } from './downloader'
 import { setGameActivity, clearGameActivity } from '../discord'
 import { notify } from '../notifications'
+import { trackEvent } from '../analytics'
 
 const runningProcesses = new Map<string, ChildProcess>()
 
@@ -251,6 +252,7 @@ export async function launchInstance(
 
   runningProcesses.set(instanceId, proc)
   if (proc.pid) setRunningPid(instanceId, proc.pid)
+  trackEvent('instance_launch', { mod_loader: instance.modLoader ?? 'vanilla', mc_version: instance.minecraftVersion })
 
   if (getConfig().launchMinimizesToTray && !mainWindow.isDestroyed()) mainWindow.hide()
 

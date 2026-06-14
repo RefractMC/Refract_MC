@@ -6,6 +6,10 @@ export const api = {
     get: () => ipcRenderer.invoke('config.get'),
     set: <K extends string>(key: K, value: unknown) => ipcRenderer.invoke('config.set', key, value),
   },
+  analytics: {
+    track: (name: string, params?: Record<string, string | number>) =>
+      ipcRenderer.send('analytics.track', name, params),
+  },
   system: {
     ramGb: (): Promise<number> => ipcRenderer.invoke('system.ramGb'),
   },

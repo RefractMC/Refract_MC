@@ -13,6 +13,8 @@ export interface AppConfig {
   startMinimized?: boolean
   launchMinimizesToTray?: boolean
   reopenOnGameExit?: boolean
+  analyticsEnabled?: boolean      // anonymous usage analytics (opt-out; on by default)
+  analyticsNoticeShown?: boolean  // first-run analytics notice has been dismissed
   accounts: Array<{
     uuid: string
     username: string
@@ -33,6 +35,8 @@ const DEFAULTS: AppConfig = {
   windowBounds: { width: 1280, height: 800 },
   defaultMemoryMb: 2048,
   onboardingDone: false,
+  analyticsEnabled: true,
+  analyticsNoticeShown: false,
   accounts: [],
 }
 
