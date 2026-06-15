@@ -24,6 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div style={{ gridRow:'2/3', gridColumn:'2/3', display:'flex', flexDirection:'column', minHeight:0, minWidth:0, overflow:'hidden', background:'var(--bg)', position:'relative' }}>
         <div
           key={pathname}
+          className="app-scroll"
           style={{ flex:1, minHeight:0, overflowY:'auto', overflowX:'hidden', padding:'24px 28px 28px', position:'relative', zIndex:1, animation:'page-enter 160ms ease-out both' }}
         >
           {children}

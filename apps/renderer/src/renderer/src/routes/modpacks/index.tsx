@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { htmlToText } from '@/lib/sanitize'
 import type { ModrinthProject, ModrinthVersion, ModrinthSortIndex, ModrinthProjectType, Instance, CFProject, CFFile, CFProjectDetail, FtbModpack } from '@refract/core'
 import { ftbIconUrl, ftbTargets } from '@refract/core'
+import { useScrollLock } from '@/lib/use-scroll-lock'
 import { useT } from '@/i18n'
 
 export const Route = createFileRoute('/modpacks/')({ component: ContentBrowser })
@@ -375,6 +376,7 @@ function ContentDetailModal({ project, tab, onClose, onInstall }: {
   onClose: () => void
   onInstall: () => void
 }) {
+  useScrollLock()
   const t = useT()
   const tabLabelMap: Record<ContentTab, string> = {
     modpack: t.content.tabModpack,
@@ -630,6 +632,7 @@ interface ContentInstallModalProps {
 }
 
 function ContentInstallModal({ project, tab, instances, onClose, onInstall }: ContentInstallModalProps) {
+  useScrollLock()
   const t = useT()
   const tabLabelMap: Record<ContentTab, string> = {
     modpack: t.content.tabModpack,
@@ -748,6 +751,7 @@ interface ModpackInstallModalProps {
 }
 
 function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModalProps) {
+  useScrollLock()
   const t = useT()
   const [versions, setVersions]  = useState<ModrinthVersion[]>([])
   const [loading, setLoading]    = useState(true)
@@ -859,6 +863,7 @@ function ModpackInstallModal({ project, onClose, onInstall }: ModpackInstallModa
 // ─── Progress overlay ─────────────────────────────────────────────────────────
 
 function ProgressOverlay({ title, step, percent }: { projectId: string; title: string; step: string; percent: number }) {
+  useScrollLock()
   const t = useT()
   return (
     <div style={{
@@ -1383,6 +1388,7 @@ function FTBInstallModal({ pack, onClose, onInstall }: {
   onClose: () => void
   onInstall: (name: string, versionId: number) => void
 }) {
+  useScrollLock()
   const t = useT()
   const [name, setName] = useState(pack.name)
   // Versions come oldest-first from the API — show newest at the top.
@@ -1455,6 +1461,7 @@ function CFModpackInstallModal({ project, onClose, onInstall }: {
   onClose: () => void
   onInstall: (name: string, fileId: number) => void
 }) {
+  useScrollLock()
   const t = useT()
   const [name, setName]       = useState(project.name)
   const [files, setFiles]     = useState<CFFile[]>([])
@@ -1532,6 +1539,7 @@ function CFModpackDetailModal({ project, onClose, onInstall }: {
   onClose: () => void
   onInstall: () => void
 }) {
+  useScrollLock()
   const t = useT()
   const [detail, setDetail]           = useState<CFProjectDetail | null>(null)
   const [loading, setLoading]         = useState(true)

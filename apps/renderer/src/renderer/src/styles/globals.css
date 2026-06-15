@@ -100,6 +100,10 @@ html, body, #root {
 .drag-region    { -webkit-app-region: drag; }
 .no-drag-region { -webkit-app-region: no-drag; }
 
+/* Freeze the main scroll area while a modal is open so scrolling inside the
+   modal can't chain to the page behind it (see useScrollLock). */
+body.modal-open .app-scroll { overflow: hidden !important; }
+
 /* ── Page transition (clean fade — no blur/scale) ───────────────────────── */
 @keyframes page-enter {
   from { opacity: 0; transform: translateY(4px); }
