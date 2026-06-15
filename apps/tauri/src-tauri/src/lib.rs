@@ -1,4 +1,5 @@
 mod config;
+mod download;
 mod instances;
 mod paths;
 
@@ -10,6 +11,7 @@ pub fn run() {
             config::config_get,
             config::config_set,
             instances::instances_list,
+            download::download_demo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
