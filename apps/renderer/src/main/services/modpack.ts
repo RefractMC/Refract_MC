@@ -7,7 +7,7 @@ import { notify } from './notifications'
 import { downloadFile } from './download'
 import { getProjectVersions, getPrimaryFile, fetchVersionList } from '@refract/core'
 import { getFtbModpack, getFtbVersion, ftbTargets, ftbIconUrl } from '@refract/core'
-import { createAndSaveInstance, updateInstance, deleteInstance, resolveInstanceDir } from './instance-store'
+import { createAndSaveInstance, updateInstance, deleteInstance, resolveInstanceDir, getInstanceById } from './instance-store'
 import { installMinecraft } from './minecraft/downloader'
 import type { Instance } from '@refract/core'
 
@@ -177,7 +177,8 @@ export async function installModpack(
   instanceName: string,
   projectId: string,
   versionId: string | undefined,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  existingInstanceId?: string
 ): Promise<Instance> {
   progress(mainWindow, projectId, 'Fetching version info', 2)
   const versions = await getProjectVersions(projectId)
@@ -192,12 +193,17 @@ export async function installModpack(
   const rawLoader = version.loaders.find(l => l !== 'mrpack')
   const modLoader  = (rawLoader as Instance['modLoader']) ?? undefined
 
-  progress(mainWindow, projectId, 'Creating instance', 4)
-  const instance = createAndSaveInstance({
+  progress(mainWindow, projectId, existingInstanceId ? 'Updating instance' : 'Creating instance', 4)
+  const existing = existingInstanceId ? getInstanceById(existingInstanceId) : null
+  if (existingInstanceId && !existing) throw new Error('Instance to update was not found.')
+  const instance = existing ?? createAndSaveInstance({
     name: instanceName,
     minecraftVersion: mcVersion,
     modLoader,
     memoryMb: 4096,
+    modpackSource: 'modrinth',
+    modpackProjectId: projectId,
+    modpackVersionId: version.id,
   })
 
   // Fetch modpack icon from Modrinth and store it on the instance
@@ -212,6 +218,8 @@ export async function installModpack(
   } catch { /* non-fatal */ }
 
   const gameDir   = join(resolveInstanceDir(instance.id), 'minecraft')
+  // On update, replace the old mod set (worlds/options/etc. are left untouched).
+  if (existing) { try { rmSync(join(gameDir, 'mods'), { recursive: true, force: true }) } catch { /* ignore */ } }
   mkdirSync(join(gameDir, 'mods'), { recursive: true })
 
   const tempDir   = join(paths.cache, `mrpack-${instance.id}`)
@@ -284,17 +292,20 @@ export async function installModpack(
     )
 
     // ── 7. Finalize ─────────────────────────────────────────────────────────
-    updateInstance(instance.id, { isInstalled: true })
+    updateInstance(instance.id, { isInstalled: true, modpackSource: 'modrinth', modpackProjectId: projectId, modpackVersionId: version.id })
     instance.isInstalled = true
 
     progress(mainWindow, projectId, 'Done', 100)
-    notify('Modpack installed', `${instance.name} is ready to play.`)
+    notify(existing ? 'Modpack updated' : 'Modpack installed', `${instance.name} is ready to play.`)
     mainWindow.webContents.send('modpack:done', { projectId, instanceId: instance.id })
     return instance
 
   } catch (err) {
-    try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
-    try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+    // Never delete the instance on a failed *update* — only roll back a fresh install.
+    if (!existing) {
+      try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
+      try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+    }
     mainWindow.webContents.send('modpack:done', { projectId, error: err instanceof Error ? err.message : String(err) })
     throw err
   } finally {
@@ -309,7 +320,8 @@ export async function installFtbModpack(
   instanceName: string,
   packId: number,
   versionId: number,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  existingInstanceId?: string
 ): Promise<Instance> {
   const pid = `ftb:${packId}`
   progress(mainWindow, pid, 'Fetching version info', 2)
@@ -317,13 +329,18 @@ export async function installFtbModpack(
   const { minecraft, modLoader, modLoaderVersion } = ftbTargets(version.targets)
   if (!minecraft) throw new Error('This FTB version has no Minecraft target.')
 
-  progress(mainWindow, pid, 'Creating instance', 4)
-  const instance = createAndSaveInstance({
+  progress(mainWindow, pid, existingInstanceId ? 'Updating instance' : 'Creating instance', 4)
+  const existing = existingInstanceId ? getInstanceById(existingInstanceId) : null
+  if (existingInstanceId && !existing) throw new Error('Instance to update was not found.')
+  const instance = existing ?? createAndSaveInstance({
     name: instanceName,
     minecraftVersion: minecraft,
     modLoader,
     modLoaderVersion,
     memoryMb: 4096,
+    modpackSource: 'ftb',
+    modpackProjectId: String(packId),
+    modpackVersionId: String(versionId),
   })
 
   // Pack icon (square art) for the instance card.
@@ -335,6 +352,8 @@ export async function installFtbModpack(
 
   const gameDir = join(resolveInstanceDir(instance.id), 'minecraft')
   mkdirSync(gameDir, { recursive: true })
+  // On update, replace the old mod set (worlds/options/etc. are left untouched).
+  if (existing) { try { rmSync(join(gameDir, 'mods'), { recursive: true, force: true }) } catch { /* ignore */ } }
 
   try {
     // ── Download every client file to its manifest path ─────────────────────
@@ -386,17 +405,19 @@ export async function installFtbModpack(
       (p) => progress(mainWindow, pid, p.step, 50 + p.percent * 0.48)
     )
 
-    updateInstance(instance.id, { isInstalled: true })
+    updateInstance(instance.id, { isInstalled: true, modpackSource: 'ftb', modpackProjectId: String(packId), modpackVersionId: String(versionId) })
     instance.isInstalled = true
 
     progress(mainWindow, pid, 'Done', 100)
-    notify('Modpack installed', `${instance.name} is ready to play.`)
+    notify(existing ? 'Modpack updated' : 'Modpack installed', `${instance.name} is ready to play.`)
     mainWindow.webContents.send('modpack:done', { projectId: pid, instanceId: instance.id })
     return instance
 
   } catch (err) {
-    try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
-    try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+    if (!existing) {
+      try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
+      try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+    }
     mainWindow.webContents.send('modpack:done', { projectId: pid, error: err instanceof Error ? err.message : String(err) })
     throw err
   }
@@ -449,7 +470,8 @@ export async function installModpackFromFile(
   filePath: string,
   instanceName: string,
   mainWindow: BrowserWindow,
-  importId?: string
+  importId?: string,
+  opts: { existingInstanceId?: string; modpack?: { source: 'curseforge'; projectId: string; versionId: string } } = {}
 ): Promise<Instance> {
   importId = importId ?? `file-import-${Date.now()}`
   const ext = filePath.toLowerCase()
@@ -533,9 +555,12 @@ export async function installModpackFromFile(
       const { modLoader, modLoaderVersion } = parseCurseForgeLoader(manifest)
       const name = instanceName || manifest.name || 'Imported Modpack'
 
-      report('Creating instance', 5)
-      const instance = createAndSaveInstance({ name, minecraftVersion: mcVersion, modLoader, memoryMb: 4096 })
+      report(opts.existingInstanceId ? 'Updating instance' : 'Creating instance', 5)
+      const cfExisting = opts.existingInstanceId ? getInstanceById(opts.existingInstanceId) : null
+      if (opts.existingInstanceId && !cfExisting) throw new Error('Instance to update was not found.')
+      const instance = cfExisting ?? createAndSaveInstance({ name, minecraftVersion: mcVersion, modLoader, memoryMb: 4096, modpackSource: opts.modpack?.source, modpackProjectId: opts.modpack?.projectId, modpackVersionId: opts.modpack?.versionId })
       const gameDir = join(resolveInstanceDir(instance.id), 'minecraft')
+      if (cfExisting) { try { rmSync(join(gameDir, 'mods'), { recursive: true, force: true }) } catch { /* ignore */ } }
       mkdirSync(join(gameDir, 'mods'), { recursive: true })
 
       try {
@@ -567,13 +592,15 @@ export async function installModpackFromFile(
           report(p.step, 42 + p.percent * 0.56)
         })
 
-        updateInstance(instance.id, { isInstalled: true, minecraftVersion: mcVersion, modLoader, modLoaderVersion })
+        updateInstance(instance.id, { isInstalled: true, minecraftVersion: mcVersion, modLoader, modLoaderVersion, modpackSource: opts.modpack?.source, modpackProjectId: opts.modpack?.projectId, modpackVersionId: opts.modpack?.versionId })
         report('Done', 100)
         mainWindow.webContents.send('modpack:done', { projectId: importId, instanceId: instance.id })
         return instance
       } catch (err) {
-        try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
-        try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+        if (!cfExisting) {
+          try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
+          try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+        }
         throw err
       }
     }

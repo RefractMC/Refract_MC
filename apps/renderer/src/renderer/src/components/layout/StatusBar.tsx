@@ -1,20 +1,36 @@
 import { useState, useEffect } from 'react'
+import { api } from '@/lib/api'
 
 export function StatusBar() {
-  const [fps, setFps] = useState(60)
-  const [ping, setPing] = useState(18)
+  const [online, setOnline] = useState(() => navigator.onLine)
+  const [mem, setMem] = useState<number | null>(null)
+  const [java, setJava] = useState<number | null>(null)
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setFps(58 + Math.floor(Math.random() * 5))
-      setPing(14 + Math.floor(Math.random() * 12))
-    }, 1400)
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+
+  // Real renderer heap usage, refreshed periodically (Chromium-only API).
+  useEffect(() => {
+    const read = () => {
+      const m = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
+      if (m) setMem(Math.round(m.usedJSHeapSize / 1048576))
+    }
+    read()
+    const id = setInterval(read, 2000)
     return () => clearInterval(id)
   }, [])
 
-  const mem = typeof performance !== 'undefined' && (performance as any).memory
-    ? Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024)
-    : 128
+  // Highest Java runtime actually available (detected + managed).
+  useEffect(() => {
+    api.mc.java()
+      .then(list => { const top = list.map(j => j.version).sort((a, b) => b - a)[0]; if (top) setJava(top) })
+      .catch(() => {})
+  }, [])
 
   return (
     <footer style={{
@@ -31,16 +47,22 @@ export function StatusBar() {
       userSelect: 'none',
       flexShrink: 0,
     }}>
-      <Dot color="var(--grass)" />
-      <span style={{ color: 'var(--ink-3)' }}>{fps} FPS</span>
+      <Dot color={online ? 'var(--grass)' : 'var(--ink-4)'} />
+      <span style={{ color: 'var(--ink-3)' }}>{online ? 'Online' : 'Offline'}</span>
 
-      <Dot color="var(--grass)" />
-      <span style={{ color: 'var(--ink-3)' }}>{ping} MS</span>
+      {java != null && (
+        <>
+          <Dot color="var(--diamond)" />
+          <span style={{ color: 'var(--ink-3)' }}>Java {java}</span>
+        </>
+      )}
 
-      <Dot color="var(--gold)" />
-      <span style={{ color: 'var(--ink-3)' }}>{mem} MB</span>
-
-      <span style={{ color: 'var(--ink-4)' }}>JAVA 21</span>
+      {mem != null && (
+        <>
+          <Dot color="var(--gold)" />
+          <span style={{ color: 'var(--ink-3)' }}>{mem} MB</span>
+        </>
+      )}
 
       <div style={{ flex: 1 }} />
 

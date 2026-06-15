@@ -99,7 +99,9 @@ export function registerCurseForgeIpc(mainWindow?: BrowserWindow): void {
     try {
       await downloadFile(url, tempPath)
       const win = mainWindow ?? BrowserWindow.getAllWindows()[0]
-      return await installModpackFromFile(tempPath, String(name), win, `cf:${modId}`)
+      return await installModpackFromFile(tempPath, String(name), win, `cf:${modId}`, {
+        modpack: { source: 'curseforge', projectId: String(midNum), versionId: String(fidNum) },
+      })
     } finally {
       try { if (existsSync(tempPath)) rmSync(tempPath) } catch { /* ignore */ }
     }

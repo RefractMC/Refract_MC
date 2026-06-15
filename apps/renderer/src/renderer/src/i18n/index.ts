@@ -20,10 +20,13 @@ function build(l: Locale) {
 
     home: {
       ...l.home,
-      licenseBody:  (name: string) => i(l.home.licenseBody, { name }),
-      importFailed: (e: string)    => i(l.home.importFailed, { e }),
-      javaWarning:  (v: number)    => i(l.home.javaWarning, { v }),
-      consoleTitle: (name: string) => i(l.home.consoleTitle, { name }),
+      licenseBody:   (name: string) => i(l.home.licenseBody, { name }),
+      importFailed:  (e: string)    => i(l.home.importFailed, { e }),
+      javaWarning:   (v: number)    => i(l.home.javaWarning, { v }),
+      consoleTitle:  (name: string) => i(l.home.consoleTitle, { name }),
+      selectedCount: (n: number)    => i(l.home.selectedCount, { n }),
+      bulkDeleteBody:(n: number)    => i(l.home.bulkDeleteBody, { n }),
+      moveDesc:      (n: number)    => i(l.home.moveDesc, { n }),
     },
 
     browse: {

@@ -114,7 +114,7 @@ function requiredJava(mcVersion: string): number {
   return 8
 }
 
-function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFolder, onServers, onDropJar, blockReason, isRunning, hasLogs, updateCount, javaOk, selectionMode, selected, onSelect }: { instance: Instance; onLaunch: () => void; onEdit: () => void; onConsole: () => void; onMods: () => void; onOpenFolder: () => void; onServers: () => void; onDropJar: (path: string) => void; blockReason: 'no-profile' | 'no-license' | null; isRunning: boolean; hasLogs: boolean; updateCount: number; javaOk: boolean; selectionMode?: boolean; selected?: boolean; onSelect?: () => void }) {
+function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFolder, onServers, onDropJar, blockReason, isRunning, hasLogs, updateCount, javaOk, selectionMode, selected, onSelect, updateAvailable, onUpdate }: { instance: Instance; onLaunch: () => void; onEdit: () => void; onConsole: () => void; onMods: () => void; onOpenFolder: () => void; onServers: () => void; onDropJar: (path: string) => void; blockReason: 'no-profile' | 'no-license' | null; isRunning: boolean; hasLogs: boolean; updateCount: number; javaOk: boolean; selectionMode?: boolean; selected?: boolean; onSelect?: () => void; updateAvailable?: boolean; onUpdate?: () => void }) {
   const t = useT()
   const [dragOver, setDragOver] = useState(false)
   const [bannerHover, setBannerHover] = useState(false)
@@ -235,6 +235,15 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
           <div style={{ fontSize: 11, color: 'var(--gold)', lineHeight: 1.35 }}>
             {t.home.licenseNeeded}
           </div>
+        )}
+        {instance.isInstalled && updateAvailable && (
+          <button
+            onClick={onUpdate}
+            title={t.home.modpackUpdateTitle}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 2, padding: '3px 9px', fontSize: 11, fontWeight: 600, color: 'var(--grass)', background: 'color-mix(in srgb, var(--grass) 14%, transparent)', border: '1px solid color-mix(in srgb, var(--grass) 45%, transparent)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+          >
+            ↑ {t.home.modpackUpdate}
+          </button>
         )}
         <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {/* Primary row: PLAY + CONSOLE */}
@@ -617,6 +626,66 @@ function NewGroupDialog({ existing, onCancel, onCreate }: { existing: string[]; 
   )
 }
 
+function ConfirmDialog({ title, body, confirmLabel, danger, onCancel, onConfirm }: { title: string; body: string; confirmLabel: string; danger?: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const t = useT()
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onCancel])
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+      <div style={{ width: 380, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-floating)', padding: '20px' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{title}</div>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5, margin: '8px 0 18px' }}>{body}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button variant="ghost" onClick={onCancel}>{t.home.cancel}</Button>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MoveToGroupDialog({ groups, count, onCancel, onApply }: { groups: string[]; count: number; onCancel: () => void; onApply: (groupId: string | undefined) => void }) {
+  const t = useT()
+  const [newName, setNewName] = useState('')
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onCancel])
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+      <div style={{ width: 380, maxHeight: '70vh', display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-floating)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px 0' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{t.home.moveTitle}</div>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '4px 0 12px' }}>{t.home.moveDesc(count)}</p>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {groups.map(g => (
+            <Button key={g} variant="secondary" onClick={() => onApply(g)} style={{ justifyContent: 'flex-start', width: '100%' }}>{g}</Button>
+          ))}
+          <Button variant="ghost" onClick={() => onApply(undefined)} style={{ justifyContent: 'flex-start', width: '100%', color: 'var(--ink-3)' }}>{t.home.ungroup}</Button>
+        </div>
+        <form
+          onSubmit={e => { e.preventDefault(); if (newName.trim()) onApply(newName.trim()) }}
+          style={{ display: 'flex', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--line)', marginTop: 8 }}
+        >
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder={t.home.newGroupPlaceholder}
+            maxLength={48}
+            style={{ flex: 1, height: 34, padding: '0 12px', background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-md)', outline: 'none', fontSize: 13 }}
+          />
+          <Button variant="primary" type="submit" disabled={!newName.trim()}>{t.home.newGroupCreate}</Button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function Library() {
   const t = useT()
   const [createOpen, setCreateOpen] = useState(false)
@@ -630,6 +699,9 @@ function Library() {
   const [installing, setInstalling] = useState<{ instanceId: string; name: string } | null>(null)
   const [javaPrep, setJavaPrep] = useState<{ step: string; percent: number } | null>(null)
   const launchingRef = useRef(false)
+  const [modpackUpdates, setModpackUpdates] = useState<Set<string>>(new Set())
+  const [modpackUpdating, setModpackUpdating] = useState<{ step: string; percent: number } | null>(null)
+  const updatingModpackRef = useRef(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [mcVersions, setMcVersions] = useState<MinecraftVersion[]>([])
   const [consoleLogs, setConsoleLogs] = useState<Map<string, string[]>>(new Map())
@@ -668,6 +740,8 @@ function Library() {
   const [externalInstances, setExternalInstances] = useState<ExternalInstance[] | null>(null)
   const [externalScanning, setExternalScanning] = useState(false)
   const [newGroupOpen, setNewGroupOpen] = useState(false)
+  const [moveGroupOpen, setMoveGroupOpen] = useState(false)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -743,6 +817,55 @@ function Library() {
     }, 8000)
     return () => window.clearTimeout(tid)
   }, [instances])
+
+  // Background modpack-update check for instances created from a modpack.
+  useEffect(() => {
+    if (instances.length === 0) return
+    const tid = window.setTimeout(() => {
+      for (const inst of instances) {
+        if (!inst.isInstalled || !inst.modpackSource) continue
+        api.modpack.checkUpdate(inst.id)
+          .then(info => {
+            if (info?.hasUpdate) setModpackUpdates(prev => prev.has(inst.id) ? prev : new Set(prev).add(inst.id))
+          })
+          .catch(() => {})
+      }
+    }, 9000)
+    return () => window.clearTimeout(tid)
+  }, [instances])
+
+  // Modpack update progress (in-place re-install) for the overlay.
+  useEffect(() => {
+    const offP = api.modpack.onProgress(({ step, percent }) => { if (updatingModpackRef.current) setModpackUpdating({ step, percent }) })
+    const offD = api.modpack.onDone(({ instanceId, error }) => {
+      if (!updatingModpackRef.current) return
+      updatingModpackRef.current = false
+      setModpackUpdating(null)
+      if (error) {
+        setLaunchToast(`Update failed: ${error}`)
+        setTimeout(() => setLaunchToast(null), 5000)
+      } else {
+        setLaunchToast(t.home.modpackUpdated)
+        setTimeout(() => setLaunchToast(null), 4000)
+        if (instanceId) setModpackUpdates(prev => { const n = new Set(prev); n.delete(instanceId); return n })
+        void queryClient.invalidateQueries({ queryKey: ['instances'] })
+      }
+    })
+    return () => { offP(); offD() }
+  }, [])
+
+  async function handleUpdateModpack(inst: Instance) {
+    updatingModpackRef.current = true
+    setModpackUpdating({ step: 'Starting…', percent: 0 })
+    try {
+      await api.modpack.update(inst.id)
+    } catch (e) {
+      updatingModpackRef.current = false
+      setModpackUpdating(null)
+      setLaunchToast(`Update failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      setTimeout(() => setLaunchToast(null), 5000)
+    }
+  }
 
   function dismissOnboarding() {
     setOnboardingStep(null)
@@ -950,6 +1073,18 @@ function Library() {
       if (inst.groupId === name) updateInstance.mutate({ id: inst.id, patch: { groupId: undefined } })
     }
   }
+  async function applyMoveToGroup(groupId: string | undefined) {
+    if (groupId && !groups.includes(groupId)) persistCustomGroups([...customGroups, groupId])
+    for (const id of selectedIds) await updateInstance.mutateAsync({ id, patch: { groupId } })
+    setSelectedIds(new Set())
+    setMoveGroupOpen(false)
+  }
+  async function confirmBulkDelete() {
+    for (const id of [...selectedIds]) await deleteInstance.mutateAsync(id)
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+    setBulkDeleteOpen(false)
+  }
 
   const applyFilters = (base: Instance[]) => {
     if (searchQuery) base = base.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -1139,7 +1274,7 @@ function Library() {
             background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)',
             fontSize: 12,
           }}>
-            <span style={{ color: 'var(--ink)', fontWeight: 600, marginRight: 4 }}>{selectedIds.size} selected</span>
+            <span style={{ color: 'var(--ink)', fontWeight: 600, marginRight: 4 }}>{t.home.selectedCount(selectedIds.size)}</span>
             <Button
               variant="secondary"
               size="sm"
@@ -1148,35 +1283,13 @@ function Library() {
                 setSelectedIds(new Set(visible.map(i => i.id)))
               }}
             >
-              Select all
+              {t.home.selectAll}
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={async () => {
-                const groupName = window.prompt('Enter group name (leave blank to ungroup):')
-                if (groupName === null) return
-                for (const id of selectedIds) {
-                  await updateInstance.mutateAsync({ id, patch: { groupId: groupName.trim() || undefined } })
-                }
-                setSelectedIds(new Set())
-              }}
-            >
-              Move to group ▾
+            <Button variant="secondary" size="sm" onClick={() => setMoveGroupOpen(true)}>
+              {t.home.moveToGroup} ▾
             </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={async () => {
-                if (!window.confirm(`Delete ${selectedIds.size} instance(s)? This cannot be undone.`)) return
-                for (const id of [...selectedIds]) {
-                  await deleteInstance.mutateAsync(id)
-                }
-                setSelectedIds(new Set())
-                setSelectionMode(false)
-              }}
-            >
-              Delete
+            <Button variant="danger" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+              {t.home.delete}
             </Button>
             <Button
               variant="ghost"
@@ -1184,7 +1297,7 @@ function Library() {
               onClick={() => setSelectedIds(new Set())}
               style={{ marginLeft: 'auto', color: 'var(--ink-4)' }}
             >
-              ✕ Clear
+              ✕ {t.home.clearSelection}
             </Button>
           </div>
         )}
@@ -1326,6 +1439,8 @@ function Library() {
                                   hasLogs={(consoleLogs.get(inst.id)?.length ?? 0) > 0}
                                   updateCount={updateCounts.get(inst.id) ?? 0}
                                   javaOk={javaOk}
+                                  updateAvailable={modpackUpdates.has(inst.id)}
+                                  onUpdate={() => handleUpdateModpack(inst)}
                                   selectionMode={selectionMode}
                                   selected={selectedIds.has(inst.id)}
                                   onSelect={() => setSelectedIds(prev => {
@@ -1387,6 +1502,8 @@ function Library() {
                   hasLogs={(consoleLogs.get(inst.id)?.length ?? 0) > 0}
                   updateCount={updateCounts.get(inst.id) ?? 0}
                   javaOk={javaOk}
+                  updateAvailable={modpackUpdates.has(inst.id)}
+                  onUpdate={() => handleUpdateModpack(inst)}
                   selectionMode={selectionMode}
                   selected={selectedIds.has(inst.id)}
                   onSelect={() => setSelectedIds(prev => {
@@ -1533,6 +1650,19 @@ function Library() {
         }}
       />
 
+      {modpackUpdating && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-floating)', padding: '28px 32px', width: 380, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', letterSpacing: '.04em' }}>{t.home.modpackUpdating}</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{modpackUpdating.step}</div>
+            <div style={{ height: 8, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-max)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${modpackUpdating.percent}%`, background: 'var(--accent)', transition: 'width 200ms linear' }} />
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>{t.home.modpackUpdateNote}</div>
+          </div>
+        </div>
+      )}
+
       {javaPrep && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-floating)', padding: '28px 32px', width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1648,6 +1778,26 @@ function Library() {
           existing={groups}
           onCancel={() => setNewGroupOpen(false)}
           onCreate={createGroupNamed}
+        />
+      )}
+
+      {moveGroupOpen && (
+        <MoveToGroupDialog
+          groups={groups}
+          count={selectedIds.size}
+          onCancel={() => setMoveGroupOpen(false)}
+          onApply={applyMoveToGroup}
+        />
+      )}
+
+      {bulkDeleteOpen && (
+        <ConfirmDialog
+          title={t.home.bulkDeleteTitle}
+          body={t.home.bulkDeleteBody(selectedIds.size)}
+          confirmLabel={t.home.delete}
+          danger
+          onCancel={() => setBulkDeleteOpen(false)}
+          onConfirm={confirmBulkDelete}
         />
       )}
 

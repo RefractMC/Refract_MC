@@ -1,8 +1,13 @@
 import { BrowserWindow, dialog } from 'electron'
 import { handleIpc } from './handle'
 import { installModpack, installContentPack, installModpackFromFile } from '../services/modpack'
+import { checkModpackUpdate, updateModpack } from '../services/modpack-updates'
 
 export function registerModpackIpc(mainWindow: BrowserWindow): void {
+  handleIpc('modpack.checkUpdate', async (_event, instanceId) => checkModpackUpdate(String(instanceId)))
+
+  handleIpc('modpack.update', async (_event, instanceId) => updateModpack(String(instanceId), mainWindow))
+
   handleIpc('modpack.install', async (_event, name, projectId, versionId) =>
     installModpack(
       String(name),

@@ -33,6 +33,11 @@ export interface Instance {
   pinned?: boolean
   externalGameDir?: string  // when set, launch uses this dir instead of the default managed path
   externalSource?: string   // human label, e.g. "Prism Launcher"
+  // Modpack provenance — set when the instance was created from a modpack, so we
+  // can detect and apply newer versions later.
+  modpackSource?: 'modrinth' | 'curseforge' | 'ftb'
+  modpackProjectId?: string  // Modrinth project id / CurseForge mod id / FTB pack id
+  modpackVersionId?: string  // Modrinth version id / CurseForge file id / FTB version id
 }
 
 export type CreateInstanceInput = Omit<Instance, 'id' | 'createdAt' | 'totalTimePlayed' | 'mods' | 'isInstalled'>

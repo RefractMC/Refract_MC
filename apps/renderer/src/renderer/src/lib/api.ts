@@ -293,6 +293,8 @@ function createBrowserApi(): RefractAPI {
       install: async () => { throw new Error('Modpack install requires the Electron app.') },
       openFileDialog: async () => null,
       installFromFile: async () => { throw new Error('Modpack install requires the Electron app.') },
+      checkUpdate: async () => null,
+      update: async () => { throw new Error('Modpack update requires the Electron app.') },
       onProgress: () => () => undefined,
       onDone: () => () => undefined,
     },
