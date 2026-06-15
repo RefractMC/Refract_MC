@@ -287,6 +287,11 @@ declare global {
         install:        (instanceId: string, modId: number, fileId: number, displayName: string) => Promise<void>
         installModpack: (name: string, modId: number, fileId: number) => Promise<import('@refract/core').Instance>
       }
+      ftb: {
+        search:         (query?: string, limit?: number) => Promise<import('@refract/core').FtbModpack[]>
+        modpack:        (id: number) => Promise<import('@refract/core').FtbModpack>
+        installModpack: (name: string, packId: number, versionId: number) => Promise<import('@refract/core').Instance>
+      }
     }
   }
 }

@@ -266,6 +266,11 @@ function createBrowserApi(): RefractAPI {
       projectDetail:  async () => { throw new Error('CurseForge requires the Electron app.') },
       installModpack: async () => { throw new Error('CurseForge requires the Electron app.') },
     },
+    ftb: {
+      search:         async () => [],
+      modpack:        async () => { throw new Error('FTB requires the Electron app.') },
+      installModpack: async () => { throw new Error('FTB requires the Electron app.') },
+    },
     java: {
       managedList:  async () => [],
       requiredFor:  async () => 21,

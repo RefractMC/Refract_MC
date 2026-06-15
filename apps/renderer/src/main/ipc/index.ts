@@ -13,6 +13,7 @@ import { registerModsIpc } from './mods.ipc'
 import { registerFriendsIpc } from './friends.ipc'
 import { registerJavaIpc } from './java.ipc'
 import { registerCurseForgeIpc } from './curseforge.ipc'
+import { registerFtbIpc } from './ftb.ipc'
 import { registerSkinsIpc } from './skins.ipc'
 import { registerAnalyticsIpc } from './analytics.ipc'
 
@@ -31,6 +32,7 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerFriendsIpc()
   registerJavaIpc()
   registerCurseForgeIpc(mainWindow)
+  registerFtbIpc(mainWindow)
   registerSkinsIpc()
   registerAnalyticsIpc()
 }

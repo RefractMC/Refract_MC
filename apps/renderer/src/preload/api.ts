@@ -177,6 +177,14 @@ export const api = {
     installModpack: (name: string, modId: number, fileId: number): Promise<import('@refract/core').Instance> =>
       ipcRenderer.invoke('curseforge.installModpack', name, modId, fileId),
   },
+  ftb: {
+    search:        (query?: string, limit?: number): Promise<import('@refract/core').FtbModpack[]> =>
+      ipcRenderer.invoke('ftb.search', query, limit),
+    modpack:       (id: number): Promise<import('@refract/core').FtbModpack> =>
+      ipcRenderer.invoke('ftb.modpack', id),
+    installModpack:(name: string, packId: number, versionId: number): Promise<import('@refract/core').Instance> =>
+      ipcRenderer.invoke('ftb.installModpack', name, packId, versionId),
+  },
   java: {
     managedList:  (): Promise<import('@refract/core').JavaInstallation[]> => ipcRenderer.invoke('java.managedList'),
     requiredFor:  (mcVersion: string): Promise<number> => ipcRenderer.invoke('java.requiredFor', mcVersion),

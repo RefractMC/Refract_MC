@@ -6,6 +6,7 @@ import { paths } from './paths'
 import { notify } from './notifications'
 import { downloadFile } from './download'
 import { getProjectVersions, getPrimaryFile, fetchVersionList } from '@refract/core'
+import { getFtbModpack, getFtbVersion, ftbTargets, ftbIconUrl } from '@refract/core'
 import { createAndSaveInstance, updateInstance, deleteInstance, resolveInstanceDir } from './instance-store'
 import { installMinecraft } from './minecraft/downloader'
 import type { Instance } from '@refract/core'
@@ -299,6 +300,105 @@ export async function installModpack(
   } finally {
     try { if (existsSync(mrpackDl)) rmSync(mrpackDl) } catch { /* ignore */ }
     try { if (existsSync(tempDir))  rmSync(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+
+// ── FTB (Feed The Beast) modpack install ────────────────────────────────────────
+
+export async function installFtbModpack(
+  instanceName: string,
+  packId: number,
+  versionId: number,
+  mainWindow: BrowserWindow
+): Promise<Instance> {
+  const pid = `ftb:${packId}`
+  progress(mainWindow, pid, 'Fetching version info', 2)
+  const version = await getFtbVersion(packId, versionId)
+  const { minecraft, modLoader, modLoaderVersion } = ftbTargets(version.targets)
+  if (!minecraft) throw new Error('This FTB version has no Minecraft target.')
+
+  progress(mainWindow, pid, 'Creating instance', 4)
+  const instance = createAndSaveInstance({
+    name: instanceName,
+    minecraftVersion: minecraft,
+    modLoader,
+    modLoaderVersion,
+    memoryMb: 4096,
+  })
+
+  // Pack icon (square art) for the instance card.
+  try {
+    const pack = await getFtbModpack(packId)
+    const icon = ftbIconUrl(pack)
+    if (icon) { updateInstance(instance.id, { iconPath: icon }); instance.iconPath = icon }
+  } catch { /* non-fatal */ }
+
+  const gameDir = join(resolveInstanceDir(instance.id), 'minecraft')
+  mkdirSync(gameDir, { recursive: true })
+
+  try {
+    // ── Download every client file to its manifest path ─────────────────────
+    // Files carry either a direct FTB CDN `url` or, for most mods, a CurseForge
+    // reference (`url` empty + `curseforge: {project,file}`) that we resolve via
+    // the CF download CDN. Skip server-only files and anything with no source.
+    const files = version.files.filter(f => !f.serveronly && (f.url || f.curseforge))
+    const total = files.length
+    let done = 0
+    progress(mainWindow, pid, `Downloading files (0/${total})`, 6)
+
+    // Small concurrency keeps large packs (hundreds of files) reasonably quick
+    // without hammering the CDN. A single file failing is non-fatal.
+    const BATCH = 8
+    for (let i = 0; i < files.length; i += BATCH) {
+      await Promise.all(files.slice(i, i + BATCH).map(async f => {
+        const rel = `${f.path.replace(/^\.?\/*/, '').replace(/\\/g, '/')}/${f.name}`.replace(/\/+/g, '/')
+        const destPath = resolve(gameDir, rel)
+        if (relative(gameDir, destPath).startsWith('..')) return
+        const destDir = dirname(destPath)
+        mkdirSync(destDir, { recursive: true })
+        if (f.url) {
+          try { await downloadFile(f.url, destPath); return }
+          catch {
+            const mirror = f.mirrors?.[0]
+            if (mirror) { try { await downloadFile(mirror, destPath); return } catch { /* fall through */ } }
+          }
+        }
+        if (f.curseforge) {
+          try { await downloadCurseForgeFile(f.curseforge.project, f.curseforge.file, destDir) } catch { /* skip */ }
+        }
+      }))
+      done = Math.min(i + BATCH, total)
+      progress(mainWindow, pid, `Downloading files (${done}/${total})`, 6 + (done / Math.max(total, 1)) * 42)
+    }
+
+    // ── Install Minecraft (client jar, libraries, assets, loader) ───────────
+    progress(mainWindow, pid, 'Looking up Minecraft version', 49)
+    const versionList = await fetchVersionList()
+    const mcEntry = versionList.find(v => v.id === minecraft)
+    if (!mcEntry) throw new Error(`Minecraft ${minecraft} not found in Mojang manifest. Check your internet connection.`)
+
+    await installMinecraft(
+      instance.id,
+      minecraft,
+      mcEntry.url,
+      modLoader,
+      modLoaderVersion,
+      (p) => progress(mainWindow, pid, p.step, 50 + p.percent * 0.48)
+    )
+
+    updateInstance(instance.id, { isInstalled: true })
+    instance.isInstalled = true
+
+    progress(mainWindow, pid, 'Done', 100)
+    notify('Modpack installed', `${instance.name} is ready to play.`)
+    mainWindow.webContents.send('modpack:done', { projectId: pid, instanceId: instance.id })
+    return instance
+
+  } catch (err) {
+    try { rmSync(resolveInstanceDir(instance.id), { recursive: true, force: true }) } catch { /* ignore */ }
+    try { deleteInstance(instance.id, false) } catch { /* ignore */ }
+    mainWindow.webContents.send('modpack:done', { projectId: pid, error: err instanceof Error ? err.message : String(err) })
+    throw err
   }
 }
 
