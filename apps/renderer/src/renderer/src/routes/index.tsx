@@ -12,6 +12,7 @@ import { EditInstanceDialog } from '@/components/instances/EditInstanceDialog'
 import { InstanceModsDialog } from '@/components/instances/InstanceModsDialog'
 import { ServersDialog } from '@/components/instances/ServersDialog'
 import { InstallProgress } from '@/components/minecraft/InstallProgress'
+import { Button } from '@/components/ui/Button'
 import { useInstances, useCreateInstance, useUpdateInstance, useDeleteInstance } from '@/hooks/use-instances'
 import { api, type AppConfig } from '@/lib/api'
 import { getFilePath } from '@/lib/file-path'
@@ -83,38 +84,15 @@ function useClock() {
 }
 
 function PlayButton({ onClick, disabled = false, label = 'PLAY' }: { onClick?: () => void; disabled?: boolean; label?: string }) {
-  const [down, setDown] = useState(false)
   return (
-    <button
-      onMouseDown={() => { if (!disabled) setDown(true) }}
-      onMouseUp={() => { setDown(false); if (!disabled) onClick?.() }}
-      onMouseLeave={() => setDown(false)}
+    <Button
+      variant="primary"
       disabled={disabled}
-      style={{
-        fontFamily: "'VT323',monospace",
-        fontSize: 20,
-        letterSpacing: '.12em',
-        color: disabled ? 'var(--ink-4)' : '#fff',
-        padding: '0 28px',
-        height: 40,
-        background: disabled ? 'var(--surface-3)' : 'var(--accent)',
-        border: 'none',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        userSelect: 'none',
-        outline: 'none',
-        position: 'relative',
-        top: down ? 2 : 0,
-        opacity: disabled ? .72 : 1,
-        boxShadow: disabled
-          ? 'inset 0 -3px 0 rgba(0,0,0,.28), inset 0 3px 0 rgba(255,255,255,.05)'
-          : down
-          ? 'inset 0 2px 0 var(--accent-lo), inset 0 -2px 0 var(--accent-hi)'
-          : 'inset 0 -4px 0 var(--accent-lo), inset 0 4px 0 var(--accent-hi), 0 4px 0 rgba(0,0,0,.5)',
-        transition: 'box-shadow 60ms, top 60ms',
-      }}
+      onClick={onClick}
+      style={{ flex: 1, height: 40, fontSize: 14, letterSpacing: '.03em' }}
     >
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -191,12 +169,12 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
         )}
         {!selectionMode && bannerHover && !dragOver && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3 }}>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 15, color: '#fff', letterSpacing: '.12em', background: 'rgba(0,0,0,.5)', padding: '5px 14px', borderRadius: 3 }}>VIEW DETAILS</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#fff', letterSpacing: '.08em', background: 'rgba(0,0,0,.5)', padding: '5px 14px', borderRadius: 'var(--radius-sm)' }}>VIEW DETAILS</div>
           </div>
         )}
         {dragOver && (
           <div style={{ position:'absolute', inset:0, background:'rgba(79,184,232,.25)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2 }}>
-            <div style={{ fontFamily:"'VT323',monospace", fontSize:18, color:'#fff', letterSpacing:'.1em', background:'rgba(0,0,0,.6)', padding:'6px 16px', borderRadius:4 }}>{t.home.dropMod}</div>
+            <div style={{ fontSize:13, fontWeight:600, color:'#fff', letterSpacing:'.04em', background:'rgba(0,0,0,.6)', padding:'6px 16px', borderRadius:'var(--radius-sm)' }}>{t.home.dropMod}</div>
           </div>
         )}
         <div style={{
@@ -208,9 +186,9 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
           <div style={{
             position: 'absolute', top: 8, left: selectionMode ? 34 : 8,
             background: 'rgba(196,148,50,.9)',
-            borderRadius: 3, padding: '2px 7px',
-            fontFamily: "'VT323',monospace", fontSize: 12,
-            color: '#000', letterSpacing: '.06em',
+            borderRadius: 'var(--radius-sm)', padding: '2px 7px',
+            fontSize: 11, fontWeight: 600,
+            color: '#000', letterSpacing: '.02em',
           }}>
             {t.home.javaWarning(requiredJava(instance.minecraftVersion))}
           </div>
@@ -219,11 +197,11 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
           position: 'absolute', top: 8, right: 8,
           background: 'rgba(0,0,0,.55)',
           border: '1px solid rgba(255,255,255,.08)',
-          borderRadius: 3,
+          borderRadius: 'var(--radius-sm)',
           padding: '2px 7px',
-          fontFamily: "'VT323',monospace",
-          fontSize: 13,
-          color: 'var(--ink-3)',
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--ink-2)',
           letterSpacing: '.06em',
         }}>
           {instance.modLoader?.toUpperCase() ?? 'VANILLA'}
@@ -233,7 +211,7 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
       <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.2 }}>{instance.name}</div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <div style={{ fontFamily: "'VT323',monospace", fontSize: 14, color: 'var(--ink-4)', letterSpacing: '.04em' }}>
+          <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: 'var(--ink-4)', letterSpacing: '.02em' }}>
             MC {instance.minecraftVersion}
           </div>
           {instance.totalTimePlayed > 0 && (
@@ -263,78 +241,53 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
           <div style={{ display: 'flex', gap: 6 }}>
             <PlayButton onClick={onLaunch} disabled={false} label={label} />
             {(isRunning || hasLogs) && (
-              <button
+              <Button
+                variant="outline"
                 onClick={onConsole}
                 style={{
-                  fontFamily: "'VT323',monospace",
-                  fontSize: 14, letterSpacing: '.08em',
-                  color: isRunning ? 'var(--grass)' : 'var(--ink-3)',
-                  background: isRunning ? 'rgba(74,196,100,.1)' : 'var(--surface-2)',
-                  border: `1px solid ${isRunning ? 'rgba(74,196,100,.3)' : 'var(--border-r)'}`,
-                  borderRadius: 3, padding: '0 12px', height: 40, cursor: 'pointer',
+                  height: 40,
+                  ...(isRunning ? { color: 'var(--grass)', borderColor: 'color-mix(in srgb, var(--grass) 40%, transparent)' } : {}),
                 }}
               >
                 {isRunning ? t.home.console : t.home.log}
-              </button>
+              </Button>
             )}
           </div>
-          {/* Secondary row: MODS · SRV · Edit · Folder */}
+          {/* Secondary row: Mods · Servers · Edit · Folder */}
           <div style={{ display: 'flex', gap: 6 }}>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={onMods}
-              style={{
-                fontFamily: "'VT323',monospace", fontSize: 13, letterSpacing: '.06em',
-                color: 'var(--ink-2)', flex: 1,
-                background: 'var(--surface-2)', border: `1px solid ${updateCount > 0 ? 'var(--gold)' : 'var(--border-r)'}`,
-                borderRadius: 3, height: 32, cursor: 'pointer', position: 'relative',
-              }}
+              style={{ flex: 1, height: 32, position: 'relative', borderColor: updateCount > 0 ? 'var(--gold)' : undefined }}
             >
               {t.home.mods}
               {updateCount > 0 && (
                 <span style={{
                   position: 'absolute', top: -5, right: -5,
                   background: 'var(--gold)', color: '#000',
-                  fontSize: 9, fontFamily: 'sans-serif', fontWeight: 700,
+                  fontSize: 9, fontWeight: 700,
                   borderRadius: 8, padding: '1px 4px', lineHeight: 1.4,
                 }}>
                   {updateCount}
                 </span>
               )}
-            </button>
-            <button
-              onClick={onServers}
-              style={{
-                fontFamily: "'VT323',monospace", fontSize: 13, letterSpacing: '.06em',
-                color: 'var(--ink-2)', flex: 1,
-                background: 'var(--surface-2)', border: '1px solid var(--border-r)',
-                borderRadius: 3, height: 32, cursor: 'pointer',
-              }}
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onServers} style={{ flex: 1, height: 32 }}>
               {t.home.srv}
-            </button>
-            <button
-              onClick={onEdit}
-              style={{
-                fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', flex: 1,
-                background: 'var(--surface-2)', border: '1px solid var(--border-r)',
-                borderRadius: 3, height: 32, cursor: 'pointer',
-              }}
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onEdit} style={{ flex: 1, height: 32 }}>
               {t.home.edit}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
               onClick={onOpenFolder}
               title="Open instance folder"
-              style={{
-                width: 32, height: 32, flexShrink: 0,
-                background: 'var(--surface-2)', border: '1px solid var(--border-r)',
-                borderRadius: 3, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 14,
-              }}
+              style={{ width: 32, height: 32, flexShrink: 0, fontSize: 14 }}
             >
               📁
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -372,18 +325,9 @@ function EmptyState({ onOpen }: { onOpen: () => void }) {
       <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: '0 0 20px', maxWidth: 320, marginInline: 'auto' }}>
         {t.home.emptyDesc}
       </p>
-      <button
-        onClick={onOpen}
-        style={{
-          fontFamily: "'VT323',monospace",
-          fontSize: 18, letterSpacing: '.1em', color: '#fff',
-          padding: '0 24px', height: 38,
-          background: 'var(--accent)', border: 'none', cursor: 'pointer',
-          boxShadow: 'inset 0 -3px 0 var(--accent-lo), inset 0 3px 0 var(--accent-hi)',
-        }}
-      >
+      <Button variant="primary" size="lg" onClick={onOpen} style={{ margin: '0 auto' }}>
         {t.home.emptyBtn}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -416,7 +360,7 @@ function CrashReportModal({ instanceName, text, lastLines, onClose, onOpenConsol
       <div style={{ width: '72vw', maxWidth: 860, height: '75vh', background: '#0d0d0d', border: '1px solid rgba(217,59,59,.6)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(217,59,59,.3)', background: 'rgba(217,59,59,.08)', flexShrink: 0 }}>
           <div>
-            <span style={{ fontFamily: "'VT323',monospace", fontSize: 18, color: '#ff6b6b', letterSpacing: '.1em' }}>{t.home.crashTitle}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#ff6b6b', letterSpacing: '.02em' }}>{t.home.crashTitle}</span>
             <span style={{ fontSize: 12, color: 'var(--ink-4)', marginLeft: 12 }}>{instanceName}</span>
             {copied && <span style={{ fontSize: 11, color: 'var(--grass)', marginLeft: 10 }}>Copied to clipboard</span>}
           </div>
@@ -501,7 +445,7 @@ function OnboardingModal({ step, onNext, onClose, onAddAccount, onNewInstance }:
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ padding: '28px 24px' }}>
-          <div style={{ fontFamily: "'VT323',monospace", fontSize: 22, color: 'var(--accent)', letterSpacing: '.06em', marginBottom: 14 }}>{current.title}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--accent)', letterSpacing: '.01em', marginBottom: 14 }}>{current.title}</div>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6, margin: '0 0 24px' }}>{current.body}</p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{current.footer}</div>
         </div>
@@ -511,13 +455,16 @@ function OnboardingModal({ step, onNext, onClose, onAddAccount, onNewInstance }:
 }
 
 const primaryBtnStyle: React.CSSProperties = {
-  height: 36, padding: '0 18px', background: 'var(--accent)', color: '#fff',
-  border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-  boxShadow: 'inset 0 -2px 0 var(--accent-lo)',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  height: 36, padding: '0 18px', background: 'var(--accent)', color: 'var(--accent-fg)',
+  border: '1px solid transparent', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+  fontSize: 14, fontWeight: 600,
 }
 const secondaryBtnStyle: React.CSSProperties = {
-  height: 36, padding: '0 14px', background: 'var(--surface-2)', color: 'var(--ink)',
-  border: '1px solid var(--border-r)', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  height: 36, padding: '0 16px', background: 'var(--surface-3)', color: 'var(--ink)',
+  border: '1px solid var(--border-2)', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+  fontSize: 14, fontWeight: 600,
 }
 
 function ConsoleModal({ instanceName, lines, onClose }: { instanceName: string; lines: string[]; onClose: () => void }) {
@@ -550,7 +497,7 @@ function ConsoleModal({ instanceName, lines, onClose }: { instanceName: string; 
           background: '#111',
           flexShrink: 0,
         }}>
-          <span style={{ fontFamily: "'VT323',monospace", fontSize: 16, color: 'var(--grass)', letterSpacing: '.1em' }}>
+          <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, fontWeight: 600, color: 'var(--grass)', letterSpacing: '.02em' }}>
             {t.home.consoleTitle(instanceName)}
           </span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
@@ -583,7 +530,7 @@ function NoLicenseModal({ instanceName, onClose }: { instanceName: string; onClo
     <div style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ width: 440, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: "'VT323',monospace", fontSize: 18, color: 'var(--gold)', letterSpacing: '.08em' }}>{t.home.licenseTitle}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--gold)', letterSpacing: '.02em' }}>{t.home.licenseTitle}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ padding: '24px 22px' }}>
@@ -607,6 +554,65 @@ function NoLicenseModal({ instanceName, onClose }: { instanceName: string; onClo
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function NewGroupDialog({ existing, onCancel, onCreate }: { existing: string[]; onCancel: () => void; onCreate: (name: string) => void }) {
+  const t = useT()
+  const [name, setName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    inputRef.current?.focus()
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onCancel])
+
+  const trimmed = name.trim()
+  const duplicate = trimmed.length > 0 && existing.includes(trimmed)
+  const canCreate = trimmed.length > 0 && !duplicate
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canCreate) onCreate(trimmed)
+  }
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <form
+        onSubmit={submit}
+        style={{ width: 380, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-floating)', overflow: 'hidden' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ padding: '16px 20px 0' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{t.home.newGroupHeading}</div>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '4px 0 14px' }}>{t.home.newGroupDesc}</p>
+          <input
+            ref={inputRef}
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={t.home.newGroupPlaceholder}
+            maxLength={48}
+            style={{
+              width: '100%', height: 38, padding: '0 12px',
+              background: 'var(--bg)', color: 'var(--ink)',
+              border: `1px solid ${duplicate ? 'var(--lava)' : 'var(--border-r)'}`,
+              borderRadius: 'var(--radius-md)', outline: 'none', fontSize: 14,
+            }}
+          />
+          <div style={{ minHeight: 16, marginTop: 6, fontSize: 11, color: 'var(--lava)' }}>
+            {duplicate ? t.home.newGroupDuplicate : ''}
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '8px 20px 18px' }}>
+          <Button variant="ghost" type="button" onClick={onCancel}>{t.home.newGroupCancel}</Button>
+          <Button variant="primary" type="submit" disabled={!canCreate}>{t.home.newGroupCreate}</Button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -635,6 +641,17 @@ function Library() {
   const [dragInstanceId, setDragInstanceId] = useState<string | null>(null)
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  // User-created groups persist even while empty (regular groups are derived from
+  // instances that carry a groupId, so a brand-new group needs its own store).
+  const [customGroups, setCustomGroups] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('refract.customGroups') ?? '[]') as string[] } catch { return [] }
+  })
+  // User-defined ordering of groups (drag to reorder). Names not present here
+  // fall back to alphabetical, appended after the ordered ones.
+  const [groupOrder, setGroupOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('refract.groupOrder') ?? '[]') as string[] } catch { return [] }
+  })
+  const [dragGroupKey, setDragGroupKey] = useState<string | null>(null)
   const [javas, setJavas] = useState<import('@refract/core').JavaInstallation[]>([])
   const [jarToast, setJarToast] = useState<string | null>(null)
   const [whatsNew, setWhatsNew] = useState<ChangelogEntry[]>(FALLBACK_WHATS_NEW)
@@ -648,6 +665,7 @@ function Library() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [externalInstances, setExternalInstances] = useState<ExternalInstance[] | null>(null)
   const [externalScanning, setExternalScanning] = useState(false)
+  const [newGroupOpen, setNewGroupOpen] = useState(false)
 
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -873,8 +891,48 @@ function Library() {
     return () => { if (typeof unsub === 'function') unsub() }
   }, [])
 
-  const groups = [...new Set(instances.map(i => i.groupId).filter(Boolean) as string[])].sort()
+  const allGroupNames = [...new Set([...(instances.map(i => i.groupId).filter(Boolean) as string[]), ...customGroups])]
+  // Ordered groups come first (user drag order), then any not-yet-ordered names
+  // alphabetically — so newly added groups still show up predictably.
+  const groups = [
+    ...groupOrder.filter(g => allGroupNames.includes(g)),
+    ...allGroupNames.filter(g => !groupOrder.includes(g)).sort(),
+  ]
   const isGroupedView = carouselTab === 'all' && groups.length > 0
+
+  function persistCustomGroups(next: string[]) {
+    setCustomGroups(next)
+    try { localStorage.setItem('refract.customGroups', JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistGroupOrder(next: string[]) {
+    setGroupOrder(next)
+    try { localStorage.setItem('refract.groupOrder', JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  // Move the dragged group so it sits just before `targetKey` in the order.
+  function reorderGroup(dragKey: string, targetKey: string) {
+    if (dragKey === targetKey || !groups.includes(targetKey)) return
+    const without = groups.filter(g => g !== dragKey)
+    const idx = without.indexOf(targetKey)
+    persistGroupOrder([...without.slice(0, idx), dragKey, ...without.slice(idx)])
+  }
+  // Electron's renderer has no working window.prompt, so group creation uses a
+  // small in-app dialog (see NewGroupDialog) rather than a native prompt.
+  function createGroupNamed(name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    if (!groups.includes(trimmed)) persistCustomGroups([...customGroups, trimmed])
+    setCarouselTab('all')
+    setCarouselPage(0)
+    setNewGroupOpen(false)
+  }
+  function deleteGroup(name: string) {
+    persistCustomGroups(customGroups.filter(g => g !== name))
+    if (groupOrder.includes(name)) persistGroupOrder(groupOrder.filter(g => g !== name))
+    // Any instances still tagged with this group fall back to ungrouped.
+    for (const inst of instances) {
+      if (inst.groupId === name) updateInstance.mutate({ id: inst.id, patch: { groupId: undefined } })
+    }
+  }
 
   const applyFilters = (base: Instance[]) => {
     if (searchQuery) base = base.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -915,7 +973,7 @@ function Library() {
               : t.home.signInToPlay}
           </div>
         </div>
-        <div style={{ fontFamily: "'VT323',monospace", fontSize: 22, color: 'var(--ink-4)', letterSpacing: '.08em', lineHeight: 1 }}>
+        <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 18, color: 'var(--ink-4)', letterSpacing: '.02em', lineHeight: 1 }}>
           {timeStr}
         </div>
       </div>
@@ -1031,47 +1089,27 @@ function Library() {
                   </NavBtn>
                 </>
               )}
-              <button
+              <Button
+                variant="secondary"
+                onClick={() => setNewGroupOpen(true)}
+                title={t.home.newGroupTitle}
+              >
+                {t.home.newGroup}
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => setSyncOpen(true)}
                 title="Sync instances from other launchers"
-                style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 13, fontWeight: 600,
-                  color: 'var(--ink)',
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--border-r)',
-                  borderRadius: 8,
-                  padding: '8px 14px',
-                  cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  transition: 'background 100ms',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-3)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-2)' }}
               >
                 ⇄ Sync
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
                 onClick={() => setCreateOpen(true)}
-                style={{
-                  marginLeft: isGroupedView ? 0 : 4,
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 13, fontWeight: 700,
-                  color: '#fff',
-                  background: 'var(--accent)',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '8px 18px',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px var(--accent-tint), inset 0 -2px 0 var(--accent-lo)',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  transition: 'transform 100ms, box-shadow 100ms',
-                }}
-                onMouseEnter={e => { (e.currentTarget).style.transform = 'translateY(-1px)' }}
-                onMouseLeave={e => { (e.currentTarget).style.transform = 'none' }}
+                style={{ marginLeft: isGroupedView ? 0 : 4 }}
               >
                 {t.home.newBtn}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -1085,16 +1123,19 @@ function Library() {
             fontSize: 12,
           }}>
             <span style={{ color: 'var(--ink)', fontWeight: 600, marginRight: 4 }}>{selectedIds.size} selected</span>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 const visible = isGroupedView ? applyFilters(instances) : tabInstances
                 setSelectedIds(new Set(visible.map(i => i.id)))
               }}
-              style={{ fontSize: 11, padding: '3px 10px', background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}
             >
               Select all
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={async () => {
                 const groupName = window.prompt('Enter group name (leave blank to ungroup):')
                 if (groupName === null) return
@@ -1103,11 +1144,12 @@ function Library() {
                 }
                 setSelectedIds(new Set())
               }}
-              style={{ fontSize: 11, padding: '3px 10px', background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}
             >
               Move to group ▾
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
               onClick={async () => {
                 if (!window.confirm(`Delete ${selectedIds.size} instance(s)? This cannot be undone.`)) return
                 for (const id of [...selectedIds]) {
@@ -1116,16 +1158,17 @@ function Library() {
                 setSelectedIds(new Set())
                 setSelectionMode(false)
               }}
-              style={{ fontSize: 11, padding: '3px 10px', background: 'transparent', color: 'var(--lava)', border: '1px solid rgba(217,59,59,.4)', borderRadius: 3, cursor: 'pointer' }}
             >
               Delete
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setSelectedIds(new Set())}
-              style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 8px', background: 'transparent', color: 'var(--ink-4)', border: 'none', cursor: 'pointer' }}
+              style={{ marginLeft: 'auto', color: 'var(--ink-4)' }}
             >
               ✕ Clear
-            </button>
+            </Button>
           </div>
         )}
 
@@ -1141,7 +1184,6 @@ function Library() {
             const filtered = applyFilters(instances)
             const sections: Array<{ key: string; title: string; items: Instance[] }> = groups
               .map(g => ({ key: g, title: g, items: filtered.filter(i => i.groupId === g) }))
-              .filter(s => s.items.length > 0)
             const ungrouped = filtered.filter(i => !i.groupId)
             if (ungrouped.length > 0) sections.push({ key: '__ungrouped__', title: '', items: ungrouped })
 
@@ -1155,7 +1197,8 @@ function Library() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {sections.map(section => {
                   const isCollapsed = collapsedGroups.has(section.key)
-                  const isDragTarget = dragOverGroup === section.key && dragInstanceId !== null
+                  const isGroup = section.key !== '__ungrouped__'
+                  const isDragTarget = dragOverGroup === section.key && (dragInstanceId !== null || (dragGroupKey !== null && dragGroupKey !== section.key && isGroup))
                   return (
                     <div
                       key={section.key}
@@ -1164,36 +1207,74 @@ function Library() {
                       onDrop={e => {
                         e.preventDefault()
                         setDragOverGroup(null)
+                        // Reordering a whole group takes priority over moving an instance.
+                        if (dragGroupKey) {
+                          const dk = dragGroupKey
+                          setDragGroupKey(null)
+                          if (isGroup) reorderGroup(dk, section.key)
+                          return
+                        }
                         const id = dragInstanceId
                         setDragInstanceId(null)
                         if (!id) return
-                        const newGroupId = section.key === '__ungrouped__' ? undefined : section.key
+                        const newGroupId = isGroup ? section.key : undefined
                         updateInstance.mutate({ id, patch: { groupId: newGroupId } })
                       }}
                       style={{ outline: isDragTarget ? '2px dashed var(--accent)' : undefined, borderRadius: 4, padding: isDragTarget ? 4 : 0 }}
                     >
-                      <button
-                        onClick={() => setCollapsedGroups(prev => {
-                          const next = new Set(prev)
-                          if (next.has(section.key)) next.delete(section.key)
-                          else next.add(section.key)
-                          return next
-                        })}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0',
-                          background: 'none', border: 'none', borderBottom: '1px solid var(--line)',
-                          cursor: 'pointer', width: '100%', marginBottom: isCollapsed ? 0 : 10,
-                        }}
-                      >
-                        <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>{isCollapsed ? '▶' : '▼'}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
-                          {section.title || t.home.ungrouped}
-                        </span>
-                        <span style={{ fontSize: 10, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 8, padding: '0 6px', lineHeight: 1.7 }}>
-                          {section.items.length}
-                        </span>
-                      </button>
-                      {!isCollapsed && (
+                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line)', marginBottom: isCollapsed ? 0 : 10 }}>
+                        {isGroup && (
+                          <span
+                            draggable
+                            onDragStart={() => setDragGroupKey(section.key)}
+                            onDragEnd={() => { setDragGroupKey(null); setDragOverGroup(null) }}
+                            title={t.home.groupReorder}
+                            style={{ cursor: 'grab', color: 'var(--ink-4)', fontSize: 13, padding: '0 6px 0 0', lineHeight: 1, userSelect: 'none' }}
+                          >
+                            ⠿
+                          </span>
+                        )}
+                        <button
+                          onClick={() => setCollapsedGroups(prev => {
+                            const next = new Set(prev)
+                            if (next.has(section.key)) next.delete(section.key)
+                            else next.add(section.key)
+                            return next
+                          })}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0',
+                            background: 'none', border: 'none', cursor: 'pointer', flex: 1, textAlign: 'left',
+                          }}
+                        >
+                          <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>{isCollapsed ? '▶' : '▼'}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
+                            {section.title || t.home.ungrouped}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 8, padding: '0 6px', lineHeight: 1.7 }}>
+                            {section.items.length}
+                          </span>
+                        </button>
+                        {customGroups.includes(section.key) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t.home.groupDelete}
+                            onClick={() => deleteGroup(section.key)}
+                            style={{ width: 24, height: 24, color: 'var(--ink-4)' }}
+                          >
+                            ✕
+                          </Button>
+                        )}
+                      </div>
+                      {!isCollapsed && section.items.length === 0 && (
+                        <div style={{
+                          padding: '18px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)',
+                          border: '1px dashed var(--border-2)', borderRadius: 'var(--radius-md)',
+                        }}>
+                          {t.home.groupDropHint}
+                        </div>
+                      )}
+                      {!isCollapsed && section.items.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                           {section.items.map(inst => {
                             const needed = requiredJava(inst.minecraftVersion)
@@ -1253,7 +1334,7 @@ function Library() {
             height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
             background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)',
           }}>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 18, color: 'var(--ink-4)', letterSpacing: '.08em' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-4)', letterSpacing: '.01em' }}>
               {carouselTab === 'pinned' ? t.home.noPinned : t.home.nothingHere}
             </div>
             {carouselTab === 'pinned' && (
@@ -1313,7 +1394,7 @@ function Library() {
               {whatsNew.map(item => (
                 <div key={item.version} style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontFamily: "'VT323',monospace", fontSize: 13, color: 'var(--accent)', letterSpacing: '.06em' }}>v{item.version}</span>
+                    <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 600, color: 'var(--accent)', letterSpacing: '.02em' }}>v{item.version}</span>
                     {item.date && <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>{item.date}</span>}
                   </div>
                   <ul style={{ margin: '3px 0 0', paddingLeft: 14, listStyle: 'disc' }}>
@@ -1458,8 +1539,8 @@ function Library() {
         <div style={{ position:'fixed', bottom:24, right:24, zIndex:100, width:320, pointerEvents:'none' }}>
           <div style={{ background:'var(--surface-2)', border:'1px solid var(--border-r)', borderRadius:'var(--radius)', padding:'14px 16px', display:'flex', flexDirection:'column', gap:10, boxShadow:'0 8px 32px rgba(0,0,0,.5)' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
-              <div style={{ fontFamily:"'VT323',monospace", fontSize:14, color:'var(--accent)', letterSpacing:'.1em' }}>{t.home.importingModpack}</div>
-              <span style={{ fontFamily:"'VT323',monospace", fontSize:13, color:'var(--accent)' }}>{Math.round(fileImport.percent)}%</span>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--accent)', letterSpacing:'.02em' }}>{t.home.importingModpack}</div>
+              <span style={{ fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize:12, color:'var(--accent)' }}>{Math.round(fileImport.percent)}%</span>
             </div>
             <div style={{ fontSize:13, fontWeight:600, color:'var(--ink)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fileImport.name}</div>
             <div style={{ height:6, background:'var(--surface-3)', borderRadius:3, overflow:'hidden' }}>
@@ -1529,6 +1610,14 @@ function Library() {
           onClose={dismissOnboarding}
           onAddAccount={dismissOnboarding}
           onNewInstance={() => { setOnboardingStep(3); setCreateOpen(true) }}
+        />
+      )}
+
+      {newGroupOpen && (
+        <NewGroupDialog
+          existing={groups}
+          onCancel={() => setNewGroupOpen(false)}
+          onCreate={createGroupNamed}
         />
       )}
 
@@ -1634,21 +1723,21 @@ function SyncPanel({ instances, scanning, onClose, onScan, onLink, onImport }: S
         {/* header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--line)' }}>
           <div>
-            <div style={{ fontFamily: "'VT323',monospace", fontSize: 22, letterSpacing: '.1em', color: 'var(--accent)' }}>{t.sync.title}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '.01em', color: 'var(--accent)' }}>{t.sync.title}</div>
             <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{t.sync.subtitle}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4 }}>✕</button>
+          <Button variant="ghost" size="icon" onClick={onClose} style={{ fontSize: 16, color: 'var(--ink-4)' }}>✕</Button>
         </div>
 
         {/* scan button */}
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
+          <Button
+            variant="primary"
             onClick={() => { void onScan() }}
             disabled={scanning}
-            style={{ fontFamily: "'VT323',monospace", fontSize: 16, letterSpacing: '.08em', padding: '6px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: scanning ? 'default' : 'pointer', opacity: scanning ? .6 : 1 }}
           >
             {scanning ? t.sync.scanning : t.sync.scan}
-          </button>
+          </Button>
           <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
             Prism · MultiMC · Modrinth · ATLauncher · CurseForge · GDLauncher
           </span>

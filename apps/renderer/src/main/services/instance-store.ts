@@ -20,13 +20,41 @@ function writeRegistry(entries: RegistryEntry[]): void {
   writeFileSync(registryFilePath(), JSON.stringify(entries, null, 2), 'utf-8')
 }
 
-// Sanitize a user-provided instance name into a safe folder name.
+// Cyrillic → Latin (Ukrainian/Russian). Used only for the on-disk folder name so
+// non-Latin instance names still produce an ASCII path; the pretty Unicode name
+// is kept separately in instance.name for display.
+const CYRILLIC_MAP: Record<string, string> = {
+  а:'a', б:'b', в:'v', г:'h', ґ:'g', д:'d', е:'e', є:'ie', ж:'zh', з:'z',
+  и:'y', і:'i', ї:'i', й:'i', к:'k', л:'l', м:'m', н:'n', о:'o', п:'p',
+  р:'r', с:'s', т:'t', у:'u', ф:'f', х:'kh', ц:'ts', ч:'ch', ш:'sh', щ:'shch',
+  ь:'', ю:'iu', я:'ia', ё:'e', ы:'y', э:'e', ъ:'',
+}
+
+function transliterate(name: string): string {
+  let out = ''
+  for (const ch of name) {
+    const lower = ch.toLowerCase()
+    const mapped = CYRILLIC_MAP[lower]
+    if (mapped === undefined) { out += ch; continue }
+    // Preserve casing: capitalise the mapped form when the source was uppercase.
+    out += ch === lower ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1)
+  }
+  return out
+}
+
+// Sanitize a user-provided instance name into a safe, ASCII-only folder name.
+// Non-Latin scripts are transliterated (Cyrillic) or dropped (others) so the
+// launch path never contains characters the JVM mangles under a non-UTF-8
+// Windows code page. Falls back to "instance" when nothing usable remains.
 function sanitizeFolderName(name: string): string {
-  const safe = name
-    .trim()
+  const safe = transliterate(name)
     .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '') // strip Windows/POSIX-invalid chars
+    .replace(/[^\x20-\x7e]+/g, '')          // drop any remaining non-ASCII
+    .replace(/\s+/g, ' ')                    // collapse whitespace left by drops
+    .trim()
     .replace(/\.+$/, '')                      // no trailing dots
     .slice(0, 64)
+    .trim()
   return safe || 'instance'
 }
 
