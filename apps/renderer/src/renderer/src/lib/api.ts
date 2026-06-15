@@ -274,6 +274,7 @@ function createBrowserApi(): RefractAPI {
     java: {
       managedList:  async () => [],
       requiredFor:  async () => 21,
+      ensureFor:    async () => 21,
       download:     async () => { throw new Error('Java download requires the Electron app.') },
       delete:       async () => { throw new Error('Java delete requires the Electron app.') },
       browseExe:    async () => null,

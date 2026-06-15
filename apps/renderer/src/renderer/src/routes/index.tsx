@@ -628,6 +628,8 @@ function Library() {
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [, setTick] = useState(0)
   const [installing, setInstalling] = useState<{ instanceId: string; name: string } | null>(null)
+  const [javaPrep, setJavaPrep] = useState<{ step: string; percent: number } | null>(null)
+  const launchingRef = useRef(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [mcVersions, setMcVersions] = useState<MinecraftVersion[]>([])
   const [consoleLogs, setConsoleLogs] = useState<Map<string, string[]>>(new Map())
@@ -832,6 +834,9 @@ function Library() {
       setRunningIds(prev => { const n = new Set(prev); n.delete(instance.id); return n })
       return
     }
+    // Surface the one-time Java download (if the required runtime is missing)
+    // that resolveJava performs in the main process during launch.
+    launchingRef.current = true
     try {
       await api.mc.launch(instance.id)
       setRunningIds(prev => new Set([...prev, instance.id]))
@@ -848,8 +853,20 @@ function Library() {
       }
       setLaunchToast(`Launch failed: ${msg}`)
       setTimeout(() => setLaunchToast(null), 4000)
+    } finally {
+      launchingRef.current = false
+      setJavaPrep(null)
     }
   }
+
+  // Show Java auto-download progress, but only while a launch is in flight
+  // (the same channel also fires for manual downloads in Settings).
+  useEffect(() => {
+    const off = api.java.onProgress(({ step, percent }) => {
+      if (launchingRef.current) setJavaPrep(step === 'Done' ? null : { step, percent })
+    })
+    return off
+  }, [])
 
   // Listen for MC exit events
   useEffect(() => {
@@ -1515,6 +1532,19 @@ function Library() {
           if (inst) void recordActivity(`Duplicated "${inst.name}"`)
         }}
       />
+
+      {javaPrep && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-floating)', padding: '28px 32px', width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', letterSpacing: '.04em' }}>Setting up Java</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{javaPrep.step}</div>
+            <div style={{ height: 8, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-max)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${javaPrep.percent}%`, background: 'var(--accent)', transition: 'width 200ms linear' }} />
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>A one-time Java runtime download for this Minecraft version.</div>
+          </div>
+        </div>
+      )}
 
       {installing && (
         <InstallProgress

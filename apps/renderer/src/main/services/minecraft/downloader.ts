@@ -513,18 +513,18 @@ async function installForge(
       if (existsSync(mavenDir)) copyMavenLibs(mavenDir, paths.libraries)
 
       // Run Forge processors (patch the Minecraft client JAR). They must run on
-      // a Java at least as new as the Minecraft version requires — picking the
-      // first detected JDK could hand a Java 8 to a Forge that needs 17+.
+      // a Java at least as new as the Minecraft version requires, so provision
+      // one automatically (incl. the launcher's managed runtimes) rather than
+      // failing when the user has no matching system JDK.
       report('Running Forge processors', 70)
-      const { detectJavaInstallations } = await import('@refract/core/java-manager')
-      const javas = (await detectJavaInstallations()).sort((a, b) => b.version - a.version)
+      const { ensureJava } = await import('../java-manager')
       let requiredJava = 8
       try {
         const vj = JSON.parse(readFileSync(versionJsonPath(versionId), 'utf-8')) as VersionJson
         requiredJava = vj.javaVersion?.majorVersion ?? 8
       } catch { /* fall back to 8 */ }
-      const picked = javas.find(j => j.version >= requiredJava) ?? javas[0]
-      const javaExe = picked ? join(picked.path, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : 'java'
+      const picked = await ensureJava(requiredJava, (step, percent) => report(step, 68 + Math.round(percent * 0.02)))
+      const javaExe = join(picked.path, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
       await runForgeProcessors(profile, versionId, instanceId, javaExe, installerPath, extractDir, onProgress)
     }
 

@@ -188,6 +188,7 @@ export const api = {
   java: {
     managedList:  (): Promise<import('@refract/core').JavaInstallation[]> => ipcRenderer.invoke('java.managedList'),
     requiredFor:  (mcVersion: string): Promise<number> => ipcRenderer.invoke('java.requiredFor', mcVersion),
+    ensureFor:    (mcVersion: string): Promise<number> => ipcRenderer.invoke('java.ensureFor', mcVersion),
     download:     (major: number): Promise<import('@refract/core').JavaInstallation> => ipcRenderer.invoke('java.download', major),
     delete:       (major: number): Promise<void> => ipcRenderer.invoke('java.delete', major),
     browseExe:    (): Promise<string | null> => ipcRenderer.invoke('java.browseExe'),

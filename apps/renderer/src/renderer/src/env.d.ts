@@ -240,6 +240,7 @@ declare global {
       java: {
         managedList:  () => Promise<import('@refract/core').JavaInstallation[]>
         requiredFor:  (mcVersion: string) => Promise<number>
+        ensureFor:    (mcVersion: string) => Promise<number>
         download:     (major: number) => Promise<import('@refract/core').JavaInstallation>
         delete:       (major: number) => Promise<void>
         browseExe:    () => Promise<string | null>

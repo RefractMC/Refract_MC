@@ -13,7 +13,8 @@ import type { VersionJson } from '@refract/core'
 import { localDateKey } from '@refract/core'
 import { buildLaunchCommand } from '@refract/core/launcher'
 import { detectJavaInstallations } from '@refract/core/java-manager'
-import { loadManagedJavas } from '../java-manager'
+import { loadManagedJavas, ensureJava } from '../java-manager'
+import { emitJavaProgress } from '../../ipc/java.ipc'
 import { versionJsonPath, clientJarPath, nativesDir, forgeJsonPath, linkLegacyResources } from './downloader'
 import { setGameActivity, clearGameActivity } from '../discord'
 import { notify } from '../notifications'
@@ -140,9 +141,13 @@ async function resolveJava(requiredMajor: number, instanceJavaPath?: string): Pr
     }
   } catch { /* not in PATH */ }
 
-  const found = installs[0] ? `Java ${installs[0].version} is installed` : 'no Java found'
+  // Nothing suitable is installed — provision it automatically instead of
+  // dead-ending the launch. Progress streams to the renderer over 'java:progress'.
+  const provisioned = await ensureJava(requiredMajor, (step, percent) => emitJavaProgress(requiredMajor, step, percent))
+  const dlExe = join(provisioned.path, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
+  if (existsSync(dlExe)) return { exe: dlExe, version: provisioned.version }
   throw new Error(
-    `This Minecraft version requires Java ${requiredMajor}, but ${found}. Install Java ${requiredMajor} from https://adoptium.net`
+    `Could not provision Java ${requiredMajor}. Install it manually from https://adoptium.net`
   )
 }
 
