@@ -93,6 +93,35 @@ pub async fn fetch_latest(mc: &str, is_neo: bool) -> Result<String, String> {
     }
 }
 
+/// All Forge versions for an MC version (+ the promoted recommended one).
+#[tauri::command]
+pub async fn mc_forge_versions(mc_version: String) -> Result<serde_json::Value, String> {
+    let mut recommended: Option<String> = None;
+    if let Ok(res) = reqwest::get("https://files.minecraftforge.net/maven/net/minecraftforge/forge/promotions_slim.json").await {
+        if let Ok(v) = res.json::<serde_json::Value>().await {
+            recommended = v["promos"][format!("{mc_version}-recommended")].as_str().map(String::from);
+        }
+    }
+    let xml = get_text("https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml").await?;
+    let prefix = format!("{mc_version}-");
+    let mut versions: Vec<String> = xml_versions(&xml).into_iter().filter(|v| v.starts_with(&prefix)).map(|v| v[prefix.len()..].to_string()).collect();
+    versions.reverse();
+    Ok(serde_json::json!({ "versions": versions, "recommended": recommended }))
+}
+
+/// All NeoForge versions for an MC version (newest first).
+#[tauri::command]
+pub async fn mc_neoforge_versions(mc_version: String) -> Result<Vec<String>, String> {
+    let parts: Vec<&str> = mc_version.split('.').collect();
+    let minor = parts.get(1).copied().unwrap_or("0");
+    let patch = parts.get(2).copied().unwrap_or("0");
+    let prefix = format!("{minor}.{patch}.");
+    let xml = get_text("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml").await?;
+    let mut versions: Vec<String> = xml_versions(&xml).into_iter().filter(|v| v.starts_with(&prefix)).collect();
+    versions.reverse();
+    Ok(versions)
+}
+
 fn loader_json_path(mc: &str, loader: &str, ver: &str) -> PathBuf {
     let tag = format!("{loader}-{ver}");
     paths::versions_dir().join(format!("{mc}-{tag}")).join(format!("{mc}-{tag}.json"))

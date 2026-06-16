@@ -48,6 +48,23 @@ pub async fn ftb_search(query: Option<String>, limit: Option<u32>) -> Result<Vec
     Ok(packs.into_iter().filter_map(Result::ok).collect())
 }
 
+// ── Loader version lists ──────────────────────────────────────────────────────
+
+async fn loader_versions(url: String) -> Result<Vec<String>, String> {
+    let v: Value = client().get(url).header("User-Agent", UA).send().await.map_err(|e| e.to_string())?.json().await.map_err(|e| e.to_string())?;
+    Ok(v.as_array().map(|a| a.iter().filter_map(|e| e["loader"]["version"].as_str().map(String::from)).collect()).unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn fabric_versions(mc_version: String) -> Result<Vec<String>, String> {
+    loader_versions(format!("https://meta.fabricmc.net/v2/versions/loader/{mc_version}")).await
+}
+
+#[tauri::command]
+pub async fn quilt_versions(mc_version: String) -> Result<Vec<String>, String> {
+    loader_versions(format!("https://meta.quiltmc.org/v3/versions/loader/{mc_version}")).await
+}
+
 // ── CurseForge ───────────────────────────────────────────────────────────────
 
 fn cf_loader_type(loader: Option<&str>) -> Option<&'static str> {

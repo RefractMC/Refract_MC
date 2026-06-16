@@ -731,6 +731,10 @@ function createTauriApi(): RefractAPI {
     mc: {
       ...base.mc,
       java: (() => tinvoke('mc_java')) as RefractAPI['mc']['java'],
+      forgeVersions: ((mcVersion: string) => tinvoke('mc_forge_versions', { mcVersion })) as RefractAPI['mc']['forgeVersions'],
+      neoforgeVersions: ((mcVersion: string) => tinvoke('mc_neoforge_versions', { mcVersion })) as RefractAPI['mc']['neoforgeVersions'],
+      fabricVersions: ((mcVersion: string) => tinvoke('fabric_versions', { mcVersion })) as RefractAPI['mc']['fabricVersions'],
+      quiltVersions: ((mcVersion: string) => tinvoke('quilt_versions', { mcVersion })) as RefractAPI['mc']['quiltVersions'],
       install: ((instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) =>
         tinvoke('install_minecraft', { instanceId, versionId, versionUrl, modLoader, modLoaderVersion })) as RefractAPI['mc']['install'],
       launch: ((instanceId: string) => tinvoke('launch_minecraft', { instanceId })) as RefractAPI['mc']['launch'],
