@@ -52,6 +52,7 @@ pub fn run() {
             mods::install_mod_file,
             mods::uninstall_mod,
             modpack::modpack_install,
+            modpack::modpack_install_from_file,
             modpack::curseforge_install_modpack,
             modpack::ftb_install_modpack,
             mc_install::install_minecraft,

@@ -458,6 +458,12 @@ function createTauriApi(): RefractAPI {
       ...base.modpack,
       install: ((name: string, projectId: string, versionId?: string) =>
         tinvoke('modpack_install', { name, projectId, versionId })) as RefractAPI['modpack']['install'],
+      openFileDialog: (async () => {
+        const p = await dialogOpen({ multiple: false, filters: [{ name: 'Modpack', extensions: ['mrpack', 'zip'] }] })
+        return typeof p === 'string' ? p : null
+      }) as RefractAPI['modpack']['openFileDialog'],
+      installFromFile: ((filePath: string, name?: string, importId?: string) =>
+        tinvoke('modpack_install_from_file', { filePath, name, importId })) as RefractAPI['modpack']['installFromFile'],
       onProgress: ((cb: (data: { projectId: string; step: string; percent: number }) => void) => {
         let off: (() => void) | undefined
         void listen<{ projectId: string; step: string; percent: number }>('modpack://progress', e => cb(e.payload)).then(u => { off = u })
