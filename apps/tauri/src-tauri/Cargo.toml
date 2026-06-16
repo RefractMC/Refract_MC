@@ -19,7 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "5"
 # rustls avoids a native OpenSSL dependency on Windows; stream = chunked download.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "multipart"] }
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"

@@ -518,6 +518,14 @@ function createTauriApi(): RefractAPI {
       renameOffline: ((uuid: string, username: string) => tinvoke('auth_rename_offline', { uuid, username })) as RefractAPI['auth']['renameOffline'],
       setActive: ((uuid: string) => tinvoke('auth_set_active', { uuid })) as RefractAPI['auth']['setActive'],
       logout: ((uuid: string) => tinvoke('auth_logout', { uuid })) as RefractAPI['auth']['logout'],
+      fetchSkinTextureUrl: ((uuid: string) => tinvoke('fetch_skin_texture_url', { uuid })) as RefractAPI['auth']['fetchSkinTextureUrl'],
+      uploadSkin: ((uuid: string, imagePath: string, variant: 'classic' | 'slim') => tinvoke('upload_skin', { uuid, imagePath, variant })) as RefractAPI['auth']['uploadSkin'],
+      fetchCapes: ((uuid: string) => tinvoke('fetch_capes', { uuid })) as RefractAPI['auth']['fetchCapes'],
+      setCape: ((uuid: string, capeId: string | null) => tinvoke('set_cape', { uuid, capeId })) as RefractAPI['auth']['setCape'],
+      browseSkin: (async () => {
+        const p = await dialogOpen({ multiple: false, filters: [{ name: 'PNG Image', extensions: ['png'] }] })
+        return typeof p === 'string' ? p : null
+      }) as RefractAPI['auth']['browseSkin'],
     },
     mc: {
       ...base.mc,

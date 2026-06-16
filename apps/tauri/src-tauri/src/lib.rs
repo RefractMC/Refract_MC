@@ -12,6 +12,7 @@ mod mods;
 mod paths;
 mod process;
 mod secrets;
+mod skins;
 
 /// Tauri entry point. Each former Electron IPC handler becomes a `#[tauri::command]`
 /// registered here; the renderer calls them via `invoke(...)`.
@@ -39,6 +40,10 @@ pub fn run() {
             auth::auth_rename_offline,
             auth::auth_set_active,
             auth::auth_logout,
+            skins::fetch_skin_texture_url,
+            skins::upload_skin,
+            skins::fetch_capes,
+            skins::set_cape,
             content::ftb_search,
             content::ftb_modpack,
             content::curseforge_search,
