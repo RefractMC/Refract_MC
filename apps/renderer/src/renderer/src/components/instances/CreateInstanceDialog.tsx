@@ -369,7 +369,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
             <div style={{ flex: 1 }} />
             {onImportFile && (
               <button type="button" className="ni-btn ni-btn-soft" disabled={loading} onClick={async () => {
-                const p = await window.api.modpack.openFileDialog()
+                const p = await api.modpack.openFileDialog()
                 if (p) { onOpenChange(false); reset(); onImportFile(p) }
               }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 1z"/></svg>
