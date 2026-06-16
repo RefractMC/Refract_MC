@@ -452,8 +452,8 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     };
 
     let required_java = version_json["javaVersion"]["majorVersion"].as_u64().unwrap_or(8) as u32;
-    let java_exe = crate::java::resolve_for(required_java, instance.get("javaPath").and_then(Value::as_str))
-        .ok_or("No Java runtime found. Open Settings → scan for Java, or set a Java path on this instance (automatic provisioning is a later step).")?;
+    // Resolve a runtime, auto-downloading a Temurin JRE if none qualifies.
+    let java_exe = crate::java::resolve_or_provision(&app, required_java, instance.get("javaPath").and_then(Value::as_str)).await?;
 
     let inst_dir = instances::resolve_instance_dir(&instance_id);
     let game_dir = instance

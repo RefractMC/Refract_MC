@@ -459,6 +459,21 @@ function createTauriApi(): RefractAPI {
         return () => off?.()
       }) as RefractAPI['mc']['onExit'],
     },
+    // Managed (auto-downloaded) Java runtimes. browseExe/addCustom/removeCustom
+    // (custom-path management) stay on the fallback until ported.
+    java: {
+      ...base.java,
+      managedList: (() => tinvoke('java_managed_list')) as RefractAPI['java']['managedList'],
+      requiredFor: ((mcVersion: string) => tinvoke('java_required_for', { mcVersion })) as RefractAPI['java']['requiredFor'],
+      ensureFor: ((mcVersion: string) => tinvoke('java_ensure_for', { mcVersion })) as RefractAPI['java']['ensureFor'],
+      download: ((major: number) => tinvoke('java_download', { major })) as RefractAPI['java']['download'],
+      delete: ((major: number) => tinvoke('java_delete', { major })) as RefractAPI['java']['delete'],
+      onProgress: ((cb: (data: { major: number; step: string; percent: number }) => void) => {
+        let off: (() => void) | undefined
+        void listen<{ major: number; step: string; percent: number }>('java://progress', e => cb(e.payload)).then(u => { off = u })
+        return () => off?.()
+      }) as RefractAPI['java']['onProgress'],
+    },
   }
 }
 
