@@ -90,6 +90,9 @@ pub fn run() {
             gamedata::mc_delete_world,
             gamedata::mc_crash_report,
             gamedata::mc_backup_world,
+            gamedata::mc_screenshots,
+            gamedata::mc_open_screenshot,
+            gamedata::mc_screenshot_full,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

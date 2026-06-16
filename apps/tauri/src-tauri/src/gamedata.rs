@@ -4,9 +4,10 @@
 //! server list (servers.dat NBT) and server ping need extra deps — separate step.
 
 use crate::instances;
+use base64::Engine as _;
 use serde::Serialize;
 use std::fs;
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 /// Join `name` under `base`, rejecting anything that escapes it (path traversal).
@@ -123,6 +124,100 @@ pub async fn mc_backup_world(instance_id: String, world_name: String, dest_path:
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ── screenshots ──────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct Screenshot {
+    filename: String,
+    #[serde(rename = "sizeKb")]
+    size_kb: u64,
+    timestamp: f64,
+    #[serde(rename = "dataUrl", skip_serializing_if = "Option::is_none")]
+    data_url: Option<String>,
+}
+
+fn png_data_url(img: &image::DynamicImage) -> Option<String> {
+    let mut buf = Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(buf.into_inner())))
+}
+
+/// The instance's recent screenshots (newest 24) with 320×180 thumbnails. Decode
+/// + resize runs off the main thread.
+#[tauri::command]
+pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, String> {
+    let dir = instances::game_dir(&instance_id).join("screenshots");
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut files: Vec<(PathBuf, u64, f64)> = Vec::new();
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let p = e.path();
+                let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
+                if !matches!(ext.as_str(), "png" | "jpg" | "jpeg") {
+                    continue;
+                }
+                let meta = match e.metadata() {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                files.push((p, meta.len(), mtime_ms_meta(&meta)));
+            }
+        }
+        files.sort_by(|a, b| b.2.total_cmp(&a.2));
+        files.truncate(24);
+        files
+            .into_iter()
+            .map(|(p, size, ts)| Screenshot {
+                filename: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                size_kb: size / 1024,
+                timestamp: ts,
+                data_url: image::open(&p).ok().and_then(|img| png_data_url(&img.thumbnail(320, 180))),
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Open a screenshot in the OS image viewer.
+#[tauri::command]
+pub fn mc_open_screenshot(instance_id: String, filename: String) -> Result<(), String> {
+    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let p = safe_child(&dir, &filename).ok_or("Invalid filename.")?;
+    if !p.exists() {
+        return Err("Screenshot not found.".into());
+    }
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("explorer").arg(&p).spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(&p).spawn();
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
+    Ok(())
+}
+
+/// Full-size screenshot as a data URL (downscaled to ≤1920×1080 for the viewer).
+#[tauri::command]
+pub async fn mc_screenshot_full(instance_id: String, filename: String) -> Result<Option<String>, String> {
+    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let p = safe_child(&dir, &filename).ok_or("Invalid filename.")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let img = image::open(&p).ok()?;
+        let out = if img.width() > 1920 || img.height() > 1080 { img.thumbnail(1920, 1080) } else { img };
+        png_data_url(&out)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+fn mtime_ms_meta(m: &fs::Metadata) -> f64 {
+    m.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as f64)
+        .unwrap_or(0.0)
 }
 
 fn zip_dir(zip: &mut zip::ZipWriter<std::fs::File>, root: &Path, dir: &Path, opts: zip::write::SimpleFileOptions) -> Result<(), String> {
