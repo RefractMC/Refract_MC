@@ -5,9 +5,11 @@
 //! writes. Pack icons (pack.png extraction) are not ported yet.
 
 use crate::instances;
+use base64::Engine as _;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Game dir for an instance: its external dir if set, else <instance>/minecraft.
@@ -53,6 +55,78 @@ pub struct ContentEntry {
     enabled: bool,
     #[serde(rename = "sizeKb")]
     size_kb: u64,
+    #[serde(rename = "iconDataUrl", skip_serializing_if = "Option::is_none")]
+    icon_data_url: Option<String>,
+}
+
+// ── icon extraction (mod metadata logo / pack.png) ───────────────────────────
+
+fn to_data_url(bytes: &[u8]) -> String {
+    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+fn read_zip_entry(zip_path: &Path, name: &str) -> Option<Vec<u8>> {
+    let f = fs::File::open(zip_path).ok()?;
+    let mut z = zip::ZipArchive::new(f).ok()?;
+    let mut e = z.by_name(name).ok()?;
+    let mut buf = Vec::new();
+    e.read_to_end(&mut buf).ok()?;
+    Some(buf)
+}
+
+/// `logoFile="logo.png"` from a Forge/NeoForge mods.toml.
+fn toml_logo(text: &str) -> Option<String> {
+    let pos = text.find("logoFile")?;
+    let rest = &text[pos + "logoFile".len()..];
+    let eq = rest.find('=')?;
+    let after = rest[eq + 1..].trim_start();
+    let q = after.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+    let inner = &after[1..];
+    let end = inner.find(q)?;
+    Some(inner[..end].to_string())
+}
+
+/// Extract a logo for a content file: mod metadata icon (Fabric/Quilt/Forge) for
+/// jars, else pack.png (resourcepacks/shaders/datapacks and mods that ship one).
+fn extract_icon(path: &Path, is_dir: bool) -> Option<String> {
+    if is_dir {
+        let png = path.join("pack.png");
+        return fs::read(&png).ok().map(|b| to_data_url(&b));
+    }
+    let name = path.file_name()?.to_string_lossy().to_string();
+    let base = name.strip_suffix(".disabled").unwrap_or(&name);
+    if base.ends_with(".jar") {
+        // Fabric: icon is a string path or a {size: path} map.
+        if let Some(meta) = read_zip_entry(path, "fabric.mod.json").and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+            let icon = meta.get("icon").and_then(|v| {
+                v.as_str().map(String::from).or_else(|| v.as_object().and_then(|o| o.values().filter_map(Value::as_str).last().map(String::from)))
+            });
+            if let Some(icon) = icon {
+                if let Some(bytes) = read_zip_entry(path, &icon) {
+                    return Some(to_data_url(&bytes));
+                }
+            }
+        }
+        // Quilt
+        if let Some(meta) = read_zip_entry(path, "quilt.mod.json").and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+            if let Some(icon) = meta["quilt_loader"]["metadata"]["icon"].as_str() {
+                if let Some(bytes) = read_zip_entry(path, icon) {
+                    return Some(to_data_url(&bytes));
+                }
+            }
+        }
+        // Forge / NeoForge: logoFile in mods.toml (logo sits at the jar root).
+        let toml = read_zip_entry(path, "META-INF/mods.toml").or_else(|| read_zip_entry(path, "META-INF/neoforge.mods.toml"));
+        if let Some(toml) = toml {
+            if let Some(logo) = toml_logo(&String::from_utf8_lossy(&toml)) {
+                if let Some(bytes) = read_zip_entry(path, &logo) {
+                    return Some(to_data_url(&bytes));
+                }
+            }
+        }
+    }
+    // pack.png fallback (zips + any jar that bundles one)
+    read_zip_entry(path, "pack.png").map(|b| to_data_url(&b))
 }
 
 fn list_dir(instance_id: &str, subdir: &str, kind: &str, exts: &[&str]) -> Vec<ContentEntry> {
@@ -74,7 +148,8 @@ fn list_dir(instance_id: &str, subdir: &str, kind: &str, exts: &[&str]) -> Vec<C
             let enabled = !filename.ends_with(".disabled");
             let display = base.trim_end_matches(".zip").trim_end_matches(".jar").to_string();
             let size_kb = if is_dir { 0 } else { meta.len().div_ceil(1024) };
-            out.push(ContentEntry { filename, display_name: display, kind: kind.to_string(), enabled, size_kb });
+            let icon_data_url = extract_icon(&e.path(), is_dir);
+            out.push(ContentEntry { filename, display_name: display, kind: kind.to_string(), enabled, size_kb, icon_data_url });
         }
     }
     out.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
@@ -82,12 +157,18 @@ fn list_dir(instance_id: &str, subdir: &str, kind: &str, exts: &[&str]) -> Vec<C
 }
 
 #[tauri::command]
-pub fn mods_list(instance_id: String) -> Vec<ContentEntry> {
-    let mut v = list_dir(&instance_id, "mods", "mod", &[".jar"]);
-    v.extend(list_dir(&instance_id, "resourcepacks", "resourcepack", &[".zip"]));
-    v.extend(list_dir(&instance_id, "shaderpacks", "shader", &[".zip"]));
-    v.extend(list_dir(&instance_id, "datapacks", "datapack", &[".zip"]));
-    v
+pub async fn mods_list(instance_id: String) -> Result<Vec<ContentEntry>, String> {
+    // Reading each jar's metadata/icon can be slow with many mods — do it off the
+    // main thread so the UI stays responsive.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut v = list_dir(&instance_id, "mods", "mod", &[".jar"]);
+        v.extend(list_dir(&instance_id, "resourcepacks", "resourcepack", &[".zip"]));
+        v.extend(list_dir(&instance_id, "shaderpacks", "shader", &[".zip"]));
+        v.extend(list_dir(&instance_id, "datapacks", "datapack", &[".zip"]));
+        v
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
