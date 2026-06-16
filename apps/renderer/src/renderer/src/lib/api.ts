@@ -473,10 +473,13 @@ const updProgress: Array<(v: { percent: number }) => void> = []
 const updDownloaded: Array<() => void> = []
 let pendingUpdate: UpdateHandle | null = null
 let updateChecked = false
+let updateDownloaded = false   // set once a manual Download completes
+let installingOnQuit = false
 
 async function checkForUpdate(): Promise<void> {
   if (updateChecked) return
   updateChecked = true
+  void registerQuitInstaller()
   try {
     const { check } = await import('@tauri-apps/plugin-updater')
     const update = (await check()) as unknown as (UpdateHandle & { available?: boolean }) | null
@@ -486,6 +489,29 @@ async function checkForUpdate(): Promise<void> {
     }
   } catch (e) {
     logger.warn('updater:check', String(e))
+  }
+}
+
+// "Auto-install on quit": if the user downloaded an update but didn't click
+// Install, apply it as the app closes. (On Windows the installer relaunches into
+// the new version — that's the platform behaviour.) If nothing was downloaded,
+// the window closes normally.
+async function registerQuitInstaller(): Promise<void> {
+  try {
+    const w = getCurrentWindow()
+    await w.onCloseRequested(async (event) => {
+      if (!updateDownloaded || installingOnQuit || !pendingUpdate) return
+      installingOnQuit = true
+      event.preventDefault()
+      try {
+        await pendingUpdate.install()
+      } catch (e) {
+        logger.error('updater:quit-install', String(e))
+        await w.destroy() // install failed — honour the quit anyway
+      }
+    })
+  } catch (e) {
+    logger.warn('updater:quit-hook', String(e))
   }
 }
 
@@ -780,6 +806,7 @@ function createTauriApi(): RefractAPI {
                 if (total > 0) updProgress.forEach(cb => cb({ percent: Math.round((got / total) * 100) }))
               }
             })
+            updateDownloaded = true
             updDownloaded.forEach(cb => cb())
           } catch (e) {
             logger.error('updater:download', e)
