@@ -332,40 +332,6 @@ fn build_command(
     cmd
 }
 
-/// Minimal Java resolution: the instance's stored path (file or JDK home), else
-/// `java` on PATH. Auto-provisioning (the Java Manager) is a later step.
-fn resolve_java(instance_java_path: Option<&str>) -> Result<String, String> {
-    if let Some(p) = instance_java_path {
-        let c = p.trim();
-        if !c.is_empty() {
-            let pb = PathBuf::from(c);
-            if pb.is_file() {
-                return Ok(c.to_string());
-            }
-            let win = pb.join("bin").join("java.exe");
-            if win.exists() {
-                return Ok(win.to_string_lossy().into());
-            }
-            let unix = pb.join("bin").join("java");
-            if unix.exists() {
-                return Ok(unix.to_string_lossy().into());
-            }
-        }
-    }
-    let probe = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(out) = Command::new(probe).arg("java").output() {
-        if out.status.success() {
-            if let Some(first) = String::from_utf8_lossy(&out.stdout).lines().next() {
-                let first = first.trim();
-                if !first.is_empty() && Path::new(first).exists() {
-                    return Ok(first.to_string());
-                }
-            }
-        }
-    }
-    Err("No Java runtime found. Set a Java path on this instance — automatic Java provisioning is a later migration step.".into())
-}
-
 // ── log/exit payloads + streaming ────────────────────────────────────────────
 
 #[derive(Clone, Serialize)]
@@ -485,7 +451,9 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
         _ => None,
     };
 
-    let java_exe = resolve_java(instance.get("javaPath").and_then(Value::as_str))?;
+    let required_java = version_json["javaVersion"]["majorVersion"].as_u64().unwrap_or(8) as u32;
+    let java_exe = crate::java::resolve_for(required_java, instance.get("javaPath").and_then(Value::as_str))
+        .ok_or("No Java runtime found. Open Settings → scan for Java, or set a Java path on this instance (automatic provisioning is a later step).")?;
 
     let inst_dir = instances::resolve_instance_dir(&instance_id);
     let game_dir = instance

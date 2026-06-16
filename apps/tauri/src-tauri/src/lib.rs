@@ -3,6 +3,7 @@ mod config;
 mod content;
 mod download;
 mod instances;
+mod java;
 mod launch;
 mod mc_install;
 mod paths;
@@ -37,6 +38,7 @@ pub fn run() {
             content::curseforge_files,
             content::curseforge_project_detail,
             mc_install::install_minecraft,
+            java::mc_java,
             launch::launch_minecraft,
             launch::stop_minecraft,
             launch::is_running,
