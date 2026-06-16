@@ -13,6 +13,8 @@ use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
 const RESOURCES: &str = "https://resources.download.minecraft.net";
+const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
+const QUILT_META: &str = "https://meta.quiltmc.org/v3";
 
 #[cfg(target_os = "windows")]
 const OS_NAME: &str = "windows";
@@ -95,8 +97,85 @@ fn extract_natives(jar: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// "group:artifact:version[:classifier@ext]" → relative jar path (for maven libs
+/// declared with a `url` base, as Fabric/Quilt loader libraries are).
+fn maven_to_path(name: &str) -> String {
+    let parts: Vec<&str> = name.split(':').collect();
+    let group = parts.first().copied().unwrap_or("");
+    let artifact = parts.get(1).copied().unwrap_or("");
+    let version = parts.get(2).copied().unwrap_or("");
+    let group_path = group.replace('.', "/");
+    let fname = if let Some(ce) = parts.get(3) {
+        let mut it = ce.split('@');
+        let classifier = it.next().unwrap_or("");
+        let ext = it.next().unwrap_or("jar");
+        format!("{artifact}-{version}-{classifier}.{ext}")
+    } else {
+        format!("{artifact}-{version}.jar")
+    };
+    format!("{group_path}/{artifact}/{version}/{fname}")
+}
+
+/// Install a Fabric/Quilt loader overlay: resolve the loader version (newest if
+/// none requested), fetch the profile JSON, save it to `versions/<mc>-<loader>/`,
+/// and download its (maven) libraries. Returns the concrete version installed.
+async fn install_loader(app: &AppHandle, iid: &str, mc: &str, loader: &str, requested: Option<&str>) -> Result<String, String> {
+    let meta = if loader == "fabric" { FABRIC_META } else { QUILT_META };
+    let label = if loader == "fabric" { "Installing Fabric loader" } else { "Installing Quilt loader" };
+    emit(app, iid, label, 0, 1);
+
+    let version = match requested {
+        Some(v) if !v.is_empty() => v.to_string(),
+        _ => {
+            let list: Value = reqwest::get(format!("{meta}/versions/loader/{mc}")).await.map_err(|e| e.to_string())?
+                .json().await.map_err(|e| e.to_string())?;
+            list.as_array()
+                .and_then(|a| a.first())
+                .and_then(|e| e["loader"]["version"].as_str())
+                .map(String::from)
+                .ok_or(format!("No {loader} loader found for {mc}"))?
+        }
+    };
+
+    let profile: Value = reqwest::get(format!("{meta}/versions/loader/{mc}/{version}/profile/json")).await.map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+    let vdir = paths::versions_dir().join(format!("{mc}-{loader}"));
+    fs::create_dir_all(&vdir).map_err(|e| e.to_string())?;
+    fs::write(vdir.join(format!("{mc}-{loader}.json")), serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+
+    let libs: Vec<Value> = profile["libraries"].as_array().cloned().unwrap_or_default();
+    let allowed: Vec<&Value> = libs.iter().filter(|l| library_allowed(l)).collect();
+    let total = (allowed.len() as u64).max(1);
+    let libs_dir = paths::libraries_dir();
+    for (i, lib) in allowed.iter().enumerate() {
+        emit(app, iid, label, i as u64 + 1, total);
+        if let (Some(path), Some(url)) = (
+            lib["downloads"]["artifact"]["path"].as_str(),
+            lib["downloads"]["artifact"]["url"].as_str(),
+        ) {
+            if !url.is_empty() {
+                let _ = download_to(url, &libs_dir.join(path)).await;
+            }
+        } else if let (Some(name), Some(base)) = (lib["name"].as_str(), lib["url"].as_str()) {
+            let rel = maven_to_path(name);
+            let base = if base.ends_with('/') { base.to_string() } else { format!("{base}/") };
+            let _ = download_to(&format!("{base}{rel}"), &libs_dir.join(&rel)).await;
+        }
+    }
+    emit(app, iid, label, 1, 1);
+    Ok(version)
+}
+
 #[tauri::command]
-pub async fn install_minecraft(app: AppHandle, instance_id: String, version_id: String, version_url: String) -> Result<(), String> {
+pub async fn install_minecraft(
+    app: AppHandle,
+    instance_id: String,
+    version_id: String,
+    version_url: String,
+    mod_loader: Option<String>,
+    mod_loader_version: Option<String>,
+) -> Result<(), String> {
     let iid = instance_id.as_str();
 
     // 1. Version JSON
@@ -183,6 +262,26 @@ pub async fn install_minecraft(app: AppHandle, instance_id: String, version_id: 
             emit(&app, iid, "Downloading assets", done, total);
         }
     }
+
+    // 6. Mod loader overlay (Fabric/Quilt). Forge/NeoForge — which need the
+    // installer's processor runner — are a follow-up (#25.2b).
+    let mut resolved_loader = mod_loader_version.clone();
+    match mod_loader.as_deref() {
+        Some("fabric") => resolved_loader = Some(install_loader(&app, iid, &version_id, "fabric", mod_loader_version.as_deref()).await?),
+        Some("quilt") => resolved_loader = Some(install_loader(&app, iid, &version_id, "quilt", mod_loader_version.as_deref()).await?),
+        Some("forge") | Some("neoforge") => {
+            return Err("Forge/NeoForge install isn't wired in Tauri yet (#25.2b — it needs the installer's processor runner). Vanilla, Fabric and Quilt work.".into());
+        }
+        _ => {}
+    }
+
+    // Persist installed state — Electron does this in the mc.install IPC handler,
+    // and the renderer refetches instances when the "Done" progress event fires.
+    let mut patch = serde_json::json!({ "isInstalled": true });
+    if let Some(v) = &resolved_loader {
+        patch["modLoaderVersion"] = serde_json::json!(v);
+    }
+    let _ = instances::update_instance(instance_id.clone(), patch);
 
     emit(&app, iid, "Done", 1, 1);
     Ok(())

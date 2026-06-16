@@ -423,8 +423,8 @@ function createTauriApi(): RefractAPI {
     },
     mc: {
       ...base.mc,
-      install: ((instanceId: string, versionId: string, versionUrl: string) =>
-        invoke('install_minecraft', { instanceId, versionId, versionUrl })) as RefractAPI['mc']['install'],
+      install: ((instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) =>
+        invoke('install_minecraft', { instanceId, versionId, versionUrl, modLoader, modLoaderVersion })) as RefractAPI['mc']['install'],
       launch: ((instanceId: string) => invoke('launch_minecraft', { instanceId })) as RefractAPI['mc']['launch'],
       stop: ((instanceId: string) => invoke('stop_minecraft', { instanceId })) as RefractAPI['mc']['stop'],
       isRunning: ((instanceId: string) => invoke('is_running', { instanceId })) as RefractAPI['mc']['isRunning'],

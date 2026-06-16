@@ -150,10 +150,16 @@ fn maven_key(name: &str) -> String {
     }
 }
 
-fn build_classpath(version_json: &Value, libs_dir: &Path, client_jar: &Path) -> String {
+fn build_classpath(version_json: &Value, overlay: Option<&Value>, libs_dir: &Path, client_jar: &Path) -> String {
     let mut jars: Vec<String> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
-    for lib in version_json["libraries"].as_array().cloned().unwrap_or_default() {
+    // Vanilla libs first, then the loader overlay appended so its versions of a
+    // shared artifact (ASM, log4j…) win the dedupe while keeping classpath order.
+    let mut all: Vec<Value> = version_json["libraries"].as_array().cloned().unwrap_or_default();
+    if let Some(ov) = overlay {
+        all.extend(ov["libraries"].as_array().cloned().unwrap_or_default());
+    }
+    for lib in all {
         if let Some(rules) = lib.get("rules").and_then(Value::as_array) {
             if !rule_applies(rules) {
                 continue;
@@ -233,6 +239,7 @@ struct Auth {
 fn build_command(
     version_id: &str,
     version_json: &Value,
+    overlay: Option<&Value>,
     libs_dir: &Path,
     assets_dir: &Path,
     natives_dir: &Path,
@@ -244,7 +251,7 @@ fn build_command(
     auth: &Auth,
 ) -> Vec<String> {
     let asset_index = version_json["assetIndex"]["id"].as_str().unwrap_or("legacy").to_string();
-    let classpath = build_classpath(version_json, libs_dir, client_jar);
+    let classpath = build_classpath(version_json, overlay, libs_dir, client_jar);
 
     let mut vars: HashMap<String, String> = HashMap::new();
     let mut put = |k: &str, v: String| {
@@ -282,18 +289,34 @@ fn build_command(
         "-Dminecraft.launcher.version=0.4.0".into(),
     ];
 
-    let main_class = version_json["mainClass"].as_str().unwrap_or("net.minecraft.client.main.Main").to_string();
+    // The loader overlay (Fabric/Quilt) carries the real main class; fall back to
+    // vanilla's when there's no overlay.
+    let main_class = overlay
+        .and_then(|o| o.get("mainClass"))
+        .and_then(Value::as_str)
+        .or_else(|| version_json["mainClass"].as_str())
+        .unwrap_or("net.minecraft.client.main.Main")
+        .to_string();
 
+    // Overlays extend vanilla's args (they don't replace them), so build from the
+    // base then append the overlay's jvm/game entries.
+    let overlay_args = overlay.filter(|o| o.get("arguments").is_some());
     let (jvm_args, game_args): (Vec<String>, Vec<String>) = if version_json.get("arguments").is_some() {
-        (
-            resolve_args(version_json["arguments"].get("jvm"), &vars),
-            resolve_args(version_json["arguments"].get("game"), &vars),
-        )
+        let mut jvm = resolve_args(version_json["arguments"].get("jvm"), &vars);
+        let mut game = resolve_args(version_json["arguments"].get("game"), &vars);
+        if let Some(ov) = overlay_args {
+            jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
+            game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+        }
+        (jvm, game)
     } else if let Some(mc_args) = version_json.get("minecraftArguments").and_then(Value::as_str) {
-        (
-            vec!["-cp".into(), classpath.clone()],
-            substitute(mc_args, &vars).split(' ').map(String::from).collect(),
-        )
+        let mut jvm = vec!["-cp".to_string(), classpath.clone()];
+        let mut game: Vec<String> = substitute(mc_args, &vars).split(' ').map(String::from).collect();
+        if let Some(ov) = overlay_args {
+            jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
+            game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+        }
+        (jvm, game)
     } else {
         (vec!["-cp".into(), classpath.clone()], vec![])
     };
@@ -432,10 +455,7 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     if !instance.get("isInstalled").and_then(Value::as_bool).unwrap_or(false) {
         return Err("Minecraft is not installed for this instance.".into());
     }
-    let loader = instance.get("modLoader").and_then(Value::as_str).unwrap_or("vanilla");
-    if loader != "vanilla" {
-        return Err("Modded launch (Fabric/Forge/Quilt) isn't wired in Tauri yet (#25.2). Use a vanilla instance to test.".into());
-    }
+    let loader = instance.get("modLoader").and_then(Value::as_str).unwrap_or("vanilla").to_string();
     let mc_version = instance
         .get("minecraftVersion")
         .and_then(Value::as_str)
@@ -447,6 +467,23 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .ok_or("Version JSON missing. Please reinstall.")?;
+
+    // Fabric/Quilt launch via the saved overlay profile. Forge/NeoForge need the
+    // processor-built overlay, which isn't ported yet (#25.2b).
+    let overlay: Option<Value> = match loader.as_str() {
+        "fabric" | "quilt" => {
+            let p = paths::versions_dir().join(format!("{mc_version}-{loader}")).join(format!("{mc_version}-{loader}.json"));
+            let j = std::fs::read_to_string(&p).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok());
+            if j.is_none() {
+                return Err(format!("{loader} is not fully installed for this instance. Please reinstall."));
+            }
+            j
+        }
+        "forge" | "neoforge" => {
+            return Err("Forge/NeoForge launch isn't wired in Tauri yet (#25.2b). Vanilla, Fabric and Quilt launch.".into());
+        }
+        _ => None,
+    };
 
     let java_exe = resolve_java(instance.get("javaPath").and_then(Value::as_str))?;
 
@@ -471,6 +508,7 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     let cmd = build_command(
         &mc_version,
         &version_json,
+        overlay.as_ref(),
         &paths::libraries_dir(),
         &paths::assets_dir(),
         &natives_dir,
