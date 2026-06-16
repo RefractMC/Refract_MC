@@ -25,6 +25,7 @@
     "@refract/plugin-api": "workspace:*",
     "@tanstack/react-query": "^5.51.1",
     "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tanstack/react-router": "^1.48.0",
     "@xhayper/discord-rpc": "^1.3.4",
     "class-variance-authority": "^0.7.1",

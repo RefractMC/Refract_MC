@@ -2,6 +2,7 @@ import type { CreateInstanceInput, Instance } from '@refract/core'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
 import { logger } from './logger'
 
 export type RefractAPI = Window['api']
@@ -401,6 +402,16 @@ function createTauriApi(): RefractAPI {
       update: ((id: string, patch: Partial<Instance>) => tinvoke('update_instance', { id, patch })) as RefractAPI['instance']['update'],
       delete: ((id: string) => tinvoke('delete_instance', { id })) as RefractAPI['instance']['delete'],
       openFolder: ((id: string) => tinvoke('open_instance_folder', { id })) as RefractAPI['instance']['openFolder'],
+      duplicate: ((id: string) => tinvoke('duplicate_instance', { id })) as RefractAPI['instance']['duplicate'],
+      browseFolder: (async () => {
+        const p = await dialogOpen({ directory: true, multiple: false })
+        return typeof p === 'string' ? p : null
+      }) as RefractAPI['instance']['browseFolder'],
+      export: (async (id: string) => {
+        const dest = await dialogSave({ defaultPath: 'instance.zip', filters: [{ name: 'ZIP Archive', extensions: ['zip'] }] })
+        if (!dest) return null
+        return tinvoke('export_instance', { id, destPath: dest })
+      }) as RefractAPI['instance']['export'],
     },
     // Modrinth stays on the fallback — its API is CORS-open, so the WebView
     // reaches it directly. CurseForge (key + no CORS) and FTB go through Rust.

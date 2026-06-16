@@ -17,6 +17,7 @@ mod secrets;
 /// registered here; the renderer calls them via `invoke(...)`.
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             config::config_get,
             config::config_set,
@@ -26,6 +27,8 @@ pub fn run() {
             instances::update_instance,
             instances::delete_instance,
             instances::open_instance_folder,
+            instances::duplicate_instance,
+            instances::export_instance,
             download::download_demo,
             process::process_run,
             auth::auth_microsoft_begin,

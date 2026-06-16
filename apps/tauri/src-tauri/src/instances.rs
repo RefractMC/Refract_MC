@@ -274,6 +274,90 @@ pub fn open_instance_folder(id: String) -> Result<(), String> {
     Ok(())
 }
 
+fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Duplicate an instance: a fresh instance with the same settings, with the
+/// content dirs (mods/resourcepacks/shaderpacks/datapacks/config) copied over.
+#[tauri::command]
+pub fn duplicate_instance(id: String) -> Result<Value, String> {
+    let src = get_instance_by_id(id.clone()).ok_or(format!("Instance not found: {id}"))?;
+    let src_dir = resolve_instance_dir(&id);
+
+    let mut input = json!({
+        "name": format!("{} (copy)", src.get("name").and_then(Value::as_str).unwrap_or("Instance")),
+        "minecraftVersion": src.get("minecraftVersion").cloned().unwrap_or(json!("")),
+        "memoryMb": src.get("memoryMb").cloned().unwrap_or(json!(2048)),
+    });
+    for k in ["modLoader", "modLoaderVersion", "iconPath", "javaPath", "javaArgs", "groupId"] {
+        if let Some(v) = src.get(k) {
+            if !v.is_null() {
+                input[k] = v.clone();
+            }
+        }
+    }
+    let copy = create_instance(input)?;
+    let copy_id = copy.get("id").and_then(Value::as_str).ok_or("copy has no id")?.to_string();
+    let dst_dir = resolve_instance_dir(&copy_id);
+
+    for d in ["mods", "resourcepacks", "shaderpacks", "datapacks", "config"] {
+        let s = src_dir.join("minecraft").join(d);
+        if s.exists() {
+            let _ = copy_dir_all(&s, &dst_dir.join("minecraft").join(d));
+        }
+    }
+    if src.get("isInstalled").and_then(Value::as_bool).unwrap_or(false) {
+        update_instance(copy_id.clone(), json!({ "isInstalled": true, "mods": src.get("mods").cloned().unwrap_or(json!([])) }))?;
+    }
+    get_instance_by_id(copy_id).ok_or_else(|| "duplicate failed".to_string())
+}
+
+fn zip_dir(zip: &mut zip::ZipWriter<std::fs::File>, root: &Path, dir: &Path, opts: zip::write::SimpleFileOptions) -> Result<(), String> {
+    use std::io::Write;
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let rel = path.strip_prefix(root).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
+        if path.is_dir() {
+            let _ = zip.add_directory(format!("{rel}/"), opts);
+            zip_dir(zip, root, &path, opts)?;
+        } else {
+            zip.start_file(rel, opts).map_err(|e| e.to_string())?;
+            let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+            zip.write_all(&bytes).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Zip the whole instance directory to `dest_path` (chosen via a save dialog in
+/// the renderer). Returns the path written.
+#[tauri::command]
+pub fn export_instance(id: String, dest_path: String) -> Result<String, String> {
+    let dir = resolve_instance_dir(&id);
+    if !dir.exists() {
+        return Err("Instance folder not found.".into());
+    }
+    let file = fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default();
+    zip_dir(&mut zip, &dir, &dir, opts)?;
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(dest_path)
+}
+
 /// On Windows `remove_dir_all` fails on read-only files (some mod jars ship
 /// read-only). Clear the attribute recursively first.
 #[cfg(target_os = "windows")]
