@@ -584,6 +584,20 @@ export const api: RefractAPI = wrapApi(
   electronApi ?? (isTauri ? createTauriApi() : createBrowserApi()),
 )
 
+/** True when a native file picker is available (Tauri). */
+export const supportsFilePicker = isTauri
+
+/**
+ * Native file picker for mod/pack files (Tauri only) — returns absolute paths to
+ * hand to `mods.installLocal`. Returns [] outside Tauri (Electron uses drag-drop).
+ */
+export async function pickModFiles(): Promise<string[]> {
+  if (!isTauri) return []
+  const sel = await dialogOpen({ multiple: true, filters: [{ name: 'Mods & packs', extensions: ['jar', 'zip'] }] })
+  if (!sel) return []
+  return Array.isArray(sel) ? sel : [sel]
+}
+
 /**
  * Subscribe to instance-export progress (Tauri only). Returns a sync unsubscribe.
  * No-op outside Tauri so callers can use it unconditionally.

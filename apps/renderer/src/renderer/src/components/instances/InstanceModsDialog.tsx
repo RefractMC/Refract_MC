@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { api, onExportProgress } from '@/lib/api'
+import { api, onExportProgress, pickModFiles, supportsFilePicker } from '@/lib/api'
 import { compressImage } from '@/lib/image'
 import { getFilePath } from '@/lib/file-path'
 import type { Instance } from '@refract/core'
@@ -278,6 +278,20 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     e.target.value = ''
   }
 
+  // Tauri has no real path from <input type=file>; use the native picker instead.
+  async function handleAddModBrowse() {
+    if (!instance) return
+    const paths = await pickModFiles()
+    if (!paths.length) return
+    setAddingMod(true)
+    try {
+      for (const p of paths) await api.mods.installLocal(instance.id, p)
+      await load()
+    } catch { /* ignore */ } finally {
+      setAddingMod(false)
+    }
+  }
+
   async function handleApplyProfile(profileId: string) {
     if (!instance) return
     try { await api.mods.profilesApply(instance.id, profileId); await load() }
@@ -480,7 +494,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => modInputRef.current?.click()}
+                onClick={() => (supportsFilePicker ? handleAddModBrowse() : modInputRef.current?.click())}
                 disabled={addingMod}
                 style={{ fontSize: 11 }}
               >
