@@ -1,7 +1,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
-import { api, type AppConfig, type SafeAccount } from '@/lib/api'
+import { analyticsAvailable, api, type AppConfig, type SafeAccount } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { ThemesDialog } from '@/components/settings/ThemesDialog'
 import { useThemeStore } from '@/stores/theme'
@@ -19,6 +19,7 @@ const SIDEBAR_WIDTHS_VALUES = ['60px', '232px', '268px'] as const
 
 function Settings() {
   const t = useT()
+  const analyticsDisabled = !analyticsAvailable
   const lang = useLanguageStore((s) => s.lang)
   const setLang = useLanguageStore((s) => s.setLang)
   const activeThemeId = useThemeStore((state) => state.activeThemeId)
@@ -407,10 +408,10 @@ function Settings() {
 
           <Panel title={t.privacy.title}>
             <div style={{ display:'grid', gap:12 }}>
-              <Field label={t.privacy.analytics} note={t.privacy.analyticsNote}>
+              <Field label={t.privacy.analytics} note={analyticsDisabled ? t.privacy.analyticsUnavailable : t.privacy.analyticsNote}>
                 <Segmented>
-                  <SegmentButton active={config?.analyticsEnabled !== false} disabled={false} onClick={() => { api.config.set('analyticsEnabled', true).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: true } : c); showToast(t.privacy.analyticsOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={config?.analyticsEnabled === false} disabled={false} onClick={() => { api.config.set('analyticsEnabled', false).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: false } : c); showToast(t.privacy.analyticsOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!analyticsDisabled && config?.analyticsEnabled !== false} disabled={analyticsDisabled} onClick={() => { if (analyticsDisabled) return; api.config.set('analyticsEnabled', true).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: true } : c); showToast(t.privacy.analyticsOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={analyticsDisabled || config?.analyticsEnabled === false} disabled={analyticsDisabled} onClick={() => { if (analyticsDisabled) return; api.config.set('analyticsEnabled', false).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: false } : c); showToast(t.privacy.analyticsOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
             </div>

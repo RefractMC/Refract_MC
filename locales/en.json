@@ -510,6 +510,7 @@
     "title":             "Privacy",
     "analytics":         "Anonymous analytics",
     "analyticsNote":     "Send anonymous usage events (launches, installs, errors) to help improve Refract. No personal data, accounts, or file paths are collected.",
+    "analyticsUnavailable":"Analytics is disabled in the Tauri build until telemetry secret injection is ported. No analytics events are sent from this build.",
     "analyticsOn":       "Analytics enabled",
     "analyticsOff":      "Analytics disabled",
     "noticeText":        "Refract collects anonymous usage analytics to help improve the app. No personal data is collected — you can turn this off any time in Settings → Privacy.",

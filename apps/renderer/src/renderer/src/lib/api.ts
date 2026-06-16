@@ -534,6 +534,11 @@ function createTauriApi(): RefractAPI {
   const base = createBrowserApi()
   return {
     ...base,
+    // Tauri analytics intentionally stays disabled until telemetry secret
+    // injection and privacy behavior are ported for this runtime.
+    analytics: {
+      track: () => undefined,
+    },
     config: {
       ...base.config,
       get: (() => tinvoke('config_get')) as RefractAPI['config']['get'],
@@ -903,6 +908,9 @@ export const api: RefractAPI = wrapApi(
 
 /** True when a native file picker is available (Tauri). */
 export const supportsFilePicker = isTauri
+
+/** True when the active runtime can send analytics events. */
+export const analyticsAvailable = !isTauri
 
 /**
  * Native file picker for mod/pack files (Tauri only) — returns absolute paths to
