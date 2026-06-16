@@ -274,12 +274,68 @@ pub fn open_instance_folder(id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// On Windows `remove_dir_all` fails on read-only files (some mod jars ship
+/// read-only). Clear the attribute recursively first.
+#[cfg(target_os = "windows")]
+fn clear_readonly(dir: &Path) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if let Ok(meta) = e.metadata() {
+                let mut perms = meta.permissions();
+                if perms.readonly() {
+                    perms.set_readonly(false);
+                    let _ = fs::set_permissions(&p, perms);
+                }
+            }
+            if p.is_dir() {
+                clear_readonly(&p);
+            }
+        }
+    }
+}
+
+fn force_remove_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    clear_readonly(dir);
+    fs::remove_dir_all(dir)
+}
+
 #[tauri::command]
 pub fn delete_instance(id: String) -> Result<(), String> {
-    let dir = resolve_instance_dir(&id);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Collect every on-disk location this instance could occupy — the resolver
+    // can disagree with the folderName if the registry/scan is stale, so try the
+    // instance's own folderName/customPath too. Deleting must actually free disk.
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(inst) = get_instance_by_id(id.clone()) {
+        if let Some(custom) = inst.get("customPath").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            candidates.push(PathBuf::from(custom));
+        }
+        if let Some(folder) = inst.get("folderName").and_then(Value::as_str) {
+            candidates.push(paths::instances_dir().join(folder));
+        }
     }
+    candidates.push(resolve_instance_dir(&id));
+    candidates.push(paths::instances_dir().join(&id));
+
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut last_err: Option<String> = None;
+    for dir in candidates {
+        if !seen.insert(dir.clone()) {
+            continue;
+        }
+        if dir.exists() {
+            if let Err(e) = force_remove_dir(&dir) {
+                last_err = Some(format!("Could not delete {}: {e}. Is the game still running?", dir.display()));
+            }
+        }
+    }
+
     let reg: Vec<RegistryEntry> = read_registry().into_iter().filter(|r| r.id != id).collect();
-    write_registry(&reg)
+    write_registry(&reg)?;
+
+    match last_err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
