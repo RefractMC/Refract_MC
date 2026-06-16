@@ -373,62 +373,72 @@ if (!electronApi && !isTauri) {
   logger.warn('browserApi', 'Electron preload API is unavailable; using browser preview storage.')
 }
 
+// Tauri rejects invoke() with a plain string (the Rust Err). The UI checks
+// `e instanceof Error`, so a bare string surfaces as "Unknown error" and hides
+// the real message — wrap every call so failures reject with a real Error.
+function tinvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
+  return invoke(cmd, args).catch((e: unknown) => {
+    if (e instanceof Error) throw e
+    throw new Error(typeof e === 'string' ? e : e == null ? 'Unknown error' : JSON.stringify(e))
+  })
+}
+
 function createTauriApi(): RefractAPI {
   const base = createBrowserApi()
   return {
     ...base,
     config: {
       ...base.config,
-      get: (() => invoke('config_get')) as RefractAPI['config']['get'],
-      set: ((key: string, value: unknown) => invoke('config_set', { key, value })) as RefractAPI['config']['set'],
+      get: (() => tinvoke('config_get')) as RefractAPI['config']['get'],
+      set: ((key: string, value: unknown) => tinvoke('config_set', { key, value })) as RefractAPI['config']['set'],
     },
     instance: {
       ...base.instance,
-      list: (() => invoke('instances_list')) as RefractAPI['instance']['list'],
-      getById: ((id: string) => invoke('get_instance_by_id', { id })) as RefractAPI['instance']['getById'],
-      create: ((input: CreateInstanceInput) => invoke('create_instance', { input })) as RefractAPI['instance']['create'],
-      update: ((id: string, patch: Partial<Instance>) => invoke('update_instance', { id, patch })) as RefractAPI['instance']['update'],
-      delete: ((id: string) => invoke('delete_instance', { id })) as RefractAPI['instance']['delete'],
+      list: (() => tinvoke('instances_list')) as RefractAPI['instance']['list'],
+      getById: ((id: string) => tinvoke('get_instance_by_id', { id })) as RefractAPI['instance']['getById'],
+      create: ((input: CreateInstanceInput) => tinvoke('create_instance', { input })) as RefractAPI['instance']['create'],
+      update: ((id: string, patch: Partial<Instance>) => tinvoke('update_instance', { id, patch })) as RefractAPI['instance']['update'],
+      delete: ((id: string) => tinvoke('delete_instance', { id })) as RefractAPI['instance']['delete'],
     },
     // Modrinth stays on the fallback — its API is CORS-open, so the WebView
     // reaches it directly. CurseForge (key + no CORS) and FTB go through Rust.
     curseforge: {
       ...base.curseforge,
       searchMods: ((query?: string, gameVersion?: string, _loader?: string, pageSize?: number, index?: number) =>
-        invoke('curseforge_search', { classId: 6, query, gameVersion, pageSize, index })) as RefractAPI['curseforge']['searchMods'],
+        tinvoke('curseforge_search', { classId: 6, query, gameVersion, pageSize, index })) as RefractAPI['curseforge']['searchMods'],
       searchModpacks: ((query?: string, gameVersion?: string, pageSize?: number, index?: number) =>
-        invoke('curseforge_search', { classId: 4471, query, gameVersion, pageSize, index })) as RefractAPI['curseforge']['searchModpacks'],
+        tinvoke('curseforge_search', { classId: 4471, query, gameVersion, pageSize, index })) as RefractAPI['curseforge']['searchModpacks'],
       files: ((modId: number, gameVersion?: string, loader?: string) =>
-        invoke('curseforge_files', { modId, gameVersion, loader })) as RefractAPI['curseforge']['files'],
-      projectDetail: ((modId: number) => invoke('curseforge_project_detail', { modId })) as RefractAPI['curseforge']['projectDetail'],
+        tinvoke('curseforge_files', { modId, gameVersion, loader })) as RefractAPI['curseforge']['files'],
+      projectDetail: ((modId: number) => tinvoke('curseforge_project_detail', { modId })) as RefractAPI['curseforge']['projectDetail'],
     },
     ftb: {
       ...base.ftb,
-      search: ((query?: string, limit?: number) => invoke('ftb_search', { query, limit })) as RefractAPI['ftb']['search'],
-      modpack: ((id: number) => invoke('ftb_modpack', { id })) as RefractAPI['ftb']['modpack'],
+      search: ((query?: string, limit?: number) => tinvoke('ftb_search', { query, limit })) as RefractAPI['ftb']['search'],
+      modpack: ((id: number) => tinvoke('ftb_modpack', { id })) as RefractAPI['ftb']['modpack'],
     },
     // Accounts live in the same config.json the launcher reads; Microsoft tokens
     // are handled entirely in Rust (never returned to JS) — these commands return
     // only safe account records / device-code prompts.
     auth: {
       ...base.auth,
-      accounts: (() => invoke('auth_accounts')) as RefractAPI['auth']['accounts'],
-      active: (() => invoke('auth_active')) as RefractAPI['auth']['active'],
-      microsoftBegin: (() => invoke('auth_microsoft_begin')) as RefractAPI['auth']['microsoftBegin'],
-      microsoftComplete: ((deviceCode: string) => invoke('auth_microsoft_complete', { deviceCode })) as RefractAPI['auth']['microsoftComplete'],
-      createOffline: ((username: string) => invoke('auth_create_offline', { username })) as RefractAPI['auth']['createOffline'],
-      renameOffline: ((uuid: string, username: string) => invoke('auth_rename_offline', { uuid, username })) as RefractAPI['auth']['renameOffline'],
-      setActive: ((uuid: string) => invoke('auth_set_active', { uuid })) as RefractAPI['auth']['setActive'],
-      logout: ((uuid: string) => invoke('auth_logout', { uuid })) as RefractAPI['auth']['logout'],
+      accounts: (() => tinvoke('auth_accounts')) as RefractAPI['auth']['accounts'],
+      active: (() => tinvoke('auth_active')) as RefractAPI['auth']['active'],
+      microsoftBegin: (() => tinvoke('auth_microsoft_begin')) as RefractAPI['auth']['microsoftBegin'],
+      microsoftComplete: ((deviceCode: string) => tinvoke('auth_microsoft_complete', { deviceCode })) as RefractAPI['auth']['microsoftComplete'],
+      createOffline: ((username: string) => tinvoke('auth_create_offline', { username })) as RefractAPI['auth']['createOffline'],
+      renameOffline: ((uuid: string, username: string) => tinvoke('auth_rename_offline', { uuid, username })) as RefractAPI['auth']['renameOffline'],
+      setActive: ((uuid: string) => tinvoke('auth_set_active', { uuid })) as RefractAPI['auth']['setActive'],
+      logout: ((uuid: string) => tinvoke('auth_logout', { uuid })) as RefractAPI['auth']['logout'],
     },
     mc: {
       ...base.mc,
-      java: (() => invoke('mc_java')) as RefractAPI['mc']['java'],
+      java: (() => tinvoke('mc_java')) as RefractAPI['mc']['java'],
       install: ((instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) =>
-        invoke('install_minecraft', { instanceId, versionId, versionUrl, modLoader, modLoaderVersion })) as RefractAPI['mc']['install'],
-      launch: ((instanceId: string) => invoke('launch_minecraft', { instanceId })) as RefractAPI['mc']['launch'],
-      stop: ((instanceId: string) => invoke('stop_minecraft', { instanceId })) as RefractAPI['mc']['stop'],
-      isRunning: ((instanceId: string) => invoke('is_running', { instanceId })) as RefractAPI['mc']['isRunning'],
+        tinvoke('install_minecraft', { instanceId, versionId, versionUrl, modLoader, modLoaderVersion })) as RefractAPI['mc']['install'],
+      launch: ((instanceId: string) => tinvoke('launch_minecraft', { instanceId })) as RefractAPI['mc']['launch'],
+      stop: ((instanceId: string) => tinvoke('stop_minecraft', { instanceId })) as RefractAPI['mc']['stop'],
+      isRunning: ((instanceId: string) => tinvoke('is_running', { instanceId })) as RefractAPI['mc']['isRunning'],
       // Renderer expects a synchronous unsubscribe; listen() resolves async, so
       // each wrapper detaches once its listener is actually attached.
       onProgress: ((cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => {
