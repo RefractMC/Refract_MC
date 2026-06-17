@@ -55,15 +55,42 @@ fn transliterate(name: &str) -> String {
     for ch in name.chars() {
         let lower = ch.to_lowercase().next().unwrap_or(ch);
         let mapped: Option<&str> = match lower {
-            'а' => Some("a"), 'б' => Some("b"), 'в' => Some("v"), 'г' => Some("h"),
-            'ґ' => Some("g"), 'д' => Some("d"), 'е' => Some("e"), 'є' => Some("ie"),
-            'ж' => Some("zh"), 'з' => Some("z"), 'и' => Some("y"), 'і' => Some("i"),
-            'ї' => Some("i"), 'й' => Some("i"), 'к' => Some("k"), 'л' => Some("l"),
-            'м' => Some("m"), 'н' => Some("n"), 'о' => Some("o"), 'п' => Some("p"),
-            'р' => Some("r"), 'с' => Some("s"), 'т' => Some("t"), 'у' => Some("u"),
-            'ф' => Some("f"), 'х' => Some("kh"), 'ц' => Some("ts"), 'ч' => Some("ch"),
-            'ш' => Some("sh"), 'щ' => Some("shch"), 'ь' => Some(""), 'ю' => Some("iu"),
-            'я' => Some("ia"), 'ё' => Some("e"), 'ы' => Some("y"), 'э' => Some("e"),
+            'а' => Some("a"),
+            'б' => Some("b"),
+            'в' => Some("v"),
+            'г' => Some("h"),
+            'ґ' => Some("g"),
+            'д' => Some("d"),
+            'е' => Some("e"),
+            'є' => Some("ie"),
+            'ж' => Some("zh"),
+            'з' => Some("z"),
+            'и' => Some("y"),
+            'і' => Some("i"),
+            'ї' => Some("i"),
+            'й' => Some("i"),
+            'к' => Some("k"),
+            'л' => Some("l"),
+            'м' => Some("m"),
+            'н' => Some("n"),
+            'о' => Some("o"),
+            'п' => Some("p"),
+            'р' => Some("r"),
+            'с' => Some("s"),
+            'т' => Some("t"),
+            'у' => Some("u"),
+            'ф' => Some("f"),
+            'х' => Some("kh"),
+            'ц' => Some("ts"),
+            'ч' => Some("ch"),
+            'ш' => Some("sh"),
+            'щ' => Some("shch"),
+            'ь' => Some(""),
+            'ю' => Some("iu"),
+            'я' => Some("ia"),
+            'ё' => Some("e"),
+            'ы' => Some("y"),
+            'э' => Some("e"),
             'ъ' => Some(""),
             _ => None,
         };
@@ -86,13 +113,19 @@ fn sanitize_folder_name(name: &str) -> String {
     let invalid = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
     let mut s: String = transliterate(name)
         .chars()
-        .filter(|c| !invalid.contains(c) && !c.is_control() && (*c as u32) >= 0x20 && (*c as u32) <= 0x7e)
+        .filter(|c| {
+            !invalid.contains(c) && !c.is_control() && (*c as u32) >= 0x20 && (*c as u32) <= 0x7e
+        })
         .collect();
     s = s.split_whitespace().collect::<Vec<_>>().join(" ");
     let s = s.trim().trim_end_matches('.').trim();
     let s: String = s.chars().take(64).collect();
     let s = s.trim().to_string();
-    if s.is_empty() { "instance".to_string() } else { s }
+    if s.is_empty() {
+        "instance".to_string()
+    } else {
+        s
+    }
 }
 
 fn unique_folder_name(desired: &str, current: Option<&str>) -> String {
@@ -121,7 +154,17 @@ fn unique_folder_name(desired: &str, current: Option<&str>) -> String {
 #[tauri::command]
 pub fn launcher_delete_all() -> Result<(), String> {
     let data = paths::data_dir();
-    for sub in ["instances", "themes", "plugins", "java", "assets", "libraries", "versions", "cache", "logs"] {
+    for sub in [
+        "instances",
+        "themes",
+        "plugins",
+        "java",
+        "assets",
+        "libraries",
+        "versions",
+        "cache",
+        "logs",
+    ] {
         let p = data.join(sub);
         if p.exists() {
             let _ = fs::remove_dir_all(&p);
@@ -175,7 +218,10 @@ pub fn resolve_instance_dir(id: &str) -> PathBuf {
 }
 
 fn save_instance(inst: &Value) -> Result<(), String> {
-    let id = inst.get("id").and_then(Value::as_str).ok_or("instance has no id")?;
+    let id = inst
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or("instance has no id")?;
     let dir = match inst.get("customPath").and_then(Value::as_str) {
         Some(p) => PathBuf::from(p),
         None => {
@@ -216,7 +262,12 @@ pub fn instances_list() -> Result<Vec<Value>, String> {
             continue;
         }
         if let Some(inst) = read_instance(&Path::new(&e.path).join("instance.json")) {
-            seen.insert(inst.get("id").and_then(Value::as_str).unwrap_or(&e.id).to_string());
+            seen.insert(
+                inst.get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&e.id)
+                    .to_string(),
+            );
             out.push(inst);
         }
     }
@@ -234,7 +285,10 @@ pub fn create_instance(input: Value) -> Result<Value, String> {
     let mut inst = input.clone();
     let obj = inst.as_object_mut().ok_or("input is not an object")?;
     obj.insert("id".into(), json!(uuid::Uuid::new_v4().to_string()));
-    obj.insert("createdAt".into(), json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)));
+    obj.insert(
+        "createdAt".into(),
+        json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+    );
     obj.insert("totalTimePlayed".into(), json!(0));
     obj.entry("mods").or_insert(json!([]));
     obj.insert("isInstalled".into(), json!(false));
@@ -243,12 +297,20 @@ pub fn create_instance(input: Value) -> Result<Value, String> {
     if let Some(custom) = inst.get("customPath").and_then(Value::as_str) {
         let mut reg = read_registry();
         reg.retain(|r| r.id != id);
-        reg.push(RegistryEntry { id: id.clone(), path: custom.to_string() });
+        reg.push(RegistryEntry {
+            id: id.clone(),
+            path: custom.to_string(),
+        });
         write_registry(&reg)?;
     } else {
-        let name = inst.get("name").and_then(Value::as_str).unwrap_or("instance");
+        let name = inst
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("instance");
         let folder = unique_folder_name(name, None);
-        inst.as_object_mut().unwrap().insert("folderName".into(), json!(folder));
+        inst.as_object_mut()
+            .unwrap()
+            .insert("folderName".into(), json!(folder));
     }
     save_instance(&inst)?;
     Ok(inst)
@@ -261,7 +323,11 @@ pub fn update_instance(id: String, patch: Value) -> Result<Value, String> {
 
     // Rename the on-disk folder when the name changes (managed instances only).
     if existing.get("customPath").and_then(Value::as_str).is_none() {
-        let current_folder = existing.get("folderName").and_then(Value::as_str).unwrap_or(&id).to_string();
+        let current_folder = existing
+            .get("folderName")
+            .and_then(Value::as_str)
+            .unwrap_or(&id)
+            .to_string();
         if let Some(new_name) = patch_obj.get("name").and_then(Value::as_str) {
             if Some(new_name) != existing.get("name").and_then(Value::as_str) {
                 let new_folder = unique_folder_name(new_name, Some(&current_folder));
@@ -271,7 +337,10 @@ pub fn update_instance(id: String, patch: Value) -> Result<Value, String> {
                     if old_dir.exists() {
                         fs::rename(&old_dir, &new_dir).map_err(|e| e.to_string())?;
                     }
-                    existing.as_object_mut().unwrap().insert("folderName".into(), json!(new_folder));
+                    existing
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("folderName".into(), json!(new_folder));
                 }
             }
         }
@@ -335,7 +404,14 @@ pub fn duplicate_instance(id: String) -> Result<Value, String> {
         "minecraftVersion": src.get("minecraftVersion").cloned().unwrap_or(json!("")),
         "memoryMb": src.get("memoryMb").cloned().unwrap_or(json!(2048)),
     });
-    for k in ["modLoader", "modLoaderVersion", "iconPath", "javaPath", "javaArgs", "groupId"] {
+    for k in [
+        "modLoader",
+        "modLoaderVersion",
+        "iconPath",
+        "javaPath",
+        "javaArgs",
+        "groupId",
+    ] {
         if let Some(v) = src.get(k) {
             if !v.is_null() {
                 input[k] = v.clone();
@@ -343,17 +419,34 @@ pub fn duplicate_instance(id: String) -> Result<Value, String> {
         }
     }
     let copy = create_instance(input)?;
-    let copy_id = copy.get("id").and_then(Value::as_str).ok_or("copy has no id")?.to_string();
+    let copy_id = copy
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or("copy has no id")?
+        .to_string();
     let dst_dir = resolve_instance_dir(&copy_id);
 
-    for d in ["mods", "resourcepacks", "shaderpacks", "datapacks", "config"] {
+    for d in [
+        "mods",
+        "resourcepacks",
+        "shaderpacks",
+        "datapacks",
+        "config",
+    ] {
         let s = src_dir.join("minecraft").join(d);
         if s.exists() {
             let _ = copy_dir_all(&s, &dst_dir.join("minecraft").join(d));
         }
     }
-    if src.get("isInstalled").and_then(Value::as_bool).unwrap_or(false) {
-        update_instance(copy_id.clone(), json!({ "isInstalled": true, "mods": src.get("mods").cloned().unwrap_or(json!([])) }))?;
+    if src
+        .get("isInstalled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        update_instance(
+            copy_id.clone(),
+            json!({ "isInstalled": true, "mods": src.get("mods").cloned().unwrap_or(json!([])) }),
+        )?;
     }
     get_instance_by_id(copy_id).ok_or_else(|| "duplicate failed".to_string())
 }
@@ -405,7 +498,11 @@ fn zip_dir(
         if path.is_dir() {
             zip_dir(zip, root, &path, opts, app, id, total, done, last_pct)?;
         } else {
-            let rel = path.strip_prefix(root).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
             // Skip files we can't read (e.g. a log locked by a running game)
             // rather than aborting the whole export.
             if let Ok(bytes) = fs::read(&path) {
@@ -415,7 +512,15 @@ fn zip_dir(
                 let pct = if total > 0 { *done * 100 / total } else { 100 };
                 if pct != *last_pct {
                     *last_pct = pct;
-                    let _ = app.emit("instance://export-progress", ExportProgress { id: id.to_string(), current: *done, total, percent: pct as f64 });
+                    let _ = app.emit(
+                        "instance://export-progress",
+                        ExportProgress {
+                            id: id.to_string(),
+                            current: *done,
+                            total,
+                            percent: pct as f64,
+                        },
+                    );
                 }
             }
         }
@@ -428,7 +533,11 @@ fn zip_dir(
 /// the UI (and the file handle is properly closed before the renderer returns).
 /// Streams `instance://export-progress`.
 #[tauri::command]
-pub async fn export_instance(app: AppHandle, id: String, dest_path: String) -> Result<String, String> {
+pub async fn export_instance(
+    app: AppHandle,
+    id: String,
+    dest_path: String,
+) -> Result<String, String> {
     let dir = resolve_instance_dir(&id);
     if !dir.exists() {
         return Err("Instance folder not found.".into());
@@ -493,7 +602,11 @@ pub fn delete_instance(id: String) -> Result<(), String> {
     // instance's own folderName/customPath too. Deleting must actually free disk.
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(inst) = get_instance_by_id(id.clone()) {
-        if let Some(custom) = inst.get("customPath").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+        if let Some(custom) = inst
+            .get("customPath")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
             candidates.push(PathBuf::from(custom));
         }
         if let Some(folder) = inst.get("folderName").and_then(Value::as_str) {
@@ -511,7 +624,10 @@ pub fn delete_instance(id: String) -> Result<(), String> {
         }
         if dir.exists() {
             if let Err(e) = force_remove_dir(&dir) {
-                last_err = Some(format!("Could not delete {}: {e}. Is the game still running?", dir.display()));
+                last_err = Some(format!(
+                    "Could not delete {}: {e}. Is the game still running?",
+                    dir.display()
+                ));
             }
         }
     }

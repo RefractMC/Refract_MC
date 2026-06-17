@@ -731,7 +731,7 @@ function createTauriApi(): RefractAPI {
           loader: target.loaders[0] ?? 'unknown', gameVersion: target.game_versions[0] ?? instance.minecraftVersion,
           installedAt: new Date().toISOString(),
         }
-        return tinvoke('install_mod_file', { instanceId, url: file.url, fileName: file.filename, mod })
+        return tinvoke('install_mod_file', { instanceId, url: file.url, fileName: file.filename, mod, sha512: file.hashes?.sha512, sha1: file.hashes?.sha1 })
       }) as RefractAPI['modrinth']['install'],
       contentInstall: (async (instanceId: string, projectId: string, projectName: string, contentType: string, versionId?: string) => {
         const instance = await tinvoke('get_instance_by_id', { id: instanceId }) as Instance | null
@@ -750,7 +750,7 @@ function createTauriApi(): RefractAPI {
         )) {
           throw new Error(`${projectName} is already downloaded for this instance.`)
         }
-        await tinvoke('install_content_file', { instanceId, url: file.url, fileName: file.filename, contentType })
+        await tinvoke('install_content_file', { instanceId, url: file.url, fileName: file.filename, contentType, sha512: file.hashes?.sha512, sha1: file.hashes?.sha1 })
       }) as RefractAPI['modrinth']['contentInstall'],
       uninstall: ((instanceId: string, projectId: string) => tinvoke('uninstall_mod', { instanceId, projectId })) as RefractAPI['modrinth']['uninstall'],
     },

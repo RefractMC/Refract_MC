@@ -68,7 +68,11 @@ pub fn mc_worlds(instance_id: String) -> Vec<World> {
             let path = e.path();
             let level = path.join("level.dat");
             let last_modified = mtime_ms(if level.exists() { &level } else { &path });
-            out.push(World { name: e.file_name().to_string_lossy().to_string(), last_modified, size_kb: dir_size_kb(&path) });
+            out.push(World {
+                name: e.file_name().to_string_lossy().to_string(),
+                last_modified,
+                size_kb: dir_size_kb(&path),
+            });
         }
     }
     out.sort_by(|a, b| b.last_modified.total_cmp(&a.last_modified));
@@ -108,16 +112,23 @@ pub fn mc_crash_report(instance_id: String) -> Option<String> {
 /// Zip a world folder to `dest_path` (chosen via a save dialog in the renderer),
 /// off the main thread. Returns the path written.
 #[tauri::command]
-pub async fn mc_backup_world(instance_id: String, world_name: String, dest_path: String) -> Result<String, String> {
+pub async fn mc_backup_world(
+    instance_id: String,
+    world_name: String,
+    dest_path: String,
+) -> Result<String, String> {
     let saves = instances::game_dir(&instance_id).join("saves");
     let world = safe_child(&saves, &world_name).ok_or("Invalid world name.")?;
     if !world.exists() {
         return Err("World not found.".into());
     }
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-        let file = fs::File::create(&dest_path).map_err(|e| format!("Couldn't write {dest_path}: {e}"))?;
+        let file =
+            fs::File::create(&dest_path).map_err(|e| format!("Couldn't write {dest_path}: {e}"))?;
         let mut zip = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).large_file(true);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(true);
         zip_dir(&mut zip, &world, &world, opts)?;
         zip.finish().map_err(|e| e.to_string())?;
         Ok(dest_path)
@@ -141,7 +152,10 @@ pub struct Screenshot {
 fn png_data_url(img: &image::DynamicImage) -> Option<String> {
     let mut buf = Cursor::new(Vec::new());
     img.write_to(&mut buf, image::ImageFormat::Png).ok()?;
-    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(buf.into_inner())))
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
+    ))
 }
 
 /// The instance's recent screenshots (newest 24) with 320×180 thumbnails. Decode
@@ -154,7 +168,11 @@ pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, Stri
         if let Ok(entries) = fs::read_dir(&dir) {
             for e in entries.flatten() {
                 let p = e.path();
-                let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
+                let ext = p
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
                 if !matches!(ext.as_str(), "png" | "jpg" | "jpeg") {
                     continue;
                 }
@@ -170,10 +188,16 @@ pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, Stri
         files
             .into_iter()
             .map(|(p, size, ts)| Screenshot {
-                filename: p.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                filename: p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
                 size_kb: size / 1024,
                 timestamp: ts,
-                data_url: image::open(&p).ok().and_then(|img| png_data_url(&img.thumbnail(320, 180))),
+                data_url: image::open(&p)
+                    .ok()
+                    .and_then(|img| png_data_url(&img.thumbnail(320, 180))),
             })
             .collect::<Vec<_>>()
     })
@@ -200,12 +224,19 @@ pub fn mc_open_screenshot(instance_id: String, filename: String) -> Result<(), S
 
 /// Full-size screenshot as a data URL (downscaled to ≤1920×1080 for the viewer).
 #[tauri::command]
-pub async fn mc_screenshot_full(instance_id: String, filename: String) -> Result<Option<String>, String> {
+pub async fn mc_screenshot_full(
+    instance_id: String,
+    filename: String,
+) -> Result<Option<String>, String> {
     let dir = instances::game_dir(&instance_id).join("screenshots");
     let p = safe_child(&dir, &filename).ok_or("Invalid filename.")?;
     tauri::async_runtime::spawn_blocking(move || {
         let img = image::open(&p).ok()?;
-        let out = if img.width() > 1920 || img.height() > 1080 { img.thumbnail(1920, 1080) } else { img };
+        let out = if img.width() > 1920 || img.height() > 1080 {
+            img.thumbnail(1920, 1080)
+        } else {
+            img
+        };
         png_data_url(&out)
     })
     .await
@@ -220,14 +251,23 @@ fn mtime_ms_meta(m: &fs::Metadata) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn zip_dir(zip: &mut zip::ZipWriter<std::fs::File>, root: &Path, dir: &Path, opts: zip::write::SimpleFileOptions) -> Result<(), String> {
+fn zip_dir(
+    zip: &mut zip::ZipWriter<std::fs::File>,
+    root: &Path,
+    dir: &Path,
+    opts: zip::write::SimpleFileOptions,
+) -> Result<(), String> {
     for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         if path.is_dir() {
             zip_dir(zip, root, &path, opts)?;
         } else {
-            let rel = path.strip_prefix(root).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
             if let Ok(bytes) = fs::read(&path) {
                 zip.start_file(rel, opts).map_err(|e| e.to_string())?;
                 zip.write_all(&bytes).map_err(|e| e.to_string())?;

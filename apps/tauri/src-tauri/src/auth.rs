@@ -40,20 +40,34 @@ fn safe_account(acc: &Value) -> Value {
     if let Some(m) = o.as_object_mut() {
         m.insert("canManageContent".into(), json!(true));
         m.insert("canPlayMinecraft".into(), json!(true));
-        m.insert("licenseStatus".into(), json!(if authenticated { "verified" } else { "guest" }));
+        m.insert(
+            "licenseStatus".into(),
+            json!(if authenticated { "verified" } else { "guest" }),
+        );
     }
     o
 }
 
 fn accounts() -> Vec<Value> {
-    config::read().get("accounts").and_then(Value::as_array).cloned().unwrap_or_default()
+    config::read()
+        .get("accounts")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// Upsert `account` to the front of the list and make it active.
 fn save_account_active(account: Value) -> Result<(), String> {
     let mut cfg = config::read();
-    let uuid = account.get("uuid").and_then(Value::as_str).unwrap_or_default().to_string();
-    let mut list: Vec<Value> = accounts().into_iter().filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str())).collect();
+    let uuid = account
+        .get("uuid")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let mut list: Vec<Value> = accounts()
+        .into_iter()
+        .filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str()))
+        .collect();
     list.insert(0, account);
     let map = cfg.as_object_mut().ok_or("config root is not an object")?;
     map.insert("accounts".into(), json!(list));
@@ -74,7 +88,9 @@ fn patch_account(uuid: &str, patch: Value) -> Result<(), String> {
             }
         }
     }
-    cfg.as_object_mut().ok_or("config root is not an object")?.insert("accounts".into(), json!(list));
+    cfg.as_object_mut()
+        .ok_or("config root is not an object")?
+        .insert("accounts".into(), json!(list));
     config::write(&cfg)
 }
 
@@ -93,34 +109,67 @@ async fn post_json(client: &reqwest::Client, url: &str, body: Value) -> Result<V
     let status = res.status();
     let v: Value = res.json().await.unwrap_or(Value::Null);
     if !ok {
-        let msg = v["errorMessage"].as_str().or(v["message"].as_str()).or(v["error"].as_str());
-        return Err(msg.map(str::to_string).unwrap_or_else(|| format!("request failed: HTTP {status}")));
+        let msg = v["errorMessage"]
+            .as_str()
+            .or(v["message"].as_str())
+            .or(v["error"].as_str());
+        return Err(msg
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("request failed: HTTP {status}")));
     }
     Ok(v)
 }
 
 /// XBL → XSTS → Minecraft. Returns `(mc_access_token, expires_in_secs, xuid)`.
-async fn run_chain(client: &reqwest::Client, ms_access: &str) -> Result<(String, u64, String), String> {
+async fn run_chain(
+    client: &reqwest::Client,
+    ms_access: &str,
+) -> Result<(String, u64, String), String> {
     let xbl = post_json(client, XBL_URL, json!({
         "Properties": { "AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": format!("d={ms_access}") },
         "RelyingParty": "http://auth.xboxlive.com",
         "TokenType": "JWT"
     })).await?;
-    let xbl_token = xbl["Token"].as_str().ok_or("Xbox Live did not return a token.")?.to_string();
-    let user_hash = xbl["DisplayClaims"]["xui"][0]["uhs"].as_str().ok_or("Xbox Live did not return a user hash.")?.to_string();
+    let xbl_token = xbl["Token"]
+        .as_str()
+        .ok_or("Xbox Live did not return a token.")?
+        .to_string();
+    let user_hash = xbl["DisplayClaims"]["xui"][0]["uhs"]
+        .as_str()
+        .ok_or("Xbox Live did not return a user hash.")?
+        .to_string();
 
-    let xsts = post_json(client, XSTS_URL, json!({
-        "Properties": { "SandboxId": "RETAIL", "UserTokens": [xbl_token] },
-        "RelyingParty": "rp://api.minecraftservices.com/",
-        "TokenType": "JWT"
-    })).await?;
-    let xsts_token = xsts["Token"].as_str().ok_or("XSTS did not return a token (no Xbox profile?).")?.to_string();
-    let xuid = xsts["DisplayClaims"]["xui"][0]["xid"].as_str().unwrap_or("").to_string();
+    let xsts = post_json(
+        client,
+        XSTS_URL,
+        json!({
+            "Properties": { "SandboxId": "RETAIL", "UserTokens": [xbl_token] },
+            "RelyingParty": "rp://api.minecraftservices.com/",
+            "TokenType": "JWT"
+        }),
+    )
+    .await?;
+    let xsts_token = xsts["Token"]
+        .as_str()
+        .ok_or("XSTS did not return a token (no Xbox profile?).")?
+        .to_string();
+    let xuid = xsts["DisplayClaims"]["xui"][0]["xid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
 
-    let mc = post_json(client, MC_AUTH_URL, json!({
-        "identityToken": format!("XBL3.0 x={user_hash};{xsts_token}")
-    })).await?;
-    let mc_token = mc["access_token"].as_str().ok_or("Minecraft auth did not return a token.")?.to_string();
+    let mc = post_json(
+        client,
+        MC_AUTH_URL,
+        json!({
+            "identityToken": format!("XBL3.0 x={user_hash};{xsts_token}")
+        }),
+    )
+    .await?;
+    let mc_token = mc["access_token"]
+        .as_str()
+        .ok_or("Minecraft auth did not return a token.")?
+        .to_string();
     let expires_in = mc["expires_in"].as_u64().unwrap_or(86400);
     Ok((mc_token, expires_in, xuid))
 }
@@ -138,8 +187,15 @@ pub async fn mc_token(uuid: &str) -> Result<(String, String), String> {
         .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid))
         .ok_or("Account not found")?;
 
-    let expires_at = account.get("expiresAt").and_then(Value::as_i64).unwrap_or(0);
-    let xuid = account.get("xuid").and_then(Value::as_str).unwrap_or("").to_string();
+    let expires_at = account
+        .get("expiresAt")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let xuid = account
+        .get("xuid")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     // 5-minute skew, same as Electron.
     let fresh = expires_at > now_ms() + 5 * 60 * 1000;
     if fresh {
@@ -150,7 +206,11 @@ pub async fn mc_token(uuid: &str) -> Result<(String, String), String> {
         }
     }
 
-    let refresh = secrets::get_secret(&refresh_key(uuid)).ok().flatten().filter(|r| !r.is_empty()).ok_or(AUTH_EXPIRED.to_string())?;
+    let refresh = secrets::get_secret(&refresh_key(uuid))
+        .ok()
+        .flatten()
+        .filter(|r| !r.is_empty())
+        .ok_or(AUTH_EXPIRED.to_string())?;
     let client = reqwest::Client::new();
     let ms = client
         .post(TOKEN_URL)
@@ -176,11 +236,14 @@ pub async fn mc_token(uuid: &str) -> Result<(String, String), String> {
     let (token, expires_in, new_xuid) = run_chain(&client, &ms_access).await?;
     secrets::store_secret(&mc_token_key(uuid), &token)?;
     let xuid = if new_xuid.is_empty() { xuid } else { new_xuid };
-    patch_account(uuid, json!({
-        "expiresAt": now_ms() + expires_in as i64 * 1000,
-        "xuid": xuid,
-        "needsReauth": false,
-    }))?;
+    patch_account(
+        uuid,
+        json!({
+            "expiresAt": now_ms() + expires_in as i64 * 1000,
+            "xuid": xuid,
+            "needsReauth": false,
+        }),
+    )?;
     Ok((token, xuid))
 }
 
@@ -200,7 +263,9 @@ pub struct DeviceLogin {
 /// Open a URL in the user's default browser (Electron used shell.openExternal).
 fn open_url(url: &str) {
     #[cfg(windows)]
-    let _ = std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn();
+    let _ = std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn();
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(url).spawn();
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
@@ -219,7 +284,10 @@ pub async fn auth_microsoft_begin() -> Result<DeviceLogin, String> {
         return Err(format!("device code request failed: HTTP {}", res.status()));
     }
     let v: Value = res.json().await.map_err(|e| e.to_string())?;
-    let verification_uri = v["verification_uri"].as_str().unwrap_or_default().to_string();
+    let verification_uri = v["verification_uri"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
     open_url(&verification_uri);
     Ok(DeviceLogin {
         device_code: v["device_code"].as_str().unwrap_or_default().to_string(),
@@ -256,7 +324,11 @@ pub async fn auth_microsoft_complete(device_code: String) -> Result<Value, Strin
         // failures show why.
         let code = v["error"].as_str().unwrap_or("unknown");
         let desc = v["error_description"].as_str().unwrap_or("");
-        return Err(if desc.is_empty() { code.to_string() } else { format!("{code}: {desc}") });
+        return Err(if desc.is_empty() {
+            code.to_string()
+        } else {
+            format!("{code}: {desc}")
+        });
     }
 
     let ms_access = v["access_token"].as_str().unwrap_or_default().to_string();
@@ -272,10 +344,15 @@ pub async fn auth_microsoft_complete(device_code: String) -> Result<Value, Strin
         .await
         .map_err(|e| e.to_string())?;
     if !profile.status().is_success() {
-        return Err("This Microsoft account does not appear to own Minecraft: Java Edition.".into());
+        return Err(
+            "This Microsoft account does not appear to own Minecraft: Java Edition.".into(),
+        );
     }
     let profile: Value = profile.json().await.map_err(|e| e.to_string())?;
-    let uuid = profile["id"].as_str().ok_or("Profile had no id.")?.to_string();
+    let uuid = profile["id"]
+        .as_str()
+        .ok_or("Profile had no id.")?
+        .to_string();
     let username = profile["name"].as_str().unwrap_or("Player").to_string();
 
     secrets::store_secret(&mc_token_key(&uuid), &token)?;
@@ -304,7 +381,10 @@ pub fn auth_accounts() -> Vec<Value> {
 pub fn auth_active() -> Option<Value> {
     let cfg = config::read();
     let active = cfg.get("activeAccountId").and_then(Value::as_str)?;
-    accounts().iter().find(|a| a.get("uuid").and_then(Value::as_str) == Some(active)).map(safe_account)
+    accounts()
+        .iter()
+        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(active))
+        .map(safe_account)
 }
 
 #[tauri::command]
@@ -328,22 +408,31 @@ pub fn auth_rename_offline(uuid: String, username: String) -> Result<Value, Stri
     if trimmed.is_empty() {
         return Err("Username is required.".into());
     }
-    let account = accounts().into_iter().find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
+    let account = accounts()
+        .into_iter()
+        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
         .ok_or(format!("Account not found: {uuid}"))?;
     if account.get("type").and_then(Value::as_str) != Some("offline") {
         return Err("Only offline accounts can be renamed.".into());
     }
     patch_account(&uuid, json!({ "username": trimmed }))?;
-    let updated = accounts().into_iter().find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str())).unwrap_or(account);
+    let updated = accounts()
+        .into_iter()
+        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
+        .unwrap_or(account);
     Ok(safe_account(&updated))
 }
 
 #[tauri::command]
 pub fn auth_set_active(uuid: String) -> Result<Value, String> {
-    let account = accounts().into_iter().find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
+    let account = accounts()
+        .into_iter()
+        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
         .ok_or(format!("Account not found: {uuid}"))?;
     let mut cfg = config::read();
-    cfg.as_object_mut().ok_or("config root is not an object")?.insert("activeAccountId".into(), json!(uuid));
+    cfg.as_object_mut()
+        .ok_or("config root is not an object")?
+        .insert("activeAccountId".into(), json!(uuid));
     config::write(&cfg)?;
     Ok(safe_account(&account))
 }
@@ -351,14 +440,23 @@ pub fn auth_set_active(uuid: String) -> Result<Value, String> {
 #[tauri::command]
 pub fn auth_logout(uuid: String) -> Result<(), String> {
     let mut cfg = config::read();
-    let remaining: Vec<Value> = accounts().into_iter().filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str())).collect();
-    let next_active = remaining.first().and_then(|a| a.get("uuid").and_then(Value::as_str)).map(str::to_string);
+    let remaining: Vec<Value> = accounts()
+        .into_iter()
+        .filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str()))
+        .collect();
+    let next_active = remaining
+        .first()
+        .and_then(|a| a.get("uuid").and_then(Value::as_str))
+        .map(str::to_string);
     {
         let map = cfg.as_object_mut().ok_or("config root is not an object")?;
         let was_active = map.get("activeAccountId").and_then(Value::as_str) == Some(uuid.as_str());
         map.insert("accounts".into(), json!(remaining));
         if was_active {
-            map.insert("activeAccountId".into(), next_active.map(Value::from).unwrap_or(Value::Null));
+            map.insert(
+                "activeAccountId".into(),
+                next_active.map(Value::from).unwrap_or(Value::Null),
+            );
         }
     }
     config::write(&cfg)?;

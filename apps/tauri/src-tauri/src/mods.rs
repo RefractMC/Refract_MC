@@ -4,7 +4,7 @@
 //! curseforge_* proxy commands); this module owns the filesystem + instance.json
 //! writes. Pack icons (pack.png extraction) are not ported yet.
 
-use crate::instances;
+use crate::{instances, net};
 use base64::Engine as _;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -33,16 +33,18 @@ fn subdir_for(kind: &str) -> &'static str {
     }
 }
 
-async fn download_to(url: &str, dest: &Path) -> Result<(), String> {
-    let res = reqwest::get(url).await.map_err(|e| e.to_string())?;
-    if !res.status().is_success() {
-        return Err(format!("Download failed: HTTP {}", res.status()));
-    }
-    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
-    if let Some(p) = dest.parent() {
-        fs::create_dir_all(p).map_err(|e| e.to_string())?;
-    }
-    fs::write(dest, &bytes).map_err(|e| e.to_string())
+async fn download_to(
+    url: &str,
+    dest: &Path,
+    allowed_hosts: &[&str],
+    sha512: Option<&str>,
+    sha1: Option<&str>,
+) -> Result<(), String> {
+    let expected = sha512
+        .filter(|s| !s.is_empty())
+        .map(net::ExpectedHash::Sha512)
+        .or_else(|| sha1.filter(|s| !s.is_empty()).map(net::ExpectedHash::Sha1));
+    net::download_to(&reqwest::Client::new(), url, dest, allowed_hosts, expected).await
 }
 
 #[derive(Serialize)]
@@ -62,7 +64,10 @@ pub struct ContentEntry {
 // ── icon extraction (mod metadata logo / pack.png) ───────────────────────────
 
 fn to_data_url(bytes: &[u8]) -> String {
-    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
+    format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
 }
 
 fn read_zip_entry(zip_path: &Path, name: &str) -> Option<Vec<u8>> {
@@ -97,9 +102,18 @@ fn extract_icon(path: &Path, is_dir: bool) -> Option<String> {
     let base = name.strip_suffix(".disabled").unwrap_or(&name);
     if base.ends_with(".jar") {
         // Fabric: icon is a string path or a {size: path} map.
-        if let Some(meta) = read_zip_entry(path, "fabric.mod.json").and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+        if let Some(meta) = read_zip_entry(path, "fabric.mod.json")
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        {
             let icon = meta.get("icon").and_then(|v| {
-                v.as_str().map(String::from).or_else(|| v.as_object().and_then(|o| o.values().filter_map(Value::as_str).last().map(String::from)))
+                v.as_str().map(String::from).or_else(|| {
+                    v.as_object().and_then(|o| {
+                        o.values()
+                            .filter_map(Value::as_str)
+                            .last()
+                            .map(String::from)
+                    })
+                })
             });
             if let Some(icon) = icon {
                 if let Some(bytes) = read_zip_entry(path, &icon) {
@@ -108,7 +122,9 @@ fn extract_icon(path: &Path, is_dir: bool) -> Option<String> {
             }
         }
         // Quilt
-        if let Some(meta) = read_zip_entry(path, "quilt.mod.json").and_then(|b| serde_json::from_slice::<Value>(&b).ok()) {
+        if let Some(meta) = read_zip_entry(path, "quilt.mod.json")
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        {
             if let Some(icon) = meta["quilt_loader"]["metadata"]["icon"].as_str() {
                 if let Some(bytes) = read_zip_entry(path, icon) {
                     return Some(to_data_url(&bytes));
@@ -116,7 +132,8 @@ fn extract_icon(path: &Path, is_dir: bool) -> Option<String> {
             }
         }
         // Forge / NeoForge: logoFile in mods.toml (logo sits at the jar root).
-        let toml = read_zip_entry(path, "META-INF/mods.toml").or_else(|| read_zip_entry(path, "META-INF/neoforge.mods.toml"));
+        let toml = read_zip_entry(path, "META-INF/mods.toml")
+            .or_else(|| read_zip_entry(path, "META-INF/neoforge.mods.toml"));
         if let Some(toml) = toml {
             if let Some(logo) = toml_logo(&String::from_utf8_lossy(&toml)) {
                 if let Some(bytes) = read_zip_entry(path, &logo) {
@@ -140,19 +157,36 @@ fn list_dir(instance_id: &str, subdir: &str, kind: &str, exts: &[&str]) -> Vec<C
                 Err(_) => continue,
             };
             let is_dir = meta.is_dir();
-            let base = filename.strip_suffix(".disabled").unwrap_or(&filename).to_string();
+            let base = filename
+                .strip_suffix(".disabled")
+                .unwrap_or(&filename)
+                .to_string();
             let matches = exts.iter().any(|x| base.ends_with(x));
             if !is_dir && !matches {
                 continue;
             }
             let enabled = !filename.ends_with(".disabled");
-            let display = base.trim_end_matches(".zip").trim_end_matches(".jar").to_string();
+            let display = base
+                .trim_end_matches(".zip")
+                .trim_end_matches(".jar")
+                .to_string();
             let size_kb = if is_dir { 0 } else { meta.len().div_ceil(1024) };
             let icon_data_url = extract_icon(&e.path(), is_dir);
-            out.push(ContentEntry { filename, display_name: display, kind: kind.to_string(), enabled, size_kb, icon_data_url });
+            out.push(ContentEntry {
+                filename,
+                display_name: display,
+                kind: kind.to_string(),
+                enabled,
+                size_kb,
+                icon_data_url,
+            });
         }
     }
-    out.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+    out.sort_by(|a, b| {
+        a.display_name
+            .to_lowercase()
+            .cmp(&b.display_name.to_lowercase())
+    });
     out
 }
 
@@ -162,7 +196,12 @@ pub async fn mods_list(instance_id: String) -> Result<Vec<ContentEntry>, String>
     // main thread so the UI stays responsive.
     tauri::async_runtime::spawn_blocking(move || {
         let mut v = list_dir(&instance_id, "mods", "mod", &[".jar"]);
-        v.extend(list_dir(&instance_id, "resourcepacks", "resourcepack", &[".zip"]));
+        v.extend(list_dir(
+            &instance_id,
+            "resourcepacks",
+            "resourcepack",
+            &[".zip"],
+        ));
         v.extend(list_dir(&instance_id, "shaderpacks", "shader", &[".zip"]));
         v.extend(list_dir(&instance_id, "datapacks", "datapack", &[".zip"]));
         v
@@ -172,7 +211,11 @@ pub async fn mods_list(instance_id: String) -> Result<Vec<ContentEntry>, String>
 }
 
 #[tauri::command]
-pub fn mods_toggle(instance_id: String, filename: String, r#type: Option<String>) -> Result<(), String> {
+pub fn mods_toggle(
+    instance_id: String,
+    filename: String,
+    r#type: Option<String>,
+) -> Result<(), String> {
     let dir = game_dir(&instance_id).join(subdir_for(r#type.as_deref().unwrap_or("mod")));
     let src = dir.join(&filename);
     if !src.exists() {
@@ -189,7 +232,11 @@ pub fn mods_toggle(instance_id: String, filename: String, r#type: Option<String>
 }
 
 #[tauri::command]
-pub fn mods_delete(instance_id: String, filename: String, r#type: Option<String>) -> Result<(), String> {
+pub fn mods_delete(
+    instance_id: String,
+    filename: String,
+    r#type: Option<String>,
+) -> Result<(), String> {
     let dir = game_dir(&instance_id).join(subdir_for(r#type.as_deref().unwrap_or("mod")));
     let src = dir.join(&filename);
     if !src.exists() {
@@ -205,7 +252,11 @@ pub fn mods_delete(instance_id: String, filename: String, r#type: Option<String>
 #[tauri::command]
 pub fn mods_install_local(instance_id: String, src_path: String) -> Result<String, String> {
     let src = PathBuf::from(&src_path);
-    let filename = src.file_name().ok_or("invalid source path")?.to_string_lossy().to_string();
+    let filename = src
+        .file_name()
+        .ok_or("invalid source path")?
+        .to_string_lossy()
+        .to_string();
     let mods_dir = game_dir(&instance_id).join("mods");
     fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
     fs::copy(&src, mods_dir.join(&filename)).map_err(|e| e.to_string())?;
@@ -216,14 +267,45 @@ pub fn mods_install_local(instance_id: String, src_path: String) -> Result<Strin
 /// instance.json (prepended, deduped by projectId). The `mod` value is the
 /// InstalledMod the renderer built from Modrinth/CurseForge metadata.
 #[tauri::command]
-pub async fn install_mod_file(instance_id: String, url: String, file_name: String, r#mod: Value) -> Result<Value, String> {
+pub async fn install_mod_file(
+    instance_id: String,
+    url: String,
+    file_name: String,
+    r#mod: Value,
+    sha512: Option<String>,
+    sha1: Option<String>,
+) -> Result<Value, String> {
     let mods_dir = game_dir(&instance_id).join("mods");
-    let safe = Path::new(&file_name).file_name().ok_or("invalid filename")?.to_string_lossy().to_string();
-    download_to(&url, &mods_dir.join(&safe)).await?;
+    let safe = Path::new(&file_name)
+        .file_name()
+        .ok_or("invalid filename")?
+        .to_string_lossy()
+        .to_string();
+    let project_id = r#mod
+        .get("projectId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let allowed_hosts = if project_id.starts_with("cf:") {
+        net::CURSEFORGE_HOSTS
+    } else {
+        net::MODRINTH_HOSTS
+    };
+    download_to(
+        &url,
+        &mods_dir.join(&safe),
+        allowed_hosts,
+        sha512.as_deref(),
+        sha1.as_deref(),
+    )
+    .await?;
 
     let inst = instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
-    let project_id = r#mod.get("projectId").and_then(Value::as_str).unwrap_or_default().to_string();
-    let mut mods: Vec<Value> = inst.get("mods").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut mods: Vec<Value> = inst
+        .get("mods")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     mods.retain(|m| m.get("projectId").and_then(Value::as_str) != Some(project_id.as_str()));
     mods.insert(0, r#mod.clone());
     instances::update_instance(instance_id, json!({ "mods": mods }))?;
@@ -231,21 +313,39 @@ pub async fn install_mod_file(instance_id: String, url: String, file_name: Strin
 }
 
 #[tauri::command]
-pub async fn install_content_file(instance_id: String, url: String, file_name: String, content_type: String) -> Result<String, String> {
+pub async fn install_content_file(
+    instance_id: String,
+    url: String,
+    file_name: String,
+    content_type: String,
+    sha512: Option<String>,
+    sha1: Option<String>,
+) -> Result<String, String> {
     match content_type.as_str() {
         "resourcepack" | "shader" | "datapack" => {}
         _ => return Err(format!("Unsupported content type: {content_type}")),
     }
 
     let dir = game_dir(&instance_id).join(subdir_for(&content_type));
-    let safe = Path::new(&file_name).file_name().ok_or("invalid filename")?.to_string_lossy().to_string();
+    let safe = Path::new(&file_name)
+        .file_name()
+        .ok_or("invalid filename")?
+        .to_string_lossy()
+        .to_string();
     let dest = dir.join(&safe);
     let disabled = dir.join(format!("{safe}.disabled"));
     if dest.exists() || disabled.exists() {
         return Err(format!("{safe} is already downloaded for this instance."));
     }
 
-    download_to(&url, &dest).await?;
+    download_to(
+        &url,
+        &dest,
+        net::MODRINTH_HOSTS,
+        sha512.as_deref(),
+        sha1.as_deref(),
+    )
+    .await?;
     Ok(safe)
 }
 
@@ -268,7 +368,11 @@ fn write_profiles(instance_id: &str, profiles: &[Value]) -> Result<(), String> {
     if let Some(p) = path.parent() {
         fs::create_dir_all(p).ok();
     }
-    fs::write(path, serde_json::to_vec_pretty(&json!({ "profiles": profiles })).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(&json!({ "profiles": profiles })).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -277,7 +381,11 @@ pub fn mods_profiles_list(instance_id: String) -> Vec<Value> {
 }
 
 #[tauri::command]
-pub fn mods_profiles_save(instance_id: String, name: String, enabled_files: Vec<String>) -> Result<Value, String> {
+pub fn mods_profiles_save(
+    instance_id: String,
+    name: String,
+    enabled_files: Vec<String>,
+) -> Result<Value, String> {
     let profile = json!({ "id": uuid::Uuid::new_v4().to_string(), "name": name, "enabledFiles": enabled_files });
     let mut profiles = read_profiles(&instance_id);
     profiles.push(profile.clone());
@@ -289,24 +397,37 @@ pub fn mods_profiles_save(instance_id: String, name: String, enabled_files: Vec<
 #[tauri::command]
 pub fn mods_profiles_apply(instance_id: String, profile_id: String) -> Result<(), String> {
     let profiles = read_profiles(&instance_id);
-    let profile = profiles.iter().find(|p| p["id"].as_str() == Some(profile_id.as_str())).ok_or(format!("Profile not found: {profile_id}"))?;
+    let profile = profiles
+        .iter()
+        .find(|p| p["id"].as_str() == Some(profile_id.as_str()))
+        .ok_or(format!("Profile not found: {profile_id}"))?;
     let enabled: std::collections::HashSet<String> = profile["enabledFiles"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let mods_dir = game_dir(&instance_id).join("mods");
     if !mods_dir.exists() {
         return Ok(());
     }
-    for entry in fs::read_dir(&mods_dir).map_err(|e| e.to_string())?.flatten() {
+    for entry in fs::read_dir(&mods_dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
         let path = entry.path();
         if path.is_dir() {
             continue;
         }
         let fname = entry.file_name().to_string_lossy().to_string();
         let is_disabled = fname.ends_with(".disabled");
-        let base = fname.strip_suffix(".disabled").unwrap_or(&fname).to_string();
+        let base = fname
+            .strip_suffix(".disabled")
+            .unwrap_or(&fname)
+            .to_string();
         if !base.ends_with(".jar") {
             continue;
         }
@@ -322,12 +443,19 @@ pub fn mods_profiles_apply(instance_id: String, profile_id: String) -> Result<()
 
 #[tauri::command]
 pub fn mods_profiles_delete(instance_id: String, profile_id: String) -> Result<(), String> {
-    let profiles: Vec<Value> = read_profiles(&instance_id).into_iter().filter(|p| p["id"].as_str() != Some(profile_id.as_str())).collect();
+    let profiles: Vec<Value> = read_profiles(&instance_id)
+        .into_iter()
+        .filter(|p| p["id"].as_str() != Some(profile_id.as_str()))
+        .collect();
     write_profiles(&instance_id, &profiles)
 }
 
 #[tauri::command]
-pub fn mods_profiles_rename(instance_id: String, profile_id: String, new_name: String) -> Result<Value, String> {
+pub fn mods_profiles_rename(
+    instance_id: String,
+    profile_id: String,
+    new_name: String,
+) -> Result<Value, String> {
     let mut profiles = read_profiles(&instance_id);
     let mut updated = None;
     for p in profiles.iter_mut() {
@@ -344,9 +472,16 @@ pub fn mods_profiles_rename(instance_id: String, profile_id: String, new_name: S
 #[tauri::command]
 pub fn uninstall_mod(instance_id: String, project_id: String) -> Result<(), String> {
     let inst = instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
-    let mods: Vec<Value> = inst.get("mods").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mods: Vec<Value> = inst
+        .get("mods")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
-    if let Some(m) = mods.iter().find(|m| m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str())) {
+    if let Some(m) = mods
+        .iter()
+        .find(|m| m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str()))
+    {
         if let Some(fname) = m.get("fileName").and_then(Value::as_str) {
             if let Some(safe) = Path::new(fname).file_name() {
                 let p = game_dir(&instance_id).join("mods").join(safe);
@@ -357,7 +492,10 @@ pub fn uninstall_mod(instance_id: String, project_id: String) -> Result<(), Stri
         }
     }
 
-    let remaining: Vec<Value> = mods.into_iter().filter(|m| m.get("projectId").and_then(Value::as_str) != Some(project_id.as_str())).collect();
+    let remaining: Vec<Value> = mods
+        .into_iter()
+        .filter(|m| m.get("projectId").and_then(Value::as_str) != Some(project_id.as_str()))
+        .collect();
     instances::update_instance(instance_id, json!({ "mods": remaining }))?;
     Ok(())
 }

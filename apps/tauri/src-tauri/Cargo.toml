@@ -31,8 +31,12 @@ iota_stronghold = "2"
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
 rand = "0.8"
 hex = "0.4"
+sha1 = "0.10"
+sha2 = "0.10"
 zeroize = "1"
 zip = "2"
+flate2 = "1"
+tar = "0.4"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 fastnbt = "2"

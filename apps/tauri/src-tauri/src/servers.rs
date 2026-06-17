@@ -38,7 +38,8 @@ pub fn mc_servers(instance_id: String) -> Vec<Value> {
         .unwrap_or_default()
         .into_iter()
         .map(|s| {
-            let mut o = json!({ "name": s.name.unwrap_or_default(), "ip": s.ip.unwrap_or_default() });
+            let mut o =
+                json!({ "name": s.name.unwrap_or_default(), "ip": s.ip.unwrap_or_default() });
             if let Some(icon) = s.icon {
                 o["icon"] = json!(icon);
             }
@@ -76,7 +77,10 @@ fn read_varint<R: Read>(r: &mut R) -> std::io::Result<i32> {
         }
         shift += 7;
         if shift >= 35 {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "varint too long"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "varint too long",
+            ));
         }
     }
     Ok(num as i32)
@@ -98,10 +102,9 @@ fn packet(id: i32, body: &[u8]) -> Vec<u8> {
 }
 
 fn ping(host: &str, port: u16) -> std::io::Result<(i64, i64, u128)> {
-    let addr = (host, port)
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "could not resolve host"))?;
+    let addr = (host, port).to_socket_addrs()?.next().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "could not resolve host")
+    })?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -121,13 +124,17 @@ fn ping(host: &str, port: u16) -> std::io::Result<(i64, i64, u128)> {
     let _id = read_varint(&mut stream)?;
     let json_len = read_varint(&mut stream)? as usize;
     if json_len == 0 || json_len > 4 * 1024 * 1024 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "bad status length"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "bad status length",
+        ));
     }
     let mut buf = vec![0u8; json_len];
     stream.read_exact(&mut buf)?;
     let latency = start.elapsed().as_millis();
 
-    let v: Value = serde_json::from_slice(&buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let v: Value = serde_json::from_slice(&buf)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let online = v["players"]["online"].as_i64().unwrap_or(0);
     let max = v["players"]["max"].as_i64().unwrap_or(0);
     Ok((online, max, latency))
@@ -138,7 +145,9 @@ fn ping(host: &str, port: u16) -> std::io::Result<(i64, i64, u128)> {
 pub async fn ping_server(ip: String) -> Option<Value> {
     // host[:port] — default port 25565. (No SRV resolution.)
     let (host, port) = match ip.rfind(':') {
-        Some(i) if ip[i + 1..].parse::<u16>().is_ok() => (ip[..i].to_string(), ip[i + 1..].parse::<u16>().unwrap()),
+        Some(i) if ip[i + 1..].parse::<u16>().is_ok() => {
+            (ip[..i].to_string(), ip[i + 1..].parse::<u16>().unwrap())
+        }
         _ => (ip.clone(), 25565u16),
     };
     tauri::async_runtime::spawn_blocking(move || {

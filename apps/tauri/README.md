@@ -17,8 +17,6 @@ Every core backend mechanic the full migration needs, each as a ported command/m
 |---|---|---|
 | Request/response (read+write JSON) | `config_get` / `config_set` | `config.rs` |
 | Bulk on-disk read (same format as Electron) | `instances_list` | `instances.rs`, `paths.rs` |
-| Streaming progress (HTTP via reqwest) | `download_demo` → `download://progress` | `download.rs` |
-| Process spawn + log streaming (the launch primitive) | `process_run` → `process://log` / `process://exit` | `process.rs` |
 | Microsoft device-code OAuth + encrypted token storage | `auth_device_start` / `auth_device_poll` + Stronghold | `auth.rs` |
 
 Plus: the renderer calls everything via `@tauri-apps/api`'s `invoke()` / `listen()` (the pattern all

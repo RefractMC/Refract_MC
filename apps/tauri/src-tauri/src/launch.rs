@@ -48,7 +48,11 @@ fn rule_applies(rules: &[Value]) -> bool {
     }
     let mut result = false;
     for r in rules {
-        let os_match = match r.get("os").and_then(|o| o.get("name")).and_then(Value::as_str) {
+        let os_match = match r
+            .get("os")
+            .and_then(|o| o.get("name"))
+            .and_then(Value::as_str)
+        {
             None => true,
             Some(n) => n == OS_NAME,
         };
@@ -99,7 +103,11 @@ fn resolve_args(args: Option<&Value>, vars: &HashMap<String, String>) -> Vec<Str
         if let Some(s) = arg.as_str() {
             out.push(substitute(s, vars));
         } else if let Some(obj) = arg.as_object() {
-            let rules = obj.get("rules").and_then(Value::as_array).cloned().unwrap_or_default();
+            let rules = obj
+                .get("rules")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             if rule_applies(&rules) {
                 match obj.get("value") {
                     Some(Value::String(s)) => out.push(substitute(s, vars)),
@@ -142,7 +150,10 @@ fn maven_key(name: &str) -> String {
     let parts: Vec<&str> = name.split(':').collect();
     let group = parts.first().copied().unwrap_or("");
     let artifact = parts.get(1).copied().unwrap_or("");
-    let classifier = parts.get(3).map(|ce| ce.split('@').next().unwrap_or("")).unwrap_or("");
+    let classifier = parts
+        .get(3)
+        .map(|ce| ce.split('@').next().unwrap_or(""))
+        .unwrap_or("");
     if classifier.is_empty() {
         format!("{group}:{artifact}")
     } else {
@@ -150,12 +161,20 @@ fn maven_key(name: &str) -> String {
     }
 }
 
-fn build_classpath(version_json: &Value, overlay: Option<&Value>, libs_dir: &Path, client_jar: &Path) -> String {
+fn build_classpath(
+    version_json: &Value,
+    overlay: Option<&Value>,
+    libs_dir: &Path,
+    client_jar: &Path,
+) -> String {
     let mut jars: Vec<String> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     // Vanilla libs first, then the loader overlay appended so its versions of a
     // shared artifact (ASM, log4j…) win the dedupe while keeping classpath order.
-    let mut all: Vec<Value> = version_json["libraries"].as_array().cloned().unwrap_or_default();
+    let mut all: Vec<Value> = version_json["libraries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     if let Some(ov) = overlay {
         all.extend(ov["libraries"].as_array().cloned().unwrap_or_default());
     }
@@ -166,13 +185,14 @@ fn build_classpath(version_json: &Value, overlay: Option<&Value>, libs_dir: &Pat
             }
         }
         let name = lib.get("name").and_then(Value::as_str).unwrap_or("");
-        let jar_path: Option<PathBuf> = if let Some(p) = lib["downloads"]["artifact"]["path"].as_str() {
-            Some(libs_dir.join(p))
-        } else if lib.get("url").and_then(Value::as_str).is_some() {
-            Some(libs_dir.join(maven_to_path(name)))
-        } else {
-            None
-        };
+        let jar_path: Option<PathBuf> =
+            if let Some(p) = lib["downloads"]["artifact"]["path"].as_str() {
+                Some(libs_dir.join(p))
+            } else if lib.get("url").and_then(Value::as_str).is_some() {
+                Some(libs_dir.join(maven_to_path(name)))
+            } else {
+                None
+            };
         if let Some(jp) = jar_path {
             let key = maven_key(name);
             let val = jp.to_string_lossy().to_string();
@@ -250,7 +270,10 @@ fn build_command(
     java_args: Option<&str>,
     auth: &Auth,
 ) -> Vec<String> {
-    let asset_index = version_json["assetIndex"]["id"].as_str().unwrap_or("legacy").to_string();
+    let asset_index = version_json["assetIndex"]["id"]
+        .as_str()
+        .unwrap_or("legacy")
+        .to_string();
     let classpath = build_classpath(version_json, overlay, libs_dir, client_jar);
 
     let mut vars: HashMap<String, String> = HashMap::new();
@@ -267,7 +290,14 @@ fn build_command(
     put("version_name", version_id.into());
     put("game_directory", game_dir.to_string_lossy().into());
     put("assets_root", assets_dir.to_string_lossy().into());
-    put("game_assets", assets_dir.join("virtual").join(&asset_index).to_string_lossy().into());
+    put(
+        "game_assets",
+        assets_dir
+            .join("virtual")
+            .join(&asset_index)
+            .to_string_lossy()
+            .into(),
+    );
     put("assets_index_name", asset_index);
     put("auth_uuid", auth.uuid.replace('-', ""));
     put("auth_access_token", auth.access_token.clone());
@@ -301,25 +331,32 @@ fn build_command(
     // Overlays extend vanilla's args (they don't replace them), so build from the
     // base then append the overlay's jvm/game entries.
     let overlay_args = overlay.filter(|o| o.get("arguments").is_some());
-    let (jvm_args, game_args): (Vec<String>, Vec<String>) = if version_json.get("arguments").is_some() {
-        let mut jvm = resolve_args(version_json["arguments"].get("jvm"), &vars);
-        let mut game = resolve_args(version_json["arguments"].get("game"), &vars);
-        if let Some(ov) = overlay_args {
-            jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
-            game.extend(resolve_args(ov["arguments"].get("game"), &vars));
-        }
-        (jvm, game)
-    } else if let Some(mc_args) = version_json.get("minecraftArguments").and_then(Value::as_str) {
-        let mut jvm = vec!["-cp".to_string(), classpath.clone()];
-        let mut game: Vec<String> = substitute(mc_args, &vars).split(' ').map(String::from).collect();
-        if let Some(ov) = overlay_args {
-            jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
-            game.extend(resolve_args(ov["arguments"].get("game"), &vars));
-        }
-        (jvm, game)
-    } else {
-        (vec!["-cp".into(), classpath.clone()], vec![])
-    };
+    let (jvm_args, game_args): (Vec<String>, Vec<String>) =
+        if version_json.get("arguments").is_some() {
+            let mut jvm = resolve_args(version_json["arguments"].get("jvm"), &vars);
+            let mut game = resolve_args(version_json["arguments"].get("game"), &vars);
+            if let Some(ov) = overlay_args {
+                jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
+                game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+            }
+            (jvm, game)
+        } else if let Some(mc_args) = version_json
+            .get("minecraftArguments")
+            .and_then(Value::as_str)
+        {
+            let mut jvm = vec!["-cp".to_string(), classpath.clone()];
+            let mut game: Vec<String> = substitute(mc_args, &vars)
+                .split(' ')
+                .map(String::from)
+                .collect();
+            if let Some(ov) = overlay_args {
+                jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
+                game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+            }
+            (jvm, game)
+        } else {
+            (vec!["-cp".into(), classpath.clone()], vec![])
+        };
 
     let mut cmd = vec![java_exe.to_string()];
     cmd.append(&mut jvm_base);
@@ -349,7 +386,12 @@ struct ExitPayload {
     code: i32,
 }
 
-fn pump<R: std::io::Read + Send + 'static>(app: AppHandle, instance_id: String, reader: R, stream: &'static str) {
+fn pump<R: std::io::Read + Send + 'static>(
+    app: AppHandle,
+    instance_id: String,
+    reader: R,
+    stream: &'static str,
+) {
     thread::spawn(move || {
         for line in BufReader::new(reader).lines().map_while(Result::ok) {
             let _ = app.emit(
@@ -368,7 +410,10 @@ fn pump<R: std::io::Read + Send + 'static>(app: AppHandle, instance_id: String, 
 
 #[tauri::command]
 pub fn is_running(instance_id: String) -> bool {
-    pids().lock().map(|m| m.contains_key(&instance_id)).unwrap_or(false)
+    pids()
+        .lock()
+        .map(|m| m.contains_key(&instance_id))
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -376,7 +421,9 @@ pub fn stop_minecraft(instance_id: String) -> Result<(), String> {
     let pid = pids().lock().unwrap().get(&instance_id).copied();
     if let Some(pid) = pid {
         #[cfg(windows)]
-        let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
         #[cfg(not(windows))]
         let _ = Command::new("kill").arg(pid.to_string()).output();
         pids().lock().unwrap().remove(&instance_id);
@@ -394,15 +441,34 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     // via the XBL→XSTS→MC chain (refreshed in Rust); offline accounts use the
     // placeholder token, exactly as the Electron build does.
     let cfg = config::read();
-    let active = cfg.get("activeAccountId").and_then(Value::as_str).map(String::from);
-    let accounts = cfg.get("accounts").and_then(Value::as_array).cloned().unwrap_or_default();
+    let active = cfg
+        .get("activeAccountId")
+        .and_then(Value::as_str)
+        .map(String::from);
+    let accounts = cfg
+        .get("accounts")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let account = accounts
         .iter()
         .find(|a| a.get("uuid").and_then(Value::as_str).map(String::from) == active)
         .ok_or("No active account. Please sign in first.")?;
-    let acc_type = account.get("type").and_then(Value::as_str).unwrap_or("offline").to_string();
-    let username = account.get("username").and_then(Value::as_str).unwrap_or("Player").to_string();
-    let uuid = account.get("uuid").and_then(Value::as_str).unwrap_or("").to_string();
+    let acc_type = account
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("offline")
+        .to_string();
+    let username = account
+        .get("username")
+        .and_then(Value::as_str)
+        .unwrap_or("Player")
+        .to_string();
+    let uuid = account
+        .get("uuid")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
 
     let auth = if acc_type == "microsoft" {
         let (token, xuid) = auth::mc_token(&uuid).await.map_err(|e| {
@@ -412,23 +478,48 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
                 e
             }
         })?;
-        Auth { username, uuid, access_token: token, xuid, client_id: auth::CLIENT_ID.to_string(), user_type: "msa".into() }
+        Auth {
+            username,
+            uuid,
+            access_token: token,
+            xuid,
+            client_id: auth::CLIENT_ID.to_string(),
+            user_type: "msa".into(),
+        }
     } else {
-        Auth { username, uuid, access_token: "offline".into(), xuid: String::new(), client_id: String::new(), user_type: "legacy".into() }
+        Auth {
+            username,
+            uuid,
+            access_token: "offline".into(),
+            xuid: String::new(),
+            client_id: String::new(),
+            user_type: "legacy".into(),
+        }
     };
 
-    let instance = instances::get_instance_by_id(instance_id.clone()).ok_or(format!("Instance not found: {instance_id}"))?;
-    if !instance.get("isInstalled").and_then(Value::as_bool).unwrap_or(false) {
+    let instance = instances::get_instance_by_id(instance_id.clone())
+        .ok_or(format!("Instance not found: {instance_id}"))?;
+    if !instance
+        .get("isInstalled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
         return Err("Minecraft is not installed for this instance.".into());
     }
-    let loader = instance.get("modLoader").and_then(Value::as_str).unwrap_or("vanilla").to_string();
+    let loader = instance
+        .get("modLoader")
+        .and_then(Value::as_str)
+        .unwrap_or("vanilla")
+        .to_string();
     let mc_version = instance
         .get("minecraftVersion")
         .and_then(Value::as_str)
         .ok_or("Instance has no Minecraft version")?
         .to_string();
 
-    let vjson_path = paths::versions_dir().join(&mc_version).join(format!("{mc_version}.json"));
+    let vjson_path = paths::versions_dir()
+        .join(&mc_version)
+        .join(format!("{mc_version}.json"));
     let version_json: Value = std::fs::read_to_string(&vjson_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -438,10 +529,16 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     // processor-built overlay, which isn't ported yet (#25.2b).
     let overlay: Option<Value> = match loader.as_str() {
         "fabric" | "quilt" => {
-            let p = paths::versions_dir().join(format!("{mc_version}-{loader}")).join(format!("{mc_version}-{loader}.json"));
-            let j = std::fs::read_to_string(&p).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok());
+            let p = paths::versions_dir()
+                .join(format!("{mc_version}-{loader}"))
+                .join(format!("{mc_version}-{loader}.json"));
+            let j = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok());
             if j.is_none() {
-                return Err(format!("{loader} is not fully installed for this instance. Please reinstall."));
+                return Err(format!(
+                    "{loader} is not fully installed for this instance. Please reinstall."
+                ));
             }
             j
         }
@@ -452,22 +549,47 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
             let mut candidates: Vec<PathBuf> = Vec::new();
             if let Some(v) = lv {
                 let tag = format!("{loader}-{v}");
-                candidates.push(paths::versions_dir().join(format!("{mc_version}-{tag}")).join(format!("{mc_version}-{tag}.json")));
+                candidates.push(
+                    paths::versions_dir()
+                        .join(format!("{mc_version}-{tag}"))
+                        .join(format!("{mc_version}-{tag}.json")),
+                );
             }
-            candidates.push(paths::versions_dir().join(format!("{mc_version}-{loader}")).join(format!("{mc_version}-{loader}.json")));
-            candidates.push(paths::versions_dir().join(format!("{mc_version}-forge")).join(format!("{mc_version}-forge.json")));
-            let found = candidates.iter().find_map(|p| std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()));
+            candidates.push(
+                paths::versions_dir()
+                    .join(format!("{mc_version}-{loader}"))
+                    .join(format!("{mc_version}-{loader}.json")),
+            );
+            candidates.push(
+                paths::versions_dir()
+                    .join(format!("{mc_version}-forge"))
+                    .join(format!("{mc_version}-forge.json")),
+            );
+            let found = candidates.iter().find_map(|p| {
+                std::fs::read_to_string(p)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            });
             if found.is_none() {
-                return Err(format!("{loader} is not fully installed for this instance. Please reinstall."));
+                return Err(format!(
+                    "{loader} is not fully installed for this instance. Please reinstall."
+                ));
             }
             found
         }
         _ => None,
     };
 
-    let required_java = version_json["javaVersion"]["majorVersion"].as_u64().unwrap_or(8) as u32;
+    let required_java = version_json["javaVersion"]["majorVersion"]
+        .as_u64()
+        .unwrap_or(8) as u32;
     // Resolve a runtime, auto-downloading a Temurin JRE if none qualifies.
-    let java_exe = crate::java::resolve_or_provision(&app, required_java, instance.get("javaPath").and_then(Value::as_str)).await?;
+    let java_exe = crate::java::resolve_or_provision(
+        &app,
+        required_java,
+        instance.get("javaPath").and_then(Value::as_str),
+    )
+    .await?;
 
     let inst_dir = instances::resolve_instance_dir(&instance_id);
     let game_dir = instance
@@ -479,7 +601,9 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     std::fs::create_dir_all(game_dir.join("saves")).ok();
 
     let natives_dir = inst_dir.join("minecraft").join("natives");
-    let client_jar = paths::versions_dir().join(&mc_version).join(format!("{mc_version}.jar"));
+    let client_jar = paths::versions_dir()
+        .join(&mc_version)
+        .join(format!("{mc_version}.jar"));
     let memory_mb = instance
         .get("memoryMb")
         .and_then(Value::as_u64)
@@ -532,7 +656,13 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     thread::spawn(move || {
         let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
         pids().lock().unwrap().remove(&id_exit);
-        let _ = app_exit.emit("mc://exit", ExitPayload { instance_id: id_exit, code });
+        let _ = app_exit.emit(
+            "mc://exit",
+            ExitPayload {
+                instance_id: id_exit,
+                code,
+            },
+        );
     });
 
     Ok(())

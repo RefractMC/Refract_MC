@@ -29,7 +29,9 @@ fn master_key() -> Result<Vec<u8>, String> {
         Ok(h) => hex::decode(h).map_err(|e| e.to_string()),
         Err(_) => {
             let key: [u8; 32] = rand::random();
-            entry.set_password(&hex::encode(key)).map_err(|e| e.to_string())?;
+            entry
+                .set_password(&hex::encode(key))
+                .map_err(|e| e.to_string())?;
             Ok(key.to_vec())
         }
     }

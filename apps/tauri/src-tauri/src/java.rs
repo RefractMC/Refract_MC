@@ -4,14 +4,16 @@
 //! `java -XshowSettings:property -version`. Used by the settings "scan" button
 //! (mc_java) and by the launcher to resolve a runtime for a given MC version.
 
-use crate::paths;
+use crate::{net, paths};
+use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -54,12 +56,19 @@ fn to_json(j: &Install) -> Value {
 }
 
 fn exe_in_home(home: &str) -> String {
-    PathBuf::from(home).join("bin").join(JAVA_BIN).to_string_lossy().to_string()
+    PathBuf::from(home)
+        .join("bin")
+        .join(JAVA_BIN)
+        .to_string_lossy()
+        .to_string()
 }
 
 fn parse_major(ver: &str) -> u32 {
     if let Some(rest) = ver.strip_prefix("1.") {
-        rest.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0)
+        rest.split('.')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
     } else {
         ver.split(|c: char| c == '.' || c == '_' || c == '-')
             .next()
@@ -93,8 +102,15 @@ fn probe(java_exe: &Path) -> Option<Install> {
         return None;
     }
     // -XshowSettings exits non-zero but still prints; capture both streams.
-    let out = Command::new(java_exe).args(["-XshowSettings:property", "-version"]).output().ok()?;
-    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let out = Command::new(java_exe)
+        .args(["-XshowSettings:property", "-version"])
+        .output()
+        .ok()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
     let version = find_prop(&text, "java.version").or_else(|| find_quoted_version(&text))?;
     let major = parse_major(&version);
     if major == 0 {
@@ -102,7 +118,12 @@ fn probe(java_exe: &Path) -> Option<Install> {
     }
     let vendor = find_prop(&text, "java.vendor").unwrap_or_else(|| "Unknown".into());
     let home = java_exe.parent()?.parent()?.to_string_lossy().to_string();
-    Some(Install { version: major, path: home, vendor, custom: None })
+    Some(Install {
+        version: major,
+        path: home,
+        vendor,
+        custom: None,
+    })
 }
 
 fn scan_dir<F: FnMut(Option<Install>)>(dir: &Path, add: &mut F) {
@@ -228,7 +249,10 @@ fn all_installs() -> Vec<Install> {
 /// Best installed runtime satisfying `required`: smallest eligible major (loaders
 /// bootstrap against a specific Java, so newer-than-needed can break Forge).
 fn find_installed(required: u32) -> Option<Install> {
-    all_installs().into_iter().filter(|j| j.version >= required).min_by_key(|j| j.version)
+    all_installs()
+        .into_iter()
+        .filter(|j| j.version >= required)
+        .min_by_key(|j| j.version)
 }
 
 /// Resolve a Java executable for a required major: the instance's own path if
@@ -258,7 +282,11 @@ pub fn resolve_for(required: u32, instance_java: Option<&str>) -> Option<String>
 
 /// Resolve a runtime for `required`, downloading a Temurin JRE if none qualifies.
 /// Used by the launcher so a missing JDK auto-provisions instead of dead-ending.
-pub async fn resolve_or_provision(app: &AppHandle, required: u32, instance_java: Option<&str>) -> Result<String, String> {
+pub async fn resolve_or_provision(
+    app: &AppHandle,
+    required: u32,
+    instance_java: Option<&str>,
+) -> Result<String, String> {
     if let Some(e) = resolve_for(required, instance_java) {
         return Ok(e);
     }
@@ -288,13 +316,20 @@ fn load_managed() -> Vec<Install> {
 fn save_managed(list: &[Install]) -> Result<(), String> {
     let dir = managed_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    fs::write(dir.join("managed.json"), serde_json::to_vec_pretty(list).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    fs::write(
+        dir.join("managed.json"),
+        serde_json::to_vec_pretty(list).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// MC version → required Java major (heuristic; the version JSON's own
 /// javaVersion.majorVersion is preferred at launch when present).
 fn required_for(mc_version: &str) -> u32 {
-    let parts: Vec<u32> = mc_version.split('.').map(|p| p.parse().unwrap_or(0)).collect();
+    let parts: Vec<u32> = mc_version
+        .split('.')
+        .map(|p| p.parse().unwrap_or(0))
+        .collect();
     let minor = parts.get(1).copied().unwrap_or(0);
     let patch = parts.get(2).copied().unwrap_or(0);
     if minor >= 21 || (minor == 20 && patch >= 5) {
@@ -317,7 +352,11 @@ fn adoptium_os() -> &'static str {
 }
 
 fn adoptium_arch() -> &'static str {
-    if std::env::consts::ARCH == "aarch64" { "aarch64" } else { "x64" }
+    if std::env::consts::ARCH == "aarch64" {
+        "aarch64"
+    } else {
+        "x64"
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -328,7 +367,14 @@ struct JavaProgress {
 }
 
 fn emit_progress(app: &AppHandle, major: u32, step: &str, percent: u64) {
-    let _ = app.emit("java://progress", JavaProgress { major, step: step.to_string(), percent });
+    let _ = app.emit(
+        "java://progress",
+        JavaProgress {
+            major,
+            step: step.to_string(),
+            percent,
+        },
+    );
 }
 
 fn unzip_to(zip_path: &Path, dest: &Path) -> Result<(), String> {
@@ -348,6 +394,57 @@ fn unzip_to(zip_path: &Path, dest: &Path) -> Result<(), String> {
             }
             let mut f = File::create(&out).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn strip_safe_top_component(path: &Path) -> Result<Option<PathBuf>, String> {
+    let mut out = PathBuf::new();
+    let mut components = path.components();
+    let _ = components.next();
+    for component in components {
+        match component {
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(format!("Unsafe archive path: {}", path.display()));
+            }
+        }
+    }
+    if out.as_os_str().is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(out))
+    }
+}
+
+fn untar_gz_to(tar_path: &Path, dest: &Path) -> Result<(), String> {
+    let file = File::open(tar_path).map_err(|e| e.to_string())?;
+    let decoder = GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    let entries = archive.entries().map_err(|e| e.to_string())?;
+    for entry in entries {
+        let mut entry = entry.map_err(|e| e.to_string())?;
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            return Err("Refusing archive with link entries".into());
+        }
+        let rel = match strip_safe_top_component(&entry.path().map_err(|e| e.to_string())?)? {
+            Some(path) => path,
+            None => continue,
+        };
+        let out = dest.join(rel);
+        if entry_type.is_dir() {
+            fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+        } else if entry_type.is_file() {
+            if let Some(parent) = out.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut file = File::create(&out).map_err(|e| e.to_string())?;
+            std::io::copy(&mut entry, &mut file).map_err(|e| e.to_string())?;
+        } else {
+            return Err("Refusing archive with special entries".into());
         }
     }
     Ok(())
@@ -378,13 +475,21 @@ pub async fn download_java(app: &AppHandle, major: u32) -> Result<Install, Strin
         adoptium_os(),
         adoptium_arch()
     );
-    let assets: Value = reqwest::get(&api).await.map_err(|e| e.to_string())?.json().await.map_err(|e| e.to_string())?;
+    net::validate_url(&api, net::JAVA_HOSTS)?;
+    let api_res = reqwest::get(&api).await.map_err(|e| e.to_string())?;
+    net::validate_url(api_res.url().as_str(), net::JAVA_HOSTS)?;
+    let assets: Value = api_res.json().await.map_err(|e| e.to_string())?;
     let pkg = &assets[0]["binary"]["package"];
-    let link = pkg["link"].as_str().ok_or(format!("No JRE package found for Java {major}"))?;
+    let link = pkg["link"]
+        .as_str()
+        .ok_or(format!("No JRE package found for Java {major}"))?;
     let name = pkg["name"].as_str().unwrap_or("jre.archive");
+    let checksum = pkg["checksum"].as_str();
 
     emit_progress(app, major, "Downloading…", 5);
+    net::validate_url(link, net::JAVA_HOSTS)?;
     let res = reqwest::get(link).await.map_err(|e| e.to_string())?;
+    net::validate_url(res.url().as_str(), net::JAVA_HOSTS)?;
     if !res.status().is_success() {
         return Err(format!("Download failed: HTTP {}", res.status()));
     }
@@ -394,17 +499,35 @@ pub async fn download_java(app: &AppHandle, major: u32) -> Result<Install, Strin
     let archive = base.join(name);
     let mut file = File::create(&archive).map_err(|e| e.to_string())?;
     let mut stream = res.bytes_stream();
+    let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| e.to_string())?;
+        hasher.update(&chunk);
         file.write_all(&chunk).map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
         if total > 0 {
             let pct = 5 + ((downloaded as f64 / total as f64) * 65.0) as u64;
-            emit_progress(app, major, &format!("Downloading Java {major}… {} / {} MB", downloaded / 1_048_576, total / 1_048_576), pct);
+            emit_progress(
+                app,
+                major,
+                &format!(
+                    "Downloading Java {major}… {} / {} MB",
+                    downloaded / 1_048_576,
+                    total / 1_048_576
+                ),
+                pct,
+            );
         }
     }
     drop(file);
+    if let Some(want) = checksum {
+        let got = hex::encode(hasher.finalize());
+        if !got.eq_ignore_ascii_case(want) {
+            fs::remove_file(&archive).ok();
+            return Err("SHA-256 mismatch for downloaded Java runtime".into());
+        }
+    }
 
     emit_progress(app, major, "Extracting…", 72);
     let extract_dir = base.join(format!("jre-{major}"));
@@ -415,23 +538,28 @@ pub async fn download_java(app: &AppHandle, major: u32) -> Result<Install, Strin
     if name.ends_with(".zip") {
         unzip_to(&archive, &extract_dir)?;
     } else {
-        let status = Command::new("tar").args(["xzf"]).arg(&archive).arg("-C").arg(&extract_dir).arg("--strip-components=1").status().map_err(|e| e.to_string())?;
-        if !status.success() {
-            return Err("Extraction failed".into());
-        }
+        untar_gz_to(&archive, &extract_dir)?;
     }
     fs::remove_file(&archive).ok();
 
     emit_progress(app, major, "Verifying installation…", 94);
-    let java_exe = find_exe_in_tree(&extract_dir).ok_or(format!("{JAVA_BIN} not found in extracted JRE"))?;
+    let java_exe =
+        find_exe_in_tree(&extract_dir).ok_or(format!("{JAVA_BIN} not found in extracted JRE"))?;
     let install = probe(Path::new(&java_exe)).unwrap_or(Install {
         version: major,
-        path: Path::new(&java_exe).parent().and_then(Path::parent).map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+        path: Path::new(&java_exe)
+            .parent()
+            .and_then(Path::parent)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
         vendor: "Adoptium Temurin".into(),
         custom: None,
     });
 
-    let mut managed: Vec<Install> = load_managed().into_iter().filter(|j| j.version != major).collect();
+    let mut managed: Vec<Install> = load_managed()
+        .into_iter()
+        .filter(|j| j.version != major)
+        .collect();
     managed.push(install.clone());
     save_managed(&managed)?;
 
@@ -470,9 +598,13 @@ pub fn java_add_custom(java_path: String) -> Result<Value, String> {
     if !Path::new(exe).exists() {
         return Err(format!("File not found: {exe}"));
     }
-    let mut install = probe(Path::new(exe)).ok_or("Not a valid Java executable — could not read version.")?;
+    let mut install =
+        probe(Path::new(exe)).ok_or("Not a valid Java executable — could not read version.")?;
     install.custom = Some(true);
-    let mut managed: Vec<Install> = load_managed().into_iter().filter(|j| j.path != install.path).collect();
+    let mut managed: Vec<Install> = load_managed()
+        .into_iter()
+        .filter(|j| j.path != install.path)
+        .collect();
     managed.push(install.clone());
     save_managed(&managed)?;
     Ok(to_json(&install))
@@ -481,7 +613,10 @@ pub fn java_add_custom(java_path: String) -> Result<Value, String> {
 /// Remove a custom (or managed) runtime by its home path.
 #[tauri::command]
 pub fn java_remove_custom(java_path: String) -> Result<(), String> {
-    let managed: Vec<Install> = load_managed().into_iter().filter(|j| j.path != java_path).collect();
+    let managed: Vec<Install> = load_managed()
+        .into_iter()
+        .filter(|j| j.path != java_path)
+        .collect();
     save_managed(&managed)
 }
 
@@ -491,6 +626,9 @@ pub fn java_delete(major: u32) -> Result<(), String> {
     if dir.exists() {
         fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     }
-    let managed: Vec<Install> = load_managed().into_iter().filter(|j| j.version != major).collect();
+    let managed: Vec<Install> = load_managed()
+        .into_iter()
+        .filter(|j| j.version != major)
+        .collect();
     save_managed(&managed)
 }

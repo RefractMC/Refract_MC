@@ -1,7 +1,6 @@
 mod auth;
 mod config;
 mod content;
-mod download;
 mod external;
 mod forge;
 mod friends;
@@ -13,8 +12,8 @@ mod log;
 mod mc_install;
 mod modpack;
 mod mods;
+mod net;
 mod paths;
-mod process;
 mod secrets;
 mod servers;
 mod skins;
@@ -46,8 +45,6 @@ pub fn run() {
             external::link_external_instance,
             external::import_external_instance,
             external::import_multimc_instance,
-            download::download_demo,
-            process::process_run,
             auth::auth_microsoft_begin,
             auth::auth_microsoft_complete,
             auth::auth_accounts,
