@@ -52,6 +52,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   const builtins = useMemo(() => [darkTheme as ThemeDefinition, lightTheme as ThemeDefinition], [])
 
   const [creating, setCreating] = useState(false)
+  const [editingThemeId, setEditingThemeId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('My Theme')
   const [draftColors, setDraftColors] = useState<ThemeColors>(() => ({ ...activeTheme.colors }))
   const [draftBackgroundImage, setDraftBackgroundImage] = useState(activeTheme.backgroundImage ?? '')
@@ -73,13 +74,24 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
     await persistActive(theme.id)
   }
 
+  function loadDraft(theme: ThemeDefinition, name = theme.name) {
+    setDraftColors({ ...theme.colors })
+    setDraftName(name)
+    setDraftBackgroundImage(theme.backgroundImage ?? '')
+    setDraftBackgroundOpacity(theme.backgroundOpacity ?? 0.34)
+    setDraftBackgroundBlur(theme.backgroundBlur ?? 0)
+    setDraftBackgroundDim(theme.backgroundDim ?? 0.42)
+  }
+
   function startCreate() {
-    setDraftColors({ ...activeTheme.colors })
-    setDraftName('My Theme')
-    setDraftBackgroundImage(activeTheme.backgroundImage ?? '')
-    setDraftBackgroundOpacity(activeTheme.backgroundOpacity ?? 0.34)
-    setDraftBackgroundBlur(activeTheme.backgroundBlur ?? 0)
-    setDraftBackgroundDim(activeTheme.backgroundDim ?? 0.42)
+    setEditingThemeId(null)
+    loadDraft(activeTheme, 'My Theme')
+    setCreating(true)
+  }
+
+  function startEdit(theme: ThemeDefinition) {
+    setEditingThemeId(theme.id)
+    loadDraft(theme)
     setCreating(true)
   }
 
@@ -97,8 +109,9 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   }
 
   async function saveDraft() {
+    const id = editingThemeId ?? slugify(draftName)
     const theme: ThemeDefinition = {
-      id: slugify(draftName),
+      id,
       name: draftName.trim() || 'My Theme',
       author: 'You',
       version: '1.0.0',
@@ -114,6 +127,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
     }
     addCustomTheme(theme)        // also applies it
     await persistActive(theme.id)
+    setEditingThemeId(null)
     setCreating(false)
   }
 
@@ -154,6 +168,18 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
           <span
             role="button"
             tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); startEdit(theme) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); startEdit(theme) } }}
+            title="Edit theme"
+            style={{ position: 'absolute', top: 6, right: 30, height: 20, padding: '0 6px', display: 'grid', placeItems: 'center', borderRadius: 5, color: 'var(--ink-2, #b1b8c8)', fontSize: 10, fontWeight: 800, letterSpacing: '.05em' }}
+          >
+            EDIT
+          </span>
+        )}
+        {!builtin && (
+          <span
+            role="button"
+            tabIndex={0}
             onClick={(e) => { e.stopPropagation(); removeCustomTheme(theme.id) }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); removeCustomTheme(theme.id) } }}
             title="Delete theme"
@@ -167,7 +193,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) setCreating(false); onOpenChange(v) }}>
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) { setCreating(false); setEditingThemeId(null) } onOpenChange(v) }}>
       <Dialog.Portal>
         <Dialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 149 }} />
         <Dialog.Content aria-label="Themes" className="ni-dialog">
@@ -286,8 +312,8 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <Button variant="outline" size="sm" onClick={() => setCreating(false)}>Cancel</Button>
-                  <Button size="sm" onClick={saveDraft}>Create &amp; apply</Button>
+                  <Button variant="outline" size="sm" onClick={() => { setCreating(false); setEditingThemeId(null) }}>Cancel</Button>
+                  <Button size="sm" onClick={saveDraft}>{editingThemeId ? 'Save changes' : 'Create & apply'}</Button>
                 </div>
               </div>
             )}
