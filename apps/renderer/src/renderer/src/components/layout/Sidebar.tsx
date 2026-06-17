@@ -74,7 +74,7 @@ function NavItem({ to, label, iconSrc, exact, compact }: NavItemProps) {
         padding: compact ? '9px 0' : '9px 10px', borderRadius: 'var(--radius-sm)',
         color: active ? 'var(--ink)' : hover ? 'var(--ink)' : 'var(--ink-2)',
         fontSize: 13, fontWeight: 500, textDecoration: 'none',
-        background: active ? 'linear-gradient(90deg, var(--accent-tint), rgba(255,255,255,.025))' : hover ? 'rgba(255,255,255,.05)' : 'transparent',
+        background: active ? 'var(--sidebar-item-active-bg)' : hover ? 'var(--sidebar-item-hover-bg)' : 'transparent',
         border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 58%, transparent)' : hover ? 'rgba(255,255,255,.08)' : 'transparent'}`,
         userSelect: 'none',
         transition: 'background 100ms, color 100ms, border-color 100ms',
@@ -571,6 +571,8 @@ export function Sidebar() {
       padding: compact ? '14px 8px 12px' : '14px 12px 12px',
       transition: 'padding 220ms cubic-bezier(.4,0,.2,1)',
       minHeight:0, overflow:'hidden',
+      position:'relative',
+      zIndex:2,
     }}>
       {/* Brand + collapse toggle */}
       {compact ? (

@@ -43,6 +43,8 @@
   --sb:     #0c1018;
   --sb-line:rgba(166, 181, 214, .12);
   --sidebar-bg: linear-gradient(180deg, color-mix(in srgb, var(--sb) 96%, var(--accent)), var(--sb));
+  --sidebar-item-hover-bg: rgba(255,255,255,.05);
+  --sidebar-item-active-bg: linear-gradient(90deg, var(--accent-tint), rgba(255,255,255,.025));
 
   /* Accent (purple — Refract identity). Driven by the theme engine. */
   --accent:      #8b6dff;
@@ -237,15 +239,34 @@ html[data-has-theme-bg="true"] :where(.launcher-panel, .detail-empty, .ni-dialog
 
 html[data-has-theme-bg="true"] {
   --sidebar-bg:
-    linear-gradient(180deg, color-mix(in srgb, var(--sb) 96%, var(--accent)), color-mix(in srgb, var(--sb) 94%, #000));
+    linear-gradient(180deg, color-mix(in srgb, var(--sb) 98%, #000), color-mix(in srgb, var(--sb) 96%, #000));
+  --sidebar-item-hover-bg: color-mix(in srgb, var(--surface-3) 72%, transparent);
+  --sidebar-item-active-bg:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 34%, var(--sb)), color-mix(in srgb, var(--surface-2) 74%, transparent));
 }
 
 html[data-has-theme-bg="true"] .launcher-sidebar {
   background: var(--sidebar-bg) !important;
 }
 
+html[data-has-theme-bg="true"] .launcher-sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.28), transparent 80%),
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.2));
+}
+
+html[data-has-theme-bg="true"] .launcher-sidebar > * {
+  position: relative;
+  z-index: 1;
+}
+
 html[data-has-theme-bg="true"] .launcher-sidebar :where(a, button) {
-  background-color: color-mix(in srgb, var(--sb) 18%, transparent);
+  backdrop-filter: blur(10px);
 }
 
 html[data-has-theme-bg="true"] :where(.titlebar, .statusbar) {
