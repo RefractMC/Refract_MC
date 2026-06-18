@@ -423,6 +423,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
   const [loadingVersions, setLoadingVersions] = useState(true)
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
+  const [installedInstanceIds, setInstalledInstanceIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -442,6 +443,24 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
     const best = bestVersionForInstance(versions, selectedInstance)
     if (best) setSelectedVersionId(best.id)
   }, [selectedInstance, versions])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const installed = await Promise.all(instances.map(async inst => {
+        const recorded = inst.mods?.find(m => m.projectId === mod.project_id && (!m.contentType || m.contentType === 'mod'))
+        if (!recorded?.fileName) return null
+        const entries = await api.mods.list(inst.id).catch(() => [])
+        const present = entries.some(entry =>
+          entry.type === 'mod'
+          && (entry.filename === recorded.fileName || entry.filename === `${recorded.fileName}.disabled`),
+        )
+        return present ? inst.id : null
+      }))
+      if (!cancelled) setInstalledInstanceIds(new Set(installed.filter((id): id is string => id !== null)))
+    })()
+    return () => { cancelled = true }
+  }, [instances, mod.project_id])
 
   const canInstall = selectedInstance !== null && selectedVersionId !== null
 
@@ -472,7 +491,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                 <div style={{ padding: '20px 8px', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>{t.browse.noInstances}</div>
               ) : instances.map(inst => {
                 const active = selectedInstance?.id === inst.id
-                const alreadyHas = inst.mods?.some(m => m.projectId === mod.project_id)
+                const alreadyHas = installedInstanceIds.has(inst.id)
                 return (
                   <Button variant="secondary" key={inst.id} onClick={() => setSelectedInstance(inst)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 4, background: active ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 'var(--radius-sm)' }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -876,38 +895,59 @@ function Browse() {
     } catch { /* ignore */ }
   }, [gameVersion, loader])
 
-  function savedModProjectIds(instance: Instance | null): Set<string> {
-    return new Set((instance?.mods ?? [])
-      .filter(m => !m.projectId.startsWith('cf:') && (!m.contentType || m.contentType === 'mod'))
+  async function savedModProjectIds(instance: Instance | null): Promise<Set<string>> {
+    if (!instance) return new Set()
+    const entries = await api.mods.list(instance.id).catch(() => [])
+    const installedFiles = new Set(entries
+      .filter(entry => entry.type === 'mod')
+      .flatMap(entry => entry.filename.endsWith('.disabled')
+        ? [entry.filename, entry.filename.slice(0, -'.disabled'.length)]
+        : [entry.filename, `${entry.filename}.disabled`]))
+    return new Set((instance.mods ?? [])
+      .filter(m =>
+        (!m.contentType || m.contentType === 'mod')
+        && !!m.fileName
+        && installedFiles.has(m.fileName))
       .map(m => m.projectId))
   }
 
   // When instance changes: apply filters, then layer update scan results over the saved install records.
   useEffect(() => {
+    let cancelled = false
     if (!activeInstance) {
       setDownloadedIds(new Set())
       setUpdateIds(new Set())
-      return
+      return () => { cancelled = true }
     }
     setGameVersion(activeInstance.minecraftVersion)
     setLoader(activeInstance.modLoader ? activeInstance.modLoader.toLowerCase() : 'All')
     setOffset(0)
 
-    const savedIds = savedModProjectIds(activeInstance)
-    setDownloadedIds(savedIds)
-    setUpdateIds(new Set())
+    void (async () => {
+      const savedIds = await savedModProjectIds(activeInstance)
+      if (cancelled) return
+      setDownloadedIds(savedIds)
+      setUpdateIds(new Set())
 
-    // checkModUpdates mirrors Electron: it scans jars and asks Modrinth which ones have newer versions.
-    api.modrinth.checkModUpdates(activeInstance.id)
-      .then(results => {
-        setDownloadedIds(new Set([...savedIds, ...results.map(r => r.projectId)]))
-        setUpdateIds(new Set(results.filter(r => r.hasUpdate).map(r => r.projectId)))
-      })
-      .catch(() => { setDownloadedIds(savedIds); setUpdateIds(new Set()) })
+      // checkModUpdates scans actual jars and asks Modrinth which ones have newer versions.
+      api.modrinth.checkModUpdates(activeInstance.id)
+        .then(results => {
+          if (cancelled) return
+          setDownloadedIds(new Set([...savedIds, ...results.map(r => r.projectId)]))
+          setUpdateIds(new Set(results.filter(r => r.hasUpdate).map(r => r.projectId)))
+        })
+        .catch(() => {
+          if (cancelled) return
+          setDownloadedIds(savedIds)
+          setUpdateIds(new Set())
+        })
+    })()
+
+    return () => { cancelled = true }
   }, [activeInstance?.id, activeInstance?.mods])
 
   async function refreshActiveModStatus(instanceId: string, instanceSnapshot: Instance | null = activeInstance) {
-    const savedIds = savedModProjectIds(instanceSnapshot)
+    const savedIds = await savedModProjectIds(instanceSnapshot)
     setDownloadedIds(savedIds)
     try {
       const results = await api.modrinth.checkModUpdates(instanceId)
@@ -926,6 +966,11 @@ function Browse() {
     const instLoader = activeInstance.modLoader?.toLowerCase()
     const loaderOk = !instLoader || !mod.loaders?.length || mod.loaders.some(l => l.toLowerCase() === instLoader)
     return (!mcOk || !loaderOk) ? 'incompatible' : null
+  }
+
+  function getCfModStatus(mod: CFProject): 'downloaded' | null {
+    if (!activeInstance) return null
+    return downloadedIds.has(`cf:${mod.id}`) ? 'downloaded' : null
   }
 
   useEffect(() => {
@@ -1188,7 +1233,8 @@ function Browse() {
                   <CFModTile
                     key={mod.id}
                     mod={mod}
-                    installing={installingId === String(mod.id)}
+                    installing={installingId === `cf:${mod.id}`}
+                    status={getCfModStatus(mod)}
                     onDetail={() => setCfModDetail(mod)}
                     onInstall={() => setCfInstallTarget(mod)}
                   />
@@ -1414,7 +1460,13 @@ function fmtNum(n: number): string {
   return String(n)
 }
 
-function CFModTile({ mod, installing, onDetail, onInstall }: { mod: CFProject; installing: boolean; onDetail: () => void; onInstall: () => void }) {
+function CFModTile({ mod, installing, status, onDetail, onInstall }: {
+  mod: CFProject
+  installing: boolean
+  status: 'downloaded' | null
+  onDetail: () => void
+  onInstall: () => void
+}) {
   const t = useT()
   const [hovered, setHovered] = useState(false)
   return (
@@ -1456,19 +1508,35 @@ function CFModTile({ mod, installing, onDetail, onInstall }: { mod: CFProject; i
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {mod.categories.slice(0, 2).map(cat => <Tag key={cat.id} color="var(--ink-4)">{cat.name}</Tag>)}
         </div>
-        <Button
-          variant="primary"
-          onClick={e => { e.stopPropagation(); onInstall() }}
-          disabled={installing}
-          style={{
-            fontSize: 13, fontWeight: 700, letterSpacing: '.04em',
-            color: installing ? 'var(--ink-4)' : '#fff',
-            background: installing ? 'var(--surface-3)' : 'var(--ender)',
-            padding: '0 32px', height: 36, flexShrink: 0,
-          }}
-        >
-          {installing ? t.browse.cfInstalling : t.browse.cfInstall}
-        </Button>
+        {status === 'downloaded' ? (
+          <Button
+            variant="outline"
+            onClick={e => { e.stopPropagation(); onInstall() }}
+            title="Already downloaded — click to reinstall"
+            style={{
+              fontSize: 12, fontWeight: 600, letterSpacing: '.04em',
+              color: 'var(--grass)',
+              border: '1px solid var(--grass)',
+              padding: '0 18px', height: 36, flexShrink: 0,
+            }}
+          >
+            {t.browse.downloaded}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            onClick={e => { e.stopPropagation(); onInstall() }}
+            disabled={installing}
+            style={{
+              fontSize: 13, fontWeight: 700, letterSpacing: '.04em',
+              color: installing ? 'var(--ink-4)' : '#fff',
+              background: installing ? 'var(--surface-3)' : 'var(--ender)',
+              padding: '0 32px', height: 36, flexShrink: 0,
+            }}
+          >
+            {installing ? t.browse.cfInstalling : t.browse.cfInstall}
+          </Button>
+        )}
       </div>
     </div>
   )

@@ -5,7 +5,7 @@
 //! finalizes. Progress streams over `modpack://progress`; completion (with the
 //! new instance id, or an error) over `modpack://done` — matching Electron.
 
-use crate::{instances, mc_install, net, paths};
+use crate::{config, instances, mc_install, net, paths};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs::{self, File};
@@ -96,8 +96,44 @@ async fn download_to(
     net::download_to(&client(), url, dest, allowed_hosts, expected_hash).await
 }
 
+async fn cf_file_name(project: u64, file: u64, cd: &str, final_url: &str) -> String {
+    if let Some(name) = filename_from_disposition(cd) {
+        return name;
+    }
+
+    if let Some(key) = config::curseforge_api_key() {
+        let url = format!("https://api.curseforge.com/v1/mods/{project}/files/{file}");
+        if let Ok(res) = client()
+            .get(url)
+            .header("x-api-key", key)
+            .header("Accept", "application/json")
+            .send()
+            .await
+        {
+            if res.status().is_success() {
+                if let Ok(body) = res.json::<Value>().await {
+                    if let Some(name) = body["data"]["fileName"].as_str() {
+                        if !name.trim().is_empty() {
+                            return name.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    reqwest::Url::parse(final_url)
+        .ok()
+        .and_then(|url| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back().map(str::to_string))
+        })
+        .filter(|name| name.contains('.'))
+        .unwrap_or_else(|| format!("{project}-{file}.jar"))
+}
+
 /// Download a CurseForge file via the public CDN (works for redistributable
-/// mods); filename comes from Content-Disposition. Best-effort.
+/// mods); filename comes from Content-Disposition, then CF metadata. Best-effort.
 async fn download_cf_cdn(project: u64, file: u64, dest_dir: &Path) -> Result<(), String> {
     let url = format!("https://www.curseforge.com/api/v1/mods/{project}/files/{file}/download");
     net::validate_url(&url, net::CURSEFORGE_HOSTS)?;
@@ -112,7 +148,7 @@ async fn download_cf_cdn(project: u64, file: u64, dest_dir: &Path) -> Result<(),
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let name = filename_from_disposition(&cd).unwrap_or_else(|| format!("{project}-{file}.jar"));
+    let name = cf_file_name(project, file, &cd, res.url().as_str()).await;
     let safe: String = name
         .chars()
         .map(|c| {

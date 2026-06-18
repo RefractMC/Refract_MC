@@ -802,12 +802,16 @@ function createTauriApi(): RefractAPI {
         const file = getPrimaryFile(target)
         if (!file) throw new Error(`No download file found for ${projectName}.`)
         const recorded = instance.mods?.find(entry => entry.projectId === projectId && entry.contentType === contentType)
-        if (recorded?.versionId === target.id) {
+        const installed = await tinvoke('mods_list', { instanceId }) as Array<{ filename: string; type: string }>
+        const recordedFileExists = !!recorded?.fileName && installed.some(entry =>
+          entry.type === contentType
+          && (entry.filename === recorded.fileName || entry.filename === `${recorded.fileName}.disabled`),
+        )
+        if (recorded?.versionId === target.id && recordedFileExists) {
           throw new Error(`${projectName} is already downloaded for this instance.`)
         }
         if (!recorded) {
           const knownFiles = new Set(versions.map(v => getPrimaryFile(v)?.filename).filter((name): name is string => !!name))
-          const installed = await tinvoke('mods_list', { instanceId }) as Array<{ filename: string; type: string }>
           if (installed.some(entry =>
             entry.type === contentType && (knownFiles.has(entry.filename) || (entry.filename.endsWith('.disabled') && knownFiles.has(entry.filename.slice(0, -'.disabled'.length)))),
           )) {
@@ -836,7 +840,15 @@ function createTauriApi(): RefractAPI {
         const instance = (await tinvoke('get_instance_by_id', { id: p.instanceId })) as Instance | null
         const mc = instance?.minecraftVersion
         const loader = instance?.modLoader
-        const installed = new Set((instance?.mods ?? []).map(m => m.projectId))
+        const entries = await tinvoke('mods_list', { instanceId: p.instanceId }) as Array<{ filename: string; type: string }>
+        const installedFiles = new Set(entries
+          .filter(entry => entry.type === 'mod')
+          .flatMap(entry => entry.filename.endsWith('.disabled')
+            ? [entry.filename, entry.filename.slice(0, -'.disabled'.length)]
+            : [entry.filename, `${entry.filename}.disabled`]))
+        const installed = new Set((instance?.mods ?? [])
+          .filter(m => (!m.contentType || m.contentType === 'mod') && !!m.fileName && installedFiles.has(m.fileName))
+          .map(m => m.projectId))
         return p.source === 'modrinth'
           ? planModrinthDeps(p.version ?? {}, mc, loader, installed)
           : planCurseforgeDeps(p.file ?? {}, mc, loader, installed)

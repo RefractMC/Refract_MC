@@ -446,6 +446,14 @@ function contentMatchesTab(contentType: string | undefined, tab: ContentTab): bo
   return contentType === tab
 }
 
+function contentFileIsPresent(filename: string | undefined, entries: Array<{ filename: string; type: string }>, tab: ContentTab): boolean {
+  if (!filename) return false
+  return entries.some(entry =>
+    entry.type === tab
+    && (entry.filename === filename || entry.filename === `${filename}.disabled`),
+  )
+}
+
 // ─── ContentDetailModal ───────────────────────────────────────────────────────
 
 function ContentDetailModal({ project, tab, onClose, onInstall, installed, status }: {
@@ -729,6 +737,7 @@ function ContentInstallModal({ project, tab, instances, initialInstance, onClose
   const [selectedInst, setSelInst] = useState<Instance | null>(initialInstance ?? null)
   const [selectedVer, setSelVer]   = useState<string | null>(null)
   const [alreadyDownloaded, setAlreadyDownloaded] = useState(false)
+  const [recordedFilePresent, setRecordedFilePresent] = useState(false)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -773,20 +782,25 @@ function ContentInstallModal({ project, tab, instances, initialInstance, onClose
   useEffect(() => {
     let cancelled = false
     setAlreadyDownloaded(false)
+    setRecordedFilePresent(false)
     if (!selectedInst || !selectedVer || tab === 'modpack') return
 
     void (async () => {
       try {
+        const entries = await api.mods.list(selectedInst.id)
+        if (cancelled) return
         const recorded = selectedInst.mods?.find(entry => entry.projectId === project.project_id && contentMatchesTab(entry.contentType, tab))
         if (recorded) {
-          if (!cancelled) setAlreadyDownloaded(recorded.versionId === selectedVer)
+          const present = contentFileIsPresent(recorded.fileName, entries, tab)
+          if (!cancelled) {
+            setRecordedFilePresent(present)
+            setAlreadyDownloaded(recorded.versionId === selectedVer && present)
+          }
           return
         }
         const { getPrimaryFile } = await import('@refract/core')
         const filenames = new Set(versions.map(v => getPrimaryFile(v)?.filename).filter((name): name is string => !!name))
         if (filenames.size === 0) return
-        const entries = await api.mods.list(selectedInst.id)
-        if (cancelled) return
         setAlreadyDownloaded(entries.some(entry =>
           entry.type === tab && (filenames.has(entry.filename) || (entry.filename.endsWith('.disabled') && filenames.has(entry.filename.slice(0, -'.disabled'.length)))),
         ))
@@ -799,7 +813,9 @@ function ContentInstallModal({ project, tab, instances, initialInstance, onClose
   }, [project.project_id, selectedInst, selectedVer, tab, versions])
 
   const canInstall = selectedInst !== null && selectedVer !== null && !alreadyDownloaded
-  const recorded = selectedInst?.mods?.find(entry => entry.projectId === project.project_id && contentMatchesTab(entry.contentType, tab))
+  const recorded = recordedFilePresent
+    ? selectedInst?.mods?.find(entry => entry.projectId === project.project_id && contentMatchesTab(entry.contentType, tab))
+    : undefined
   const installAction = recorded && selectedVer && recorded.versionId !== selectedVer ? 'Update' : t.content.install
   const tabInfo    = TABS.find(t => t.type === tab)!
 
@@ -1105,18 +1121,19 @@ function ContentBrowser() {
       return
     }
 
-    const installed = new Map(
-      (activeInstance.mods ?? [])
-        .filter(entry => contentMatchesTab(entry.contentType, tab))
-        .map(entry => [entry.projectId, entry]),
-    )
-    const installedProjects = results.filter(project => installed.has(project.project_id))
-    if (installedProjects.length === 0) {
-      setContentStatuses(new Map())
-      return
-    }
-
     void (async () => {
+      const listed = await api.mods.list(activeInstance.id).catch(() => [])
+      if (cancelled) return
+      const installed = new Map(
+        (activeInstance.mods ?? [])
+          .filter(entry => contentMatchesTab(entry.contentType, tab) && contentFileIsPresent(entry.fileName, listed, tab))
+          .map(entry => [entry.projectId, entry]),
+      )
+      const installedProjects = results.filter(project => installed.has(project.project_id))
+      if (installedProjects.length === 0) {
+        setContentStatuses(new Map())
+        return
+      }
       const entries = await Promise.all(installedProjects.map(async project => {
         const current = installed.get(project.project_id)
         if (!current) return [project.project_id, null] as const

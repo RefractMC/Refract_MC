@@ -373,7 +373,8 @@ pub async fn install_content_file(
                 .and_then(|mods| {
                     mods.iter().find(|m| {
                         m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str())
-                            && m.get("contentType").and_then(Value::as_str) == Some(content_type.as_str())
+                            && m.get("contentType").and_then(Value::as_str)
+                                == Some(content_type.as_str())
                     })
                 })
                 .and_then(|m| m.get("fileName"))
@@ -405,7 +406,8 @@ pub async fn install_content_file(
 
     if let Some(mod_record) = r#mod {
         if !project_id.is_empty() {
-            let inst = instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
+            let inst =
+                instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
             let mut mods: Vec<Value> = inst
                 .get("mods")
                 .and_then(Value::as_array)
@@ -507,7 +509,8 @@ pub async fn check_mod_updates(
     instance_id: String,
     force: Option<bool>,
 ) -> Result<Vec<ModUpdateEntry>, String> {
-    let instance = instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
+    let instance =
+        instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
     let game_root = game_dir(&instance_id);
 
     // Enumerate enabled content across mods, resource packs and shaders, tagging each
@@ -522,7 +525,9 @@ pub async fn check_mod_updates(
     let mut sig_parts: Vec<(String, u64, u64)> = Vec::new();
     for (subdir, content_type, ext) in scan {
         let dir = game_root.join(subdir);
-        let Ok(read) = fs::read_dir(&dir) else { continue };
+        let Ok(read) = fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in read.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
             if !filename.ends_with(ext) || filename.ends_with(".disabled") {
@@ -720,7 +725,10 @@ pub async fn check_mod_updates(
     }
 
     if let Ok(mut cache) = UPDATE_CACHE.lock() {
-        cache.insert(instance_id.clone(), (Instant::now(), signature, out.clone()));
+        cache.insert(
+            instance_id.clone(),
+            (Instant::now(), signature, out.clone()),
+        );
     }
     Ok(out)
 }
