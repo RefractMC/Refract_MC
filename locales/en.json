@@ -153,6 +153,8 @@
     "allLoaders": "All loaders",
     "install": "INSTALL",
     "installing": "…",
+    "downloaded": "✓ DOWNLOADED",
+    "update": "↑ UPDATE",
     "loading": "Loading…",
     "modrinth": "Modrinth ↗",
     "loadingDetails": "Loading details…",

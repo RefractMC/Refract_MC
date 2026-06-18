@@ -153,6 +153,8 @@
     "allLoaders": "Всі лоадери",
     "install": "ВСТАНОВИТИ",
     "installing": "…",
+    "downloaded": "✓ ЗАВАНТАЖЕНО",
+    "update": "↑ ОНОВИТИ",
     "loading": "Завантаження…",
     "modrinth": "Modrinth ↗",
     "loadingDetails": "Завантаження деталей…",

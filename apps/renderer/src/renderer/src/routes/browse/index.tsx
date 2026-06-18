@@ -1368,7 +1368,7 @@ function ModTile({ mod, installing, installedInInstances, status, onInstall, onD
               padding: '0 18px', height: 36, flexShrink: 0,
             }}
           >
-            ✓ DOWNLOADED
+            {t.browse.downloaded}
           </Button>
         ) : status === 'update' ? (
           <Button
@@ -1381,7 +1381,7 @@ function ModTile({ mod, installing, installedInInstances, status, onInstall, onD
               padding: '0 20px', height: 36, flexShrink: 0,
             }}
           >
-            ↑ UPDATE
+            {t.browse.update}
           </Button>
         ) : (
           <Button
