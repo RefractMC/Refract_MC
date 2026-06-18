@@ -50,6 +50,9 @@ jobs:
           # Repo secrets — Settings → Secrets and variables → Actions:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Baked into the Rust binary at compile time via option_env! in analytics.rs.
+          # Without this, analytics stays inert in released Tauri builds.
+          GA_API_SECRET: ${{ secrets.GA_API_SECRET }}
         with:
           projectPath: apps/tauri
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
