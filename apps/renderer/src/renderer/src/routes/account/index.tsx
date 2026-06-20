@@ -194,7 +194,17 @@ function Account() {
     if (result) {
       setDevice(result)
       setLoginExpiresAt(Date.now() + result.expiresIn * 1000)
+      await openMicrosoftVerification(result.verificationUri)
+    }
+  }
+
+  async function openMicrosoftVerification(url: string) {
+    try {
+      await api.external.open(url)
       setLoginMessage('Browser opened. Complete Microsoft sign-in, then Refract will continue automatically.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setLoginMessage('Open the Microsoft sign-in link below in your browser, then Refract will continue automatically.')
     }
   }
 
@@ -288,8 +298,12 @@ function Account() {
   }
 
   async function logout(uuid: string) {
-    await run(`logout-${uuid}`, () => api.auth.logout(uuid))
-    await refresh()
+    const result = await run(`logout-${uuid}`, () => api.auth.logout(uuid))
+    if (result !== null) {
+      if (skinTarget === uuid) setSkinTarget(null)
+      if (capeTarget === uuid) setCapeTarget(null)
+      await refresh()
+    }
   }
 
   function startRename(account: SafeAccount) {
@@ -352,7 +366,14 @@ function Account() {
                 <div style={{ fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', color:'var(--ink)', fontSize:26, letterSpacing:'.12em', lineHeight:1, fontWeight:600 }}>
                   {device.userCode}
                 </div>
-                <a href={device.verificationUri} style={{ display:'inline-block', marginTop:10, color:'var(--diamond)', fontSize:13 }}>
+                <a
+                  href={device.verificationUri}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    void openMicrosoftVerification(device.verificationUri)
+                  }}
+                  style={{ display:'inline-block', marginTop:10, color:'var(--diamond)', fontSize:13 }}
+                >
                   {device.verificationUri}
                 </a>
                 {loginMessage && (

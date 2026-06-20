@@ -3,6 +3,10 @@ use std::process::Command;
 const ALLOWED_EXTERNAL_HOSTS: &[&str] = &[
     "www.minecraft.net",
     "minecraft.net",
+    "www.microsoft.com",
+    "microsoft.com",
+    "login.microsoftonline.com",
+    "login.live.com",
     "modrinth.com",
     "www.curseforge.com",
     "curseforge.com",

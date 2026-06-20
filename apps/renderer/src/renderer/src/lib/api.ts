@@ -16,6 +16,10 @@ const INSTANCES_KEY = 'refract.dev.instances'
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'www.minecraft.net',
   'minecraft.net',
+  'www.microsoft.com',
+  'microsoft.com',
+  'login.microsoftonline.com',
+  'login.live.com',
   'modrinth.com',
   'www.curseforge.com',
   'curseforge.com',

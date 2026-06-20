@@ -649,8 +649,11 @@ pub fn auth_logout(uuid: String) -> Result<(), String> {
         }
     }
     config::write(&cfg)?;
-    // Best-effort: drop the account's tokens from the vault.
-    let _ = secrets::store_secret(&mc_token_key(&uuid), "");
-    let _ = secrets::store_secret(&refresh_key(&uuid), "");
+    let mc_key = mc_token_key(&uuid);
+    let refresh_secret_key = refresh_key(&uuid);
+    std::thread::spawn(move || {
+        let _ = secrets::store_secret(&mc_key, "");
+        let _ = secrets::store_secret(&refresh_secret_key, "");
+    });
     Ok(())
 }
