@@ -8,13 +8,70 @@ use crate::{instances, net, paths};
 use futures_util::future::join_all;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::fs::{self, File};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 const RESOURCES: &str = "https://resources.download.minecraft.net";
 const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
 const QUILT_META: &str = "https://meta.quiltmc.org/v3";
+const INSTALL_CANCELLED: &str = "Install cancelled";
+
+#[derive(Default)]
+struct CancelState {
+    active: HashSet<String>,
+    cancelled: HashSet<String>,
+}
+
+fn cancel_state() -> &'static Mutex<CancelState> {
+    static STATE: OnceLock<Mutex<CancelState>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(CancelState::default()))
+}
+
+struct InstallGuard {
+    instance_id: String,
+}
+
+impl InstallGuard {
+    fn new(instance_id: &str) -> Self {
+        let mut state = cancel_state().lock().unwrap();
+        state.active.insert(instance_id.to_string());
+        state.cancelled.remove(instance_id);
+        Self {
+            instance_id: instance_id.to_string(),
+        }
+    }
+}
+
+impl Drop for InstallGuard {
+    fn drop(&mut self) {
+        let mut state = cancel_state().lock().unwrap();
+        state.active.remove(&self.instance_id);
+        state.cancelled.remove(&self.instance_id);
+    }
+}
+
+fn check_cancelled(instance_id: &str) -> Result<(), String> {
+    let state = cancel_state().lock().unwrap();
+    if state.cancelled.contains(instance_id) {
+        Err(INSTALL_CANCELLED.into())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn cancel_install(instance_id: Option<String>) {
+    let mut state = cancel_state().lock().unwrap();
+    if let Some(id) = instance_id.filter(|id| !id.is_empty()) {
+        state.cancelled.insert(id);
+    } else {
+        let active: Vec<String> = state.active.iter().cloned().collect();
+        state.cancelled.extend(active);
+    }
+}
 
 #[cfg(target_os = "windows")]
 const OS_NAME: &str = "windows";
@@ -51,16 +108,19 @@ fn emit(app: &AppHandle, instance_id: &str, step: &str, current: u64, total: u64
     );
 }
 
-async fn download_to(url: &str, dest: &Path, sha1: Option<&str>) -> Result<(), String> {
+async fn download_to(iid: &str, url: &str, dest: &Path, sha1: Option<&str>) -> Result<(), String> {
+    check_cancelled(iid)?;
     let expected = sha1.filter(|s| !s.is_empty()).map(net::ExpectedHash::Sha1);
-    net::download_to(
+    let result = net::download_to(
         &reqwest::Client::new(),
         url,
         dest,
         net::MINECRAFT_HOSTS,
         expected,
     )
-    .await
+    .await;
+    check_cancelled(iid)?;
+    result
 }
 
 async fn get_json(url: &str) -> Result<Value, String> {
@@ -162,6 +222,7 @@ async fn install_loader(
         "Installing Quilt loader"
     };
     emit(app, iid, label, 0, 1);
+    check_cancelled(iid)?;
 
     let version = match requested {
         Some(v) if !v.is_empty() => v.to_string(),
@@ -179,6 +240,7 @@ async fn install_loader(
         "{meta}/versions/loader/{mc}/{version}/profile/json"
     ))
     .await?;
+    check_cancelled(iid)?;
     let vdir = paths::versions_dir().join(format!("{mc}-{loader}"));
     fs::create_dir_all(&vdir).map_err(|e| e.to_string())?;
     fs::write(
@@ -193,12 +255,14 @@ async fn install_loader(
     let libs_dir = paths::libraries_dir();
     for (i, lib) in allowed.iter().enumerate() {
         emit(app, iid, label, i as u64 + 1, total);
+        check_cancelled(iid)?;
         if let (Some(path), Some(url)) = (
             lib["downloads"]["artifact"]["path"].as_str(),
             lib["downloads"]["artifact"]["url"].as_str(),
         ) {
             if !url.is_empty() {
                 let _ = download_to(
+                    iid,
                     url,
                     &libs_dir.join(path),
                     lib["downloads"]["artifact"]["sha1"].as_str(),
@@ -212,9 +276,10 @@ async fn install_loader(
             } else {
                 format!("{base}/")
             };
-            let _ = download_to(&format!("{base}{rel}"), &libs_dir.join(&rel), None).await;
+            let _ = download_to(iid, &format!("{base}{rel}"), &libs_dir.join(&rel), None).await;
         }
     }
+    check_cancelled(iid)?;
     emit(app, iid, label, 1, 1);
     Ok(version)
 }
@@ -265,10 +330,13 @@ pub async fn install_minecraft(
     mod_loader_version: Option<String>,
 ) -> Result<(), String> {
     let iid = instance_id.as_str();
+    let _guard = InstallGuard::new(iid);
 
     // 1. Version JSON
     emit(&app, iid, "Fetching version data", 0, 1);
+    check_cancelled(iid)?;
     let vjson = get_json(&version_url).await?;
+    check_cancelled(iid)?;
     let vdir = paths::versions_dir().join(&version_id);
     fs::create_dir_all(&vdir).map_err(|e| e.to_string())?;
     fs::write(
@@ -282,6 +350,7 @@ pub async fn install_minecraft(
     emit(&app, iid, "Downloading client", 0, 1);
     if let Some(url) = vjson["downloads"]["client"]["url"].as_str() {
         download_to(
+            iid,
             url,
             &vdir.join(format!("{version_id}.jar")),
             vjson["downloads"]["client"]["sha1"].as_str(),
@@ -297,12 +366,14 @@ pub async fn install_minecraft(
     let libs_dir = paths::libraries_dir();
     for (i, lib) in allowed.iter().enumerate() {
         emit(&app, iid, "Downloading libraries", i as u64 + 1, total);
+        check_cancelled(iid)?;
         if let (Some(path), Some(url)) = (
             lib["downloads"]["artifact"]["path"].as_str(),
             lib["downloads"]["artifact"]["url"].as_str(),
         ) {
             if !url.is_empty() {
                 let _ = download_to(
+                    iid,
                     url,
                     &libs_dir.join(path),
                     lib["downloads"]["artifact"]["sha1"].as_str(),
@@ -314,6 +385,7 @@ pub async fn install_minecraft(
 
     // 4. Natives
     emit(&app, iid, "Extracting natives", 0, 1);
+    check_cancelled(iid)?;
     let natives_dir = instances::resolve_instance_dir(iid)
         .join("minecraft")
         .join("natives");
@@ -328,7 +400,10 @@ pub async fn install_minecraft(
             let art = &lib["downloads"]["classifiers"][&classifier];
             if let (Some(path), Some(url)) = (art["path"].as_str(), art["url"].as_str()) {
                 let jar = libs_dir.join(path);
-                if download_to(url, &jar, art["sha1"].as_str()).await.is_ok() {
+                if download_to(iid, url, &jar, art["sha1"].as_str())
+                    .await
+                    .is_ok()
+                {
                     let _ = extract_natives(&jar, &natives_dir);
                 }
             }
@@ -338,6 +413,7 @@ pub async fn install_minecraft(
 
     // 5. Assets
     emit(&app, iid, "Downloading assets", 0, 1);
+    check_cancelled(iid)?;
     if let Some(idx_url) = vjson["assetIndex"]["url"].as_str() {
         let idx_id = vjson["assetIndex"]["id"]
             .as_str()
@@ -346,7 +422,13 @@ pub async fn install_minecraft(
         let idx_path = paths::assets_dir()
             .join("indexes")
             .join(format!("{idx_id}.json"));
-        download_to(idx_url, &idx_path, vjson["assetIndex"]["sha1"].as_str()).await?;
+        download_to(
+            iid,
+            idx_url,
+            &idx_path,
+            vjson["assetIndex"]["sha1"].as_str(),
+        )
+        .await?;
         let index: Value = fs::read_to_string(&idx_path)
             .map_err(|e| e.to_string())
             .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))?;
@@ -367,16 +449,18 @@ pub async fn install_minecraft(
         let total = objects.len() as u64;
         let mut done = 0u64;
         for chunk in objects.chunks(16) {
+            check_cancelled(iid)?;
             join_all(chunk.iter().map(|(pre, hash)| {
-                let dest = obj_dir.join(pre).join(hash);
+                let dest: PathBuf = obj_dir.join(pre).join(hash);
                 let url = format!("{RESOURCES}/{pre}/{hash}");
                 async move {
                     if !dest.exists() {
-                        let _ = download_to(&url, &dest, Some(hash)).await;
+                        let _ = download_to(iid, &url, &dest, Some(hash)).await;
                     }
                 }
             }))
             .await;
+            check_cancelled(iid)?;
             done += chunk.len() as u64;
             emit(&app, iid, "Downloading assets", done, total);
         }
@@ -387,6 +471,7 @@ pub async fn install_minecraft(
     let mut resolved_loader = mod_loader_version.clone();
     match mod_loader.as_deref() {
         Some("fabric") => {
+            check_cancelled(iid)?;
             resolved_loader = Some(
                 install_loader(
                     &app,
@@ -399,6 +484,7 @@ pub async fn install_minecraft(
             )
         }
         Some("quilt") => {
+            check_cancelled(iid)?;
             resolved_loader = Some(
                 install_loader(
                     &app,
@@ -411,12 +497,14 @@ pub async fn install_minecraft(
             )
         }
         Some("forge") | Some("neoforge") => {
+            check_cancelled(iid)?;
             let is_neo = mod_loader.as_deref() == Some("neoforge");
             let ver = match mod_loader_version.clone().filter(|v| !v.is_empty()) {
                 Some(v) => v,
                 None => crate::forge::fetch_latest(&version_id, is_neo).await?,
             };
             crate::forge::install_forge(&app, iid, &version_id, &ver, is_neo).await?;
+            check_cancelled(iid)?;
             resolved_loader = Some(ver);
         }
         _ => {}

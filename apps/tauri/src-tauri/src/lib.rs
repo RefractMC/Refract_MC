@@ -22,6 +22,7 @@ mod secrets;
 mod servers;
 mod skins;
 mod system;
+mod theme;
 
 /// Tauri entry point. Each former Electron IPC handler becomes a `#[tauri::command]`
 /// registered here; the renderer calls them via `invoke(...)`.
@@ -38,6 +39,10 @@ pub fn run() {
             analytics::analytics_track,
             config::config_get,
             config::config_set,
+            theme::theme_list,
+            theme::theme_install,
+            theme::theme_delete,
+            theme::theme_browse_background_image,
             system::system_ram_gb,
             log::log_write,
             log::logs_read,
@@ -56,6 +61,7 @@ pub fn run() {
             external::import_multimc_instance,
             auth::auth_microsoft_begin,
             auth::auth_microsoft_complete,
+            auth::auth_yggdrasil_login,
             auth::auth_accounts,
             auth::auth_active,
             auth::auth_create_offline,
@@ -110,6 +116,7 @@ pub fn run() {
             modpack::curseforge_install_modpack,
             modpack::ftb_install_modpack,
             mc_install::install_minecraft,
+            mc_install::cancel_install,
             mc_install::mc_repair,
             instances::launcher_delete_all,
             java::mc_java,

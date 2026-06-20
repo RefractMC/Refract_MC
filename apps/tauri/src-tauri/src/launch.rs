@@ -462,9 +462,9 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
         return Err("Instance is already running.".into());
     }
 
-    // Active account → auth fields. Microsoft accounts get a real Minecraft token
-    // via the XBL→XSTS→MC chain (refreshed in Rust); offline accounts use the
-    // placeholder token, exactly as the Electron build does.
+    // Active account → auth fields. Microsoft/Yggdrasil accounts get a real
+    // Minecraft token refreshed in Rust; offline accounts use the placeholder
+    // token, exactly as the Electron build does.
     let cfg = config::read();
     let active = cfg
         .get("activeAccountId")
@@ -495,10 +495,14 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
         .unwrap_or("")
         .to_string();
 
-    let auth = if acc_type == "microsoft" {
+    let auth = if acc_type == "microsoft" || acc_type == "yggdrasil" {
         let (token, xuid) = auth::mc_token(&uuid).await.map_err(|e| {
             if e == "AUTH_EXPIRED" {
-                "Your Microsoft session expired — please sign in again.".to_string()
+                if acc_type == "yggdrasil" {
+                    "Your Yggdrasil session expired - please sign in again.".to_string()
+                } else {
+                    "Your Microsoft session expired - please sign in again.".to_string()
+                }
             } else {
                 e
             }
@@ -508,8 +512,16 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
             uuid,
             access_token: token,
             xuid,
-            client_id: auth::CLIENT_ID.to_string(),
-            user_type: "msa".into(),
+            client_id: if acc_type == "microsoft" {
+                auth::CLIENT_ID.to_string()
+            } else {
+                String::new()
+            },
+            user_type: if acc_type == "microsoft" {
+                "msa".into()
+            } else {
+                "legacy".into()
+            },
         }
     } else {
         Auth {

@@ -42,12 +42,16 @@ pnpm --filter @refract/tauri-poc tauri icon ../renderer/build/icon.png
 ## Run
 
 ```sh
-pnpm --filter @refract/tauri-poc dev      # tauri dev — opens the window
-pnpm --filter @refract/tauri-poc build    # tauri build — produces an installer
+pnpm --filter @refract/tauri-poc dev           # tauri dev opens the window
+pnpm --filter @refract/tauri-poc build         # local unsigned installer
+pnpm --filter @refract/tauri-poc build:signed  # release build; requires updater signing env vars
 ```
 
 `tauri dev` runs `vite` (port 5180) and the Rust app against it. Edit `src-tauri/src/*.rs` and it
 hot‑recompiles; edit `src/*.tsx` and Vite HMR applies instantly.
+
+The default `build` script disables updater signature artifacts for local packaging. Release builds
+must use the private key matching the public updater key in `tauri.conf.json`.
 
 You can verify the **frontend half** without Rust:
 

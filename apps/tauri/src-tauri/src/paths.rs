@@ -23,3 +23,6 @@ pub fn libraries_dir() -> PathBuf {
 pub fn assets_dir() -> PathBuf {
     data_dir().join("assets")
 }
+pub fn themes_dir() -> PathBuf {
+    data_dir().join("themes")
+}

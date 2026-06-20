@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/Button'
 import { useThemeStore } from '@/stores/theme'
-import { api } from '@/lib/api'
+import { api, supportsFilePicker } from '@/lib/api'
 import type { ThemeColors, ThemeDefinition } from '@/lib/theme-types'
 import darkTheme from '@/lib/themes/dark.json'
 import lightTheme from '@/lib/themes/light.json'
@@ -104,8 +104,13 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
     setCreating(true)
   }
 
-  function chooseBackgroundImage() {
-    backgroundInputRef.current?.click()
+  async function chooseBackgroundImage() {
+    if (!supportsFilePicker) {
+      backgroundInputRef.current?.click()
+      return
+    }
+    const image = await api.theme.browseBackgroundImage()
+    if (image) setDraftBackgroundImage(image)
   }
 
   function handleBackgroundFile(file: File | undefined) {

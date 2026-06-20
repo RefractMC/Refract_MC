@@ -9,6 +9,7 @@
 use crate::{config, secrets};
 use serde::Serialize;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 pub const CLIENT_ID: &str = "2ca3a07c-2fa0-433d-820a-e2f752f44415";
 const SCOPE: &str = "XboxLive.signin offline_access";
@@ -27,6 +28,88 @@ fn mc_token_key(uuid: &str) -> String {
 }
 fn refresh_key(uuid: &str) -> String {
     format!("msa_refresh::{uuid}")
+}
+
+fn is_localhost(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn normalize_yggdrasil_base(input: &str) -> Result<String, String> {
+    let trimmed = input.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("Auth server URL is required.".into());
+    }
+    if !trimmed.contains("://") {
+        return Err(
+            "Auth server URL must include https:// (example: https://authserver.ely.by).".into(),
+        );
+    }
+
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| {
+        "Auth server URL is invalid. Use a full URL like https://authserver.ely.by.".to_string()
+    })?;
+    let scheme = parsed.scheme();
+    if scheme != "https" && scheme != "http" {
+        return Err("Auth server URL must start with https://.".into());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "Auth server URL must include a host name.".to_string())?;
+    if scheme == "http" && !is_localhost(host) {
+        return Err("Auth server URL must use https:// unless it is localhost.".into());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("Auth server URL cannot include a query string or fragment.".into());
+    }
+
+    Ok(trimmed.to_string())
+}
+
+async fn yggdrasil_post(
+    client: &reqwest::Client,
+    base: &str,
+    action: &str,
+    body: Value,
+) -> Result<Value, String> {
+    let base = normalize_yggdrasil_base(base)?;
+    let mut last_err = "Authentication endpoint not found. Check the server URL.".to_string();
+
+    for prefix in ["/authserver", "/auth"] {
+        let url = format!("{base}{prefix}/{action}");
+        let res = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                format!(
+                    "Could not connect to auth server. Check the URL and your connection. ({e})"
+                )
+            })?;
+        let status = res.status();
+        let ok = status.is_success();
+        let v: Value = res.json().await.unwrap_or(Value::Null);
+        if ok {
+            return Ok(v);
+        }
+
+        let msg = v["errorMessage"]
+            .as_str()
+            .or(v["message"].as_str())
+            .or(v["error"].as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| status.to_string());
+        let lc = msg.to_ascii_lowercase();
+        last_err = msg;
+        if status.as_u16() == 404 || lc.contains("not found") || lc.contains("page not found") {
+            continue;
+        }
+        return Err(last_err);
+    }
+
+    Err(last_err)
 }
 
 // ── config-backed account helpers ────────────────────────────────────────────
@@ -186,6 +269,71 @@ pub async fn mc_token(uuid: &str) -> Result<(String, String), String> {
         .into_iter()
         .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid))
         .ok_or("Account not found")?;
+
+    if account.get("type").and_then(Value::as_str) == Some("yggdrasil") {
+        let expires_at = account
+            .get("expiresAt")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let fresh = expires_at > now_ms() + 5 * 60 * 1000;
+        if fresh {
+            if let Ok(Some(tok)) = secrets::get_secret(&mc_token_key(uuid)) {
+                if !tok.is_empty() {
+                    return Ok((tok, String::new()));
+                }
+            }
+        }
+
+        let access = secrets::get_secret(&mc_token_key(uuid))
+            .ok()
+            .flatten()
+            .filter(|t| !t.is_empty());
+        let client_token = secrets::get_secret(&refresh_key(uuid))
+            .ok()
+            .flatten()
+            .filter(|t| !t.is_empty());
+        let server = account
+            .get("yggdrasilServer")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        let (Some(access), Some(client_token), Some(server)) = (access, client_token, server)
+        else {
+            let _ = patch_account(uuid, json!({ "needsReauth": true }));
+            return Err(AUTH_EXPIRED.to_string());
+        };
+
+        let client = reqwest::Client::new();
+        let refreshed = yggdrasil_post(
+            &client,
+            server,
+            "refresh",
+            json!({ "accessToken": access, "clientToken": client_token }),
+        )
+        .await
+        .map_err(|_| {
+            let _ = patch_account(uuid, json!({ "needsReauth": true }));
+            AUTH_EXPIRED.to_string()
+        })?;
+
+        let token = refreshed["accessToken"]
+            .as_str()
+            .ok_or(AUTH_EXPIRED.to_string())?
+            .to_string();
+        let client_token = refreshed["clientToken"]
+            .as_str()
+            .unwrap_or(client_token.as_str())
+            .to_string();
+        secrets::store_secret(&mc_token_key(uuid), &token)?;
+        secrets::store_secret(&refresh_key(uuid), &client_token)?;
+        patch_account(
+            uuid,
+            json!({
+                "expiresAt": now_ms() + 24 * 60 * 60 * 1000,
+                "needsReauth": false,
+            }),
+        )?;
+        return Ok((token, String::new()));
+    }
 
     let expires_at = account
         .get("expiresAt")
@@ -353,6 +501,60 @@ pub async fn auth_microsoft_complete(device_code: String) -> Result<Value, Strin
         "type": "microsoft",
         "xuid": xuid,
         "expiresAt": now_ms() + expires_in as i64 * 1000,
+        "needsReauth": false,
+    });
+    save_account_active(account.clone())?;
+    Ok(safe_account(&account))
+}
+
+#[tauri::command]
+pub async fn auth_yggdrasil_login(
+    server_url: String,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    let base = normalize_yggdrasil_base(&server_url)?;
+
+    let client_token = Uuid::new_v4().to_string();
+    let client = reqwest::Client::new();
+    let res = yggdrasil_post(
+        &client,
+        &base,
+        "authenticate",
+        json!({
+            "agent": { "name": "Minecraft", "version": 1 },
+            "username": username,
+            "password": password,
+            "clientToken": client_token,
+            "requestUser": true,
+        }),
+    )
+    .await?;
+
+    let profile = &res["selectedProfile"];
+    let uuid = profile["id"]
+        .as_str()
+        .ok_or("This account has no Minecraft profile on this auth server.")?
+        .to_string();
+    let name = profile["name"].as_str().unwrap_or("Player").to_string();
+    let access_token = res["accessToken"]
+        .as_str()
+        .ok_or("Auth server did not return an access token.")?
+        .to_string();
+    let client_token = res["clientToken"]
+        .as_str()
+        .unwrap_or(client_token.as_str())
+        .to_string();
+
+    secrets::store_secret(&mc_token_key(&uuid), &access_token)?;
+    secrets::store_secret(&refresh_key(&uuid), &client_token)?;
+
+    let account = json!({
+        "uuid": uuid,
+        "username": name,
+        "type": "yggdrasil",
+        "yggdrasilServer": base,
+        "expiresAt": now_ms() + 24 * 60 * 60 * 1000,
         "needsReauth": false,
     });
     save_account_active(account.clone())?;

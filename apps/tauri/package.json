@@ -8,7 +8,8 @@
     "build:real": "vite build --config vite.renderer.config.ts",
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build --config src-tauri/tauri.local.conf.json",
+    "build:signed": "tauri build"
   },
   "dependencies": {},
   "devDependencies": {

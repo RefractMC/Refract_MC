@@ -605,6 +605,13 @@ function createTauriApi(): RefractAPI {
       get: (() => tinvoke('config_get')) as RefractAPI['config']['get'],
       set: ((key: string, value: unknown) => tinvoke('config_set', { key, value })) as RefractAPI['config']['set'],
     },
+    theme: {
+      ...base.theme,
+      list: (() => tinvoke('theme_list')) as RefractAPI['theme']['list'],
+      install: ((sourcePath: string) => tinvoke('theme_install', { sourcePath })) as RefractAPI['theme']['install'],
+      delete: ((fileName: string) => tinvoke('theme_delete', { fileName })) as RefractAPI['theme']['delete'],
+      browseBackgroundImage: (() => tinvoke('theme_browse_background_image')) as RefractAPI['theme']['browseBackgroundImage'],
+    },
     system: {
       ...base.system,
       ramGb: (() => tinvoke('system_ram_gb')) as RefractAPI['system']['ramGb'],
@@ -872,6 +879,8 @@ function createTauriApi(): RefractAPI {
       renameOffline: ((uuid: string, username: string) => tinvoke('auth_rename_offline', { uuid, username })) as RefractAPI['auth']['renameOffline'],
       setActive: ((uuid: string) => tinvoke('auth_set_active', { uuid })) as RefractAPI['auth']['setActive'],
       logout: ((uuid: string) => tinvoke('auth_logout', { uuid })) as RefractAPI['auth']['logout'],
+      yggdrasilLogin: ((serverUrl: string, username: string, password: string) =>
+        tinvoke('auth_yggdrasil_login', { serverUrl, username, password })) as RefractAPI['auth']['yggdrasilLogin'],
       fetchSkinTextureUrl: ((uuid: string) => tinvoke('fetch_skin_texture_url', { uuid })) as RefractAPI['auth']['fetchSkinTextureUrl'],
       uploadSkin: ((uuid: string, imagePath: string, variant: 'classic' | 'slim') => tinvoke('upload_skin', { uuid, imagePath, variant })) as RefractAPI['auth']['uploadSkin'],
       fetchCapes: ((uuid: string) => tinvoke('fetch_capes', { uuid })) as RefractAPI['auth']['fetchCapes'],
@@ -890,6 +899,7 @@ function createTauriApi(): RefractAPI {
       quiltVersions: ((mcVersion: string) => tinvoke('quilt_versions', { mcVersion })) as RefractAPI['mc']['quiltVersions'],
       install: ((instanceId: string, versionId: string, versionUrl: string, modLoader?: string, modLoaderVersion?: string) =>
         tinvoke('install_minecraft', { instanceId, versionId, versionUrl, modLoader, modLoaderVersion })) as RefractAPI['mc']['install'],
+      cancelInstall: ((instanceId?: string) => tinvoke('cancel_install', { instanceId })) as RefractAPI['mc']['cancelInstall'],
       launch: ((instanceId: string) => tinvoke('launch_minecraft', { instanceId })) as RefractAPI['mc']['launch'],
       stop: ((instanceId: string) => tinvoke('stop_minecraft', { instanceId })) as RefractAPI['mc']['stop'],
       isRunning: ((instanceId: string) => tinvoke('is_running', { instanceId })) as RefractAPI['mc']['isRunning'],

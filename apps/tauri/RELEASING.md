@@ -42,7 +42,7 @@ Bump the version in `apps/tauri/src-tauri/tauri.conf.json` (and the renderer
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$HOME/.refract/updater.key" -Raw
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<your password>"
-pnpm dlx @tauri-apps/cli@latest build   # run from apps/tauri
+pnpm build:signed   # run from apps/tauri
 ```
 
 For GitHub Actions, define repository secrets with the same names. The Tauri
