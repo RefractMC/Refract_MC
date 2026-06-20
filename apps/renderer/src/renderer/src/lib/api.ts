@@ -443,6 +443,16 @@ function tinvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> 
 // deps. Modrinth metadata is fetched in the WebView (CORS-open); CurseForge goes
 // through the Rust proxy commands.
 
+let javaScanPromise: ReturnType<RefractAPI['mc']['java']> | null = null
+
+function scanJavaOnce(): ReturnType<RefractAPI['mc']['java']> {
+  if (!javaScanPromise) {
+    javaScanPromise = tinvoke('mc_java') as ReturnType<RefractAPI['mc']['java']>
+    javaScanPromise.finally(() => { javaScanPromise = null })
+  }
+  return javaScanPromise
+}
+
 type ResolvedDep = {
   source: 'modrinth' | 'curseforge'; key: string; name: string
   type: 'required' | 'optional'; alreadyInstalled: boolean
@@ -898,7 +908,7 @@ function createTauriApi(): RefractAPI {
     },
     mc: {
       ...base.mc,
-      java: (() => tinvoke('mc_java')) as RefractAPI['mc']['java'],
+      java: scanJavaOnce as RefractAPI['mc']['java'],
       forgeVersions: ((mcVersion: string) => tinvoke('mc_forge_versions', { mcVersion })) as RefractAPI['mc']['forgeVersions'],
       neoforgeVersions: ((mcVersion: string) => tinvoke('mc_neoforge_versions', { mcVersion })) as RefractAPI['mc']['neoforgeVersions'],
       fabricVersions: ((mcVersion: string) => tinvoke('fabric_versions', { mcVersion })) as RefractAPI['mc']['fabricVersions'],

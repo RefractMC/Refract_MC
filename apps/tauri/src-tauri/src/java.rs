@@ -296,8 +296,10 @@ pub async fn resolve_or_provision(
 
 /// Detected + managed installations as JSON (`{version, path, vendor}`).
 #[tauri::command]
-pub fn mc_java() -> Vec<Value> {
-    all_installs().iter().map(to_json).collect()
+pub async fn mc_java() -> Vec<Value> {
+    tauri::async_runtime::spawn_blocking(|| all_installs().iter().map(to_json).collect())
+        .await
+        .unwrap_or_default()
 }
 
 // ── managed (auto-downloaded) runtimes ───────────────────────────────────────
