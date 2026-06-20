@@ -464,7 +464,7 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
 
     // Active account → auth fields. Microsoft/Yggdrasil accounts get a real
     // Minecraft token refreshed in Rust; offline accounts use the placeholder
-    // token, exactly as the Electron build does.
+    // token expected by the Minecraft launcher profile.
     let cfg = config::read();
     let active = cfg
         .get("activeAccountId")
@@ -586,7 +586,7 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
         }
         "forge" | "neoforge" => {
             // Loader JSON is keyed by loader+version; fall back to loader-only and
-            // the legacy "<mc>-forge" path (mirrors Electron's readForgeJson).
+            // the legacy "<mc>-forge" path.
             let lv = instance.get("modLoaderVersion").and_then(Value::as_str);
             let mut candidates: Vec<PathBuf> = Vec::new();
             if let Some(v) = lv {

@@ -115,7 +115,7 @@ async fn yggdrasil_post(
 // ── config-backed account helpers ────────────────────────────────────────────
 
 /// Add the renderer-facing computed fields. No token ever lives in config, so
-/// there's nothing to strip — unlike Electron, which had to drop encrypted blobs.
+/// there's nothing to strip because encrypted token blobs are not returned.
 fn safe_account(acc: &Value) -> Value {
     let ty = acc.get("type").and_then(Value::as_str).unwrap_or("offline");
     let authenticated = ty == "microsoft" || ty == "yggdrasil";
@@ -344,7 +344,7 @@ pub async fn mc_token(uuid: &str) -> Result<(String, String), String> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    // 5-minute skew, same as Electron.
+    // 5-minute skew.
     let fresh = expires_at > now_ms() + 5 * 60 * 1000;
     if fresh {
         if let Ok(Some(tok)) = secrets::get_secret(&mc_token_key(uuid)) {

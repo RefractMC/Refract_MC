@@ -361,7 +361,7 @@
     "subtitle": "Use a guest profile for content setup, or sign in with Microsoft to verify Minecraft: Java Edition.",
     "activeHeader": "ACTIVE: {{name}}",
     "microsoftSection": "Microsoft Minecraft Account",
-    "microsoftDesc": "Refract uses Microsoft device login to verify Java Edition ownership. Tokens are saved only in the Electron main process config and encrypted when OS encryption is available.",
+    "microsoftDesc": "Refract uses Microsoft device login to verify Java Edition ownership. Tokens are saved only in local app config and encrypted when OS encryption is available.",
     "signInMicrosoft": "SIGN IN WITH MICROSOFT",
     "enterCodeAt": "Enter this code at Microsoft:",
     "codeExpired": "Expired",

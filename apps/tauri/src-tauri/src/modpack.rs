@@ -3,7 +3,7 @@
 //! instance, downloads its files (+ overrides), then reuses
 //! `mc_install::install_minecraft` for the client/libraries/assets/loader and
 //! finalizes. Progress streams over `modpack://progress`; completion (with the
-//! new instance id, or an error) over `modpack://done` — matching Electron.
+//! new instance id, or an error) over `modpack://done`.
 
 use crate::{config, instances, mc_install, net, paths};
 use serde::Serialize;

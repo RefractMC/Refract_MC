@@ -361,7 +361,7 @@
     "subtitle": "Використовуйте гостьовий профіль для налаштування або увійдіть з Microsoft для перевірки Minecraft: Java Edition.",
     "activeHeader": "АКТИВНИЙ: {{name}}",
     "microsoftSection": "Акаунт Microsoft Minecraft",
-    "microsoftDesc": "Refract використовує вхід через пристрій Microsoft для перевірки ліцензії Java Edition. Токени зберігаються лише в конфігурації основного процесу Electron.",
+    "microsoftDesc": "Refract використовує вхід через пристрій Microsoft для перевірки ліцензії Java Edition. Токени зберігаються лише в локальній конфігурації застосунку.",
     "signInMicrosoft": "УВІЙТИ З MICROSOFT",
     "enterCodeAt": "Введіть цей код на Microsoft:",
     "codeExpired": "Прострочено",

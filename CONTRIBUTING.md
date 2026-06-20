@@ -4,7 +4,7 @@ Thanks for helping improve Refract. This guide explains how to set up the projec
 
 ## Project layout
 
-- `apps/renderer` contains the Electron app and shared React renderer.
+- `apps/renderer` contains the shared React renderer.
 - `apps/tauri` contains the Tauri shell and Rust backend.
 - `packages/core` contains shared launcher logic.
 - `packages/plugin-api` contains the public plugin API.
@@ -15,7 +15,7 @@ Thanks for helping improve Refract. This guide explains how to set up the projec
 - Node.js 20 or newer.
 - pnpm 9 or newer.
 - Rust stable for Tauri work.
-- Platform build tools required by Tauri and Electron.
+- Platform build tools required by Tauri.
 
 On Windows, Tauri packaging also needs WebView2 and Microsoft C++ build tools.
 
@@ -29,33 +29,19 @@ pnpm install
 
 ## Run the app
 
-Electron:
-
 ```bash
-pnpm --filter @refract/app dev
-```
-
-Tauri:
-
-```bash
-pnpm --filter @refract/tauri-poc dev
+pnpm dev
 ```
 
 ## Build commands
 
-Electron:
+Local unsigned build:
 
 ```bash
-pnpm --filter @refract/app build
+pnpm build
 ```
 
-Tauri local unsigned build:
-
-```bash
-pnpm --filter @refract/tauri-poc build
-```
-
-Tauri signed release build:
+Signed release build:
 
 ```bash
 pnpm --filter @refract/tauri-poc build:signed
@@ -68,7 +54,7 @@ Signed Tauri builds require `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVA
 Run the checks that match your change.
 
 ```bash
-pnpm --filter @refract/app typecheck
+pnpm --filter @refract/renderer typecheck
 pnpm --filter @refract/tauri-poc build:real
 pnpm audit --prod
 ```

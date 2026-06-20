@@ -25,7 +25,7 @@ mod skins;
 mod system;
 mod theme;
 
-/// Tauri entry point. Each former Electron IPC handler becomes a `#[tauri::command]`
+/// Tauri entry point. Native app handlers are exposed as `#[tauri::command]`
 /// registered here; the renderer calls them via `invoke(...)`.
 pub fn run() {
     tauri::Builder::default()

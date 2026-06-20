@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
 
-import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { Instance, CreateInstanceInput } from '@refract/core'
 
 export interface ExternalInstance {
@@ -17,7 +16,6 @@ export interface ExternalInstance {
 declare global {
   const __APP_VERSION__: string
   interface Window {
-    electron: ElectronAPI
     api: {
       skins: {
         list:    () => Promise<Array<{ id: string; name: string; filename: string; variant: 'classic' | 'slim'; addedAt: string }>>

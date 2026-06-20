@@ -1,7 +1,7 @@
-//! Tauri port of the Electron activity IPC handlers.
+//! Native activity commands.
 //!
 //! Activity entries are stored in `<data_dir>/activity.json`, matching the
-//! Electron build so the titlebar and home activity panels share the same data.
+//! launcher so the titlebar and home activity panels share the same data.
 
 use crate::paths;
 use serde::{Deserialize, Serialize};

@@ -1,6 +1,6 @@
 //! Rust port of `instance-store.ts` — list + CRUD. Reads/writes the same
 //! `<data>/instances/<folder>/instance.json` files and `instance-registry.json`
-//! as the Electron build, with identical folder sanitisation (incl. the
+//! as the launcher, with identical folder sanitisation (incl. the
 //! Cyrillic→Latin transliteration) so the two stay interchangeable.
 
 use crate::paths;
@@ -150,7 +150,7 @@ fn unique_folder_name(desired: &str, current: Option<&str>) -> String {
 // ── Resolve / save ──────────────────────────────────────────────────────────
 
 /// Wipe all launcher data (the "delete everything" action): instances, content
-/// caches and the config/registry. Mirrors the Electron launcher.deleteAll.
+/// caches and the config/registry.
 #[tauri::command]
 pub fn launcher_delete_all() -> Result<(), String> {
     let data = paths::data_dir();
@@ -357,7 +357,7 @@ pub fn update_instance(id: String, patch: Value) -> Result<Value, String> {
     Ok(existing)
 }
 
-/// Open the instance's game directory in the OS file manager (Electron used
+/// Open the instance's game directory in the OS file manager.
 /// shell.openPath). Creates it first if missing.
 #[tauri::command]
 pub fn open_instance_folder(id: String) -> Result<(), String> {

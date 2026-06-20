@@ -1,4 +1,4 @@
-//! Persistent app log commands, matching the Electron `log.ipc.ts` behavior.
+//! Persistent app log commands.
 
 use crate::paths;
 use serde::{Deserialize, Serialize};

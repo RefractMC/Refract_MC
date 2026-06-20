@@ -1,6 +1,6 @@
 //! Friends list storage and Mojang lookup for the Tauri runtime.
 //! Mirrors `apps/renderer/src/main/ipc/friends.ipc.ts` and uses the same
-//! `<data_dir>/friends.json` file so Electron and Tauri share the list.
+//! `<data_dir>/friends.json` file so the launcher keeps one shared friends list.
 
 use crate::{config, paths};
 use serde::{Deserialize, Serialize};

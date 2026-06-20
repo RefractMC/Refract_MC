@@ -54,4 +54,4 @@ jobs:
         run: cargo check
 
       - name: Renderer typecheck
-        run: pnpm --filter @refract/app typecheck
+        run: pnpm --filter @refract/renderer typecheck

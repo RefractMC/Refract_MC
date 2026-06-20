@@ -2,7 +2,7 @@
 //! installMinecraft (steps 1–5): version JSON, client jar, OS-filtered
 //! libraries, natives extraction, and assets. Loaders (Fabric/Quilt/Forge) are a
 //! separate step. Progress streams to the renderer over `mc://progress`,
-//! matching the Electron `mc:progress` payload shape.
+//! matching the renderer `mc:progress` payload shape.
 
 use crate::{instances, net, paths};
 use futures_util::future::join_all;
@@ -510,7 +510,7 @@ pub async fn install_minecraft(
         _ => {}
     }
 
-    // Persist installed state — Electron does this in the mc.install IPC handler,
+    // Persist installed state after the install command finishes,
     // and the renderer refetches instances when the "Done" progress event fires.
     let mut patch = serde_json::json!({ "isInstalled": true });
     if let Some(v) = &resolved_loader {

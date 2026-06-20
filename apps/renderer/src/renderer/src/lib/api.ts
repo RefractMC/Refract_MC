@@ -115,12 +115,12 @@ function createBrowserApi(): RefractAPI {
     skins: {
       list:    async () => [],
       browse:  async () => null,
-      add:     async () => { throw new Error('Skins require the Electron app.') },
+      add:     async () => { throw new Error('Skins require the desktop app.') },
       delete:  async () => undefined,
       getPath:    async () => '',
       getDataUrl:    async () => null,
       fileToDataUrl: async () => null,
-      apply:   async () => { throw new Error('Skins require the Electron app.') },
+      apply:   async () => { throw new Error('Skins require the desktop app.') },
     },
     system: {
       ramGb: async () => 16,
@@ -151,10 +151,10 @@ function createBrowserApi(): RefractAPI {
         return config.accounts.find((account) => account.uuid === config.activeAccountId) ?? null
       },
       microsoftBegin: async (): Promise<DeviceLogin> => {
-        throw new Error('Microsoft login requires the Electron app. Browser preview supports guest profiles only.')
+        throw new Error('Microsoft login requires the desktop app. Browser preview supports guest profiles only.')
       },
       microsoftComplete: async () => {
-        throw new Error('Microsoft login requires the Electron app. Browser preview supports guest profiles only.')
+        throw new Error('Microsoft login requires the desktop app. Browser preview supports guest profiles only.')
       },
       createOffline: async (username) => {
         const trimmed = username.trim()
@@ -194,17 +194,17 @@ function createBrowserApi(): RefractAPI {
           activeAccountId: config.activeAccountId === uuid ? accounts[0]?.uuid ?? null : config.activeAccountId,
         })
       },
-      yggdrasilLogin: async () => { throw new Error('Yggdrasil login requires the Electron app.') },
+      yggdrasilLogin: async () => { throw new Error('Yggdrasil login requires the desktop app.') },
       fetchSkinTextureUrl: async () => null,
       browseSkin: async () => null,
-      uploadSkin: async () => { throw new Error('Skin upload requires the Electron app.') },
+      uploadSkin: async () => { throw new Error('Skin upload requires the desktop app.') },
       fetchCapes: async () => [],
-      setCape: async () => { throw new Error('Cape management requires the Electron app.') },
+      setCape: async () => { throw new Error('Cape management requires the desktop app.') },
     },
     theme: {
       list: async () => [],
       install: async () => {
-        throw new Error('Theme import is available in the Electron app.')
+        throw new Error('Theme import is available in the desktop app.')
       },
       delete: async () => undefined,
       browseBackgroundImage: async () => null,
@@ -217,7 +217,7 @@ function createBrowserApi(): RefractAPI {
       download: () => undefined,
     },
     launcher: {
-      deleteAll: async () => { throw new Error('Delete all requires the Electron app.') },
+      deleteAll: async () => { throw new Error('Delete all requires the desktop app.') },
     },
     instance: {
       list: async () => getInstances(),
@@ -242,10 +242,10 @@ function createBrowserApi(): RefractAPI {
       browseFolder:  async () => null,
       export:        async () => null,
       duplicate:     async () => null,
-      importMultiMc:  async () => { throw new Error('MultiMC import requires the Electron app.') },
+      importMultiMc:  async () => { throw new Error('MultiMC import requires the desktop app.') },
       scanExternal:   async () => [],
-      linkExternal:   async () => { throw new Error('Link requires the Electron app.') },
-      importExternal: async () => { throw new Error('Import requires the Electron app.') },
+      linkExternal:   async () => { throw new Error('Link requires the desktop app.') },
+      importExternal: async () => { throw new Error('Import requires the desktop app.') },
     },
     window: {
       minimize: () => undefined,
@@ -293,64 +293,64 @@ function createBrowserApi(): RefractAPI {
         const { getProjectVersions } = await import('@refract/core')
         return getProjectVersions(projectId, gameVersion, loader)
       },
-      install: async () => { throw new Error('Mod install requires the Electron app.') },
-      uninstall: async () => { throw new Error('Mod uninstall requires the Electron app.') },
+      install: async () => { throw new Error('Mod install requires the desktop app.') },
+      uninstall: async () => { throw new Error('Mod uninstall requires the desktop app.') },
       gameVersions: async () => {
         const { fetchGameVersions } = await import('@refract/core')
         return fetchGameVersions()
       },
-      contentInstall: async () => { throw new Error('Content install requires the Electron app.') },
+      contentInstall: async () => { throw new Error('Content install requires the desktop app.') },
       checkModUpdates: async () => [],
       applyModUpdates: async () => [],
     },
     mods: {
       list:           async () => [],
       planDeps:       async () => [],
-      toggle:         async () => { throw new Error('Mod management requires the Electron app.') },
-      delete:         async () => { throw new Error('Mod management requires the Electron app.') },
-      installLocal:   async () => { throw new Error('Mod install requires the Electron app.') },
+      toggle:         async () => { throw new Error('Mod management requires the desktop app.') },
+      delete:         async () => { throw new Error('Mod management requires the desktop app.') },
+      installLocal:   async () => { throw new Error('Mod install requires the desktop app.') },
       profilesList:   async () => [],
-      profilesSave:   async () => { throw new Error('Mod profiles require the Electron app.') },
-      profilesApply:  async () => { throw new Error('Mod profiles require the Electron app.') },
-      profilesDelete: async () => { throw new Error('Mod profiles require the Electron app.') },
-      profilesRename: async () => { throw new Error('Mod profiles require the Electron app.') },
+      profilesSave:   async () => { throw new Error('Mod profiles require the desktop app.') },
+      profilesApply:  async () => { throw new Error('Mod profiles require the desktop app.') },
+      profilesDelete: async () => { throw new Error('Mod profiles require the desktop app.') },
+      profilesRename: async () => { throw new Error('Mod profiles require the desktop app.') },
     },
     curseforge: {
-      searchMods:     async () => { throw new Error('CurseForge requires the Electron app.') },
-      searchModpacks: async () => { throw new Error('CurseForge requires the Electron app.') },
-      files:          async () => { throw new Error('CurseForge requires the Electron app.') },
-      install:        async () => { throw new Error('CurseForge requires the Electron app.') },
-      projectDetail:  async () => { throw new Error('CurseForge requires the Electron app.') },
-      installModpack: async () => { throw new Error('CurseForge requires the Electron app.') },
+      searchMods:     async () => { throw new Error('CurseForge requires the desktop app.') },
+      searchModpacks: async () => { throw new Error('CurseForge requires the desktop app.') },
+      files:          async () => { throw new Error('CurseForge requires the desktop app.') },
+      install:        async () => { throw new Error('CurseForge requires the desktop app.') },
+      projectDetail:  async () => { throw new Error('CurseForge requires the desktop app.') },
+      installModpack: async () => { throw new Error('CurseForge requires the desktop app.') },
     },
     ftb: {
       search:         async () => [],
-      modpack:        async () => { throw new Error('FTB requires the Electron app.') },
-      installModpack: async () => { throw new Error('FTB requires the Electron app.') },
+      modpack:        async () => { throw new Error('FTB requires the desktop app.') },
+      installModpack: async () => { throw new Error('FTB requires the desktop app.') },
     },
     java: {
       managedList:  async () => [],
       requiredFor:  async () => 21,
       ensureFor:    async () => 21,
-      download:     async () => { throw new Error('Java download requires the Electron app.') },
-      delete:       async () => { throw new Error('Java delete requires the Electron app.') },
+      download:     async () => { throw new Error('Java download requires the desktop app.') },
+      delete:       async () => { throw new Error('Java delete requires the desktop app.') },
       browseExe:    async () => null,
-      addCustom:    async () => { throw new Error('Java management requires the Electron app.') },
-      removeCustom: async () => { throw new Error('Java management requires the Electron app.') },
+      addCustom:    async () => { throw new Error('Java management requires the desktop app.') },
+      removeCustom: async () => { throw new Error('Java management requires the desktop app.') },
       onProgress:   () => () => undefined,
     },
     friends: {
       list:       async () => [],
-      add:        async () => { throw new Error('Friends require the Electron app.') },
+      add:        async () => { throw new Error('Friends require the desktop app.') },
       remove:     async () => undefined,
       updateNote: async () => undefined,
     },
     modpack: {
-      install: async () => { throw new Error('Modpack install requires the Electron app.') },
+      install: async () => { throw new Error('Modpack install requires the desktop app.') },
       openFileDialog: async () => null,
-      installFromFile: async () => { throw new Error('Modpack install requires the Electron app.') },
+      installFromFile: async () => { throw new Error('Modpack install requires the desktop app.') },
       checkUpdate: async () => null,
-      update: async () => { throw new Error('Modpack update requires the Electron app.') },
+      update: async () => { throw new Error('Modpack update requires the desktop app.') },
       onProgress: () => () => undefined,
       onDone: () => () => undefined,
     },
@@ -366,9 +366,9 @@ function createBrowserApi(): RefractAPI {
       cancelInstall: async () => undefined,
       java: async () => [],
       isRunning: async () => false,
-      install: async () => { throw new Error('MC install requires the Electron app.') },
-      repair: async () => { throw new Error('MC repair requires the Electron app.') },
-      launch: async () => { throw new Error('MC launch requires the Electron app.') },
+      install: async () => { throw new Error('MC install requires the desktop app.') },
+      repair: async () => { throw new Error('MC repair requires the desktop app.') },
+      launch: async () => { throw new Error('MC launch requires the desktop app.') },
       stop: async () => undefined,
       crashReport: async () => null,
       worlds: async () => [],
@@ -416,15 +416,12 @@ function wrapApi<T>(value: T, path = 'api'): T {
   return value
 }
 
-const electronApi = (window as Window & { api?: RefractAPI }).api
-
-// Running inside the Tauri shell during migration: there's no Electron preload,
-// so build the API from Tauri commands. Domains not yet ported reuse the browser
-// fallback (so nothing crashes); ported ones call into Rust via invoke().
+// Tauri is the native shell. Browser preview keeps a small localStorage-backed
+// API for design and routing work outside the desktop app.
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
-if (!electronApi && !isTauri) {
-  logger.warn('browserApi', 'Electron preload API is unavailable; using browser preview storage.')
+if (!isTauri) {
+  logger.warn('browserApi', 'Tauri API is unavailable; using browser preview storage.')
 }
 
 // Tauri rejects invoke() with a plain string (the Rust Err). The UI checks
@@ -438,7 +435,7 @@ function tinvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> 
 }
 
 // ── dependency planning (Tauri) ──────────────────────────────────────────────
-// Mirrors the Electron mod-deps service: transitive required + direct optional
+// Mirrors the native mod-deps service: transitive required + direct optional
 // deps. Modrinth metadata is fetched in the WebView (CORS-open); CurseForge goes
 // through the Rust proxy commands.
 
@@ -1033,18 +1030,18 @@ function createTauriApi(): RefractAPI {
 }
 
 export const api: RefractAPI = wrapApi(
-  electronApi ?? (isTauri ? createTauriApi() : createBrowserApi()),
+  isTauri ? createTauriApi() : createBrowserApi(),
 )
 
 /** True when a native file picker is available. */
-export const supportsFilePicker = !!electronApi || isTauri
+export const supportsFilePicker = isTauri
 
 /** True when the active runtime can send analytics events. */
 export const analyticsAvailable = true
 
 /**
  * Native file picker for mod/pack files (Tauri only) — returns absolute paths to
- * hand to `mods.installLocal`. Returns [] outside Tauri (Electron uses drag-drop).
+ * hand to `mods.installLocal`. Returns [] outside Tauri.
  */
 export async function pickModFiles(): Promise<string[]> {
   if (!isTauri) return []

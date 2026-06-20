@@ -1,4 +1,4 @@
-//! Small system-information commands that replaced Electron's `os` helpers.
+//! Small system-information commands.
 
 #[cfg(target_os = "windows")]
 pub fn ram_gb_value() -> u64 {

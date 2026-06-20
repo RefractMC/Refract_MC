@@ -1,8 +1,8 @@
 //! Rust port of `apps/renderer/src/main/services/config.ts`.
 //!
-//! Reads/writes the SAME file the Electron build uses so the two can coexist
+//! Reads and writes the launcher config file.
 //! during migration: `<config_dir>/Refract/config.json`. On Windows that's
-//! `%APPDATA%\Refract\config.json` — identical to Electron's
+//! `%APPDATA%\Refract\config.json` on Windows.
 //! `app.getPath('userData')`. (macOS: ~/Library/Application Support; Linux: ~/.config.)
 
 use crate::{paths, system};
@@ -14,7 +14,7 @@ fn config_path() -> PathBuf {
     paths::data_dir().join("config.json")
 }
 
-/// Defaults mirror DEFAULTS in config.ts so a fresh file matches the Electron app.
+/// Defaults mirror DEFAULTS in the renderer preview API.
 fn defaults() -> Value {
     json!({
         "activeAccountId": Value::Null,

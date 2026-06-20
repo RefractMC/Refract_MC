@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Refract is a fast, modern, open-source Minecraft launcher built with Electron and React.<br />
+  Refract is a fast, modern, open-source Minecraft launcher built with Tauri and React.<br />
   <br />
   <a href="https://github.com/RefractMC/Refract_MC/releases/latest">
     <img src="https://img.shields.io/github/v/release/RefractMC/Refract_MC?style=for-the-badge&color=5316D4" alt="Latest Release" />
@@ -113,4 +113,4 @@ Review [`locales/README.md`](locales/README.md) for the deep contribution guide.
 git clone [https://github.com/RefractMC/Refract_MC.git](https://github.com/RefractMC/Refract_MC.git)
 cd Refract_MC
 pnpm install
-pnpm --filter @refract/app dev
+pnpm dev

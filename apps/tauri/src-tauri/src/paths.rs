@@ -1,5 +1,5 @@
 //! Rust port of `apps/renderer/src/main/services/paths.ts`.
-//! Resolves the same data root Electron uses (`app.getPath('userData')`):
+//! Resolves the launcher data root:
 //! `%APPDATA%\Refract` on Windows, `~/Library/Application Support/Refract` on
 //! macOS, `~/.config/Refract` on Linux.
 

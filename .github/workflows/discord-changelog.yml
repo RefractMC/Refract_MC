@@ -1,7 +1,7 @@
 name: Announce changelog to Discord
 
 # Posts the matching CHANGELOG.md section to a Discord channel whenever a release
-# is published (Electron or Tauri). Uses a channel webhook — no Discord app/bot
+# is published. Uses a channel webhook, no Discord app/bot
 # needed. Set the repo secret DISCORD_WEBHOOK_URL to the channel's webhook URL
 # (Discord: Channel → Edit → Integrations → Webhooks → New Webhook → Copy URL).
 on:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to announce (e.g. tauri-v1.1.4). Blank = latest CHANGELOG entry."
+        description: "Release tag to announce (e.g. v1.1.4). Blank = latest CHANGELOG entry."
         required: false
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
             exit 1
           fi
 
-          # Bare version from the tag (strip electron-v / tauri-v / v prefixes).
+          # Bare version from the tag.
           VERSION="$(printf '%s' "${TAG:-}" | sed -E 's/^[A-Za-z-]*v//')"
 
           # Pull the changelog section for this version (header to the next "## ").

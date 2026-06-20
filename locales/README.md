@@ -57,7 +57,7 @@ Memory labels used in instance forms. `{{gb}}` and `{{mb}}` are the numeric valu
 
 ## Tips
 
-- Run `pnpm --filter @refract/app typecheck` after editing to catch JSON syntax errors.
+- Run `pnpm --filter @refract/renderer typecheck` after editing to catch JSON syntax errors.
 - You can preview your translation by selecting it in **Settings → Language** while the dev build is running.
 - If a string is hard to translate or has no natural equivalent, leave it as the English original — it's better than a broken translation.
 - For strings that differ by plural count (`{{n}} installations`), both a `javaDetected` and `javaDetectedSingle` key exist. Translate both.

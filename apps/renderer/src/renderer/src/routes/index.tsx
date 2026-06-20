@@ -1203,7 +1203,7 @@ function Library() {
     const idx = without.indexOf(targetKey)
     persistGroupOrder([...without.slice(0, idx), dragKey, ...without.slice(idx)])
   }
-  // Electron's renderer has no working window.prompt, so group creation uses a
+  // The desktop renderer has no working window.prompt, so group creation uses a
   // small in-app dialog (see NewGroupDialog) rather than a native prompt.
   function createGroupNamed(name: string) {
     const trimmed = name.trim()

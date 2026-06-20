@@ -6,10 +6,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 
-// Serves the REAL Refract renderer (apps/renderer/src/renderer) inside the Tauri
-// shell — same source, plugins and aliases as electron.vite.config.ts's renderer
-// target, just driven by plain Vite. With no window.api present, the renderer
-// falls back to its browser stub; backend wiring (window.api -> invoke) comes next.
+// Serves the shared Refract renderer (apps/renderer/src/renderer) inside the
+// Tauri shell with the same aliases used by the app build.
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 const rendererRoot = here('../renderer/src/renderer')
 const appVersion: string = JSON.parse(readFileSync(here('../renderer/package.json'), 'utf8')).version

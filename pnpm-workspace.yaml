@@ -7,9 +7,6 @@ overrides:
   undici: ^6.27.0
   ws: ^8.21.0
 onlyBuiltDependencies:
-  - electron
-  - electron-winstaller
   - esbuild
 allowBuilds:
   esbuild: true
-  electron-winstaller: true

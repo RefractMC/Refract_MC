@@ -3,8 +3,8 @@
   "version": "1.0.1",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @refract/app dev",
-    "build": "pnpm --filter @refract/app build",
+    "dev": "pnpm --filter @refract/tauri-poc dev",
+    "build": "pnpm --filter @refract/tauri-poc build",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write ."
   },

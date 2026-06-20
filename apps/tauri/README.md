@@ -1,78 +1,72 @@
-# Refract — Tauri proof‑of‑concept
+# Refract Tauri app
 
-A minimal **Tauri v2** shell that proves the migration pipeline end‑to‑end:
+This package is the desktop shell for Refract. It serves the shared React
+renderer from `apps/renderer/src/renderer` and exposes native launcher features
+through Rust commands in `src-tauri`.
 
-- a Rust backend (`src-tauri/`) exposing one **real ported command** — `config_get` / `config_set`
-- a React + Vite frontend (`src/`) that calls it via `invoke()`
-- the Rust command reads/writes the **same** `config.json` the Electron build uses
-  (`%APPDATA%\Refract\config.json` on Windows), so the two builds share state during migration.
+## Layout
 
-This is intentionally **separate** from the Electron app (`apps/renderer`). It exists to de‑risk the
-port and get a velocity read, not to replace anything yet.
-
-## What it demonstrates
-Every core backend mechanic the full migration needs, each as a ported command/module:
-
-| Primitive | Command(s) | Module |
-|---|---|---|
-| Request/response (read+write JSON) | `config_get` / `config_set` | `config.rs` |
-| Bulk on-disk read (same format as Electron) | `instances_list` | `instances.rs`, `paths.rs` |
-| Microsoft device-code OAuth + encrypted token storage | `auth_device_start` / `auth_device_poll` + Stronghold | `auth.rs` |
-
-Plus: the renderer calls everything via `@tauri-apps/api`'s `invoke()` / `listen()` (the pattern all
-~114 channels follow), Tailwind v4 + shadcn/ui rendering, and a `capabilities/` file granting the
-Stronghold plugin. Compare the dev `refract-tauri.exe` size/RAM against the Electron build.
-
-## Prerequisites (one‑time)
-Rust is **not** installed in this repo yet. Install the toolchain, then the per‑platform Tauri deps:
-
-```sh
-# 1. Rust (run in the prompt with the ! prefix so output lands here):
-!winget install Rustlang.Rustup        # or: https://rustup.rs
-# Windows also needs the "Desktop development with C++" build tools and WebView2
-# (WebView2 ships with Windows 11).
-
-# 2. JS deps (from repo root):
-pnpm install
-
-# 3. Generate app icons once (Tauri needs them to bundle):
-pnpm --filter @refract/tauri-poc tauri icon ../renderer/build/icon.png
+```text
+apps/tauri/
+  index.html
+  vite.renderer.config.ts
+  src-tauri/
+    Cargo.toml
+    tauri.conf.json
+    tauri.local.conf.json
+    src/
+      main.rs
+      lib.rs
+      *.rs
 ```
+
+The Rust backend owns local config, accounts, instance management, game install
+and launch, themes, logs, updater hooks, and native file dialogs. The renderer
+keeps a stable `api.*` surface in `apps/renderer/src/renderer/src/lib/api.ts`
+so UI components do not call Tauri commands directly.
+
+## Requirements
+
+- Node.js 20 or newer.
+- pnpm 9 or newer.
+- Rust stable.
+- Platform Tauri prerequisites for your OS.
+
+On Windows, install WebView2 and Microsoft C++ build tools.
 
 ## Run
 
-```sh
-pnpm --filter @refract/tauri-poc dev           # tauri dev opens the window
-pnpm --filter @refract/tauri-poc build         # local unsigned installer
-pnpm --filter @refract/tauri-poc build:signed  # release build; requires updater signing env vars
-```
-
-`tauri dev` runs `vite` (port 5180) and the Rust app against it. Edit `src-tauri/src/*.rs` and it
-hot‑recompiles; edit `src/*.tsx` and Vite HMR applies instantly.
-
-The default `build` script disables updater signature artifacts for local packaging. Release builds
-must use the private key matching the public updater key in `tauri.conf.json`.
-
-You can verify the **frontend half** without Rust:
+From the repo root:
 
 ```sh
-pnpm --filter @refract/tauri-poc build:vite   # produces apps/tauri/dist/
+pnpm install
+pnpm dev
 ```
 
-## How the full migration would use this
-- Each `apps/renderer/src/main/services/*.ts` becomes a Rust module with `#[tauri::command]`s
-  (registered in `src-tauri/src/lib.rs`).
-- Streaming flows (install progress, game logs, exit) move from `webContents.send(channel, …)` to
-  Tauri's event system (`app.emit(...)` / `listen(...)`).
-- The renderer's `lib/api.ts` swaps its `ipcRenderer.invoke` bridge for `invoke()` — the public
-  `api.*` surface the components use stays the same, so routes/components don't change.
+Package commands:
 
-## Layout
+```sh
+pnpm --filter @refract/tauri-poc dev
+pnpm --filter @refract/tauri-poc build:real
+pnpm --filter @refract/tauri-poc build
+pnpm --filter @refract/tauri-poc build:signed
 ```
-apps/tauri/
-  index.html, vite.config.ts, src/        # React frontend (invoke calls)
-  src-tauri/
-    Cargo.toml, build.rs, tauri.conf.json
-    src/main.rs, src/lib.rs                # app entry + command registry
-    src/config.rs                          # ported config service
+
+`build` uses `tauri.local.conf.json` for an unsigned local installer. `build:signed`
+uses the production updater configuration and requires
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+
+## Checks
+
+```sh
+pnpm --filter @refract/renderer typecheck
+pnpm --filter @refract/tauri-poc build:real
+```
+
+Rust checks:
+
+```sh
+cd apps/tauri/src-tauri
+cargo fmt
+cargo check
 ```

@@ -1,7 +1,7 @@
-//! Tauri port of the Electron theme IPC handlers.
+//! Native theme commands.
 //!
 //! Custom themes are plain JSON files under `<data_dir>/themes`, shared with
-//! the Electron build during migration. Background image browsing returns the
+//! the launcher data directory. Background image browsing returns the
 //! same data URL shape the renderer already expects.
 
 use crate::paths;
