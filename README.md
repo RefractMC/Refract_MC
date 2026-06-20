@@ -17,6 +17,13 @@
   <a href="https://discord.gg/tE8s5VaWmS">
     <img src="https://img.shields.io/badge/Discord-Join%20Refract-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
   </a>
+  <br />
+  <a href="https://github.com/RefractMC/Refract_MC/actions/workflows/security-audit.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/RefractMC/Refract_MC/security-audit.yml?branch=main&style=for-the-badge&label=Security%20Audit&color=5316D4" alt="Security Audit" />
+  </a>
+  <a href="https://github.com/RefractMC/Refract_MC/actions/workflows/development-builds.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/RefractMC/Refract_MC/development-builds.yml?branch=main&style=for-the-badge&label=Development%20Builds&color=5316D4" alt="Development Builds" />
+  </a>
 </p>
 
 <p align="center">
