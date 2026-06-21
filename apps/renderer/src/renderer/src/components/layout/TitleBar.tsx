@@ -151,7 +151,7 @@ export function TitleBar() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'transparent',
             border: 'none',
-            cursor: 'default',
+            cursor: 'pointer',
             color: open || unread > 0 ? 'var(--accent)' : 'var(--ink-3)',
             position: 'relative',
             opacity: open || unread > 0 ? 1 : 0.82,
