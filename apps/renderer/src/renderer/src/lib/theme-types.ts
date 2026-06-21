@@ -34,6 +34,7 @@ export interface ThemeDefinition {
   backgroundOpacity?: number
   backgroundBlur?: number
   backgroundDim?: number
+  disableGradients?: boolean
   customCSS?: string
 }
 

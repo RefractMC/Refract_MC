@@ -216,7 +216,7 @@ function SkinsPage_() {
           /* ── Selected skin viewer ── */
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0, padding: '24px 32px' }}>
             {/* 3D viewer */}
-            <div style={{ background: 'linear-gradient(180deg, var(--surface-2) 0%, var(--bg) 100%)', borderRadius: 'var(--radius-xl)', padding: 20, border: '1px solid var(--border-r)', marginBottom: 24 }}>
+            <div className="skin-viewer-panel" style={{ background: 'linear-gradient(180deg, var(--surface-2) 0%, var(--bg) 100%)', borderRadius: 'var(--radius-xl)', padding: 20, border: '1px solid var(--border-r)', marginBottom: 24 }}>
               <SkinViewer3D skinUrl={skinUrl} width={200} height={320} walk rotate />
             </div>
 

@@ -11,6 +11,7 @@ class ThemeEngine {
   apply(theme: ThemeDefinition): void {
     document.documentElement.dataset.theme = theme.id
     document.documentElement.dataset.hasThemeBg = theme.backgroundImage ? 'true' : 'false'
+    document.documentElement.dataset.themeGradients = theme.disableGradients ? 'off' : 'on'
     this.applyColors(theme.colors)
     this.applyBackground(theme)
     this.applyLayout({ ...DEFAULT_LAYOUT, ...theme.layout })

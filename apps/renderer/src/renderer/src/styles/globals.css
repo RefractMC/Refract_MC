@@ -934,6 +934,41 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   background: color-mix(in srgb, var(--bg) 78%, var(--surface));
 }
 
+.theme-option-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg) 78%, var(--surface));
+  cursor: pointer;
+}
+
+.theme-option-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.theme-option-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.theme-option-row b {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.theme-option-row small {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-4);
+}
+
 .theme-bg-panel {
   display: grid;
   gap: 11px;
@@ -1518,4 +1553,104 @@ html[data-theme="light"] :where(input, select, textarea)::placeholder {
 html[data-theme="light"] ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-color: var(--bg);
+}
+
+/* Theme option: keep this final so it wins over light-theme repairs and
+   component-level gradient shorthands, including inline normal styles. */
+html[data-theme-gradients="off"] {
+  --sidebar-bg: var(--sb);
+  --chrome-top: var(--sb);
+  --sidebar-item-active-bg: var(--accent-tint);
+}
+
+html[data-theme-gradients="off"],
+html[data-theme-gradients="off"] body,
+html[data-theme-gradients="off"] #root {
+  background: var(--bg) !important;
+}
+
+html[data-theme-gradients="off"] .launcher-root::before,
+html[data-theme-gradients="off"] .launcher-sidebar::before {
+  background: none !important;
+  mask-image: none !important;
+}
+
+html[data-theme-gradients="off"] :where(
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline,
+  .launcher-panel,
+  .library-hero,
+  .library-control-bar,
+  .instance-card,
+  .skin-viewer-panel,
+  .launcher-input,
+  .launcher-select,
+  .ni-dialog,
+  .ni-dialog-header,
+  .ni-preview,
+  .ni-preview-card,
+  .ni-btn,
+  .ni-btn-primary,
+  .theme-card,
+  .theme-card[data-active="true"],
+  .theme-bg-panel,
+  .theme-option-row,
+  .detail-dialog,
+  .detail-header,
+  .detail-icon,
+  .detail-tabs,
+  .detail-strip,
+  .detail-search,
+  .detail-tab[data-active="true"],
+  .detail-empty,
+  .ni-template-mark
+) {
+  background-image: none !important;
+}
+
+html[data-theme-gradients="off"] :where(
+  .btn,
+  .launcher-panel,
+  .library-hero,
+  .library-control-bar,
+  .instance-card,
+  .skin-viewer-panel,
+  .ni-dialog,
+  .theme-card,
+  .detail-dialog,
+  .detail-empty
+) {
+  background: var(--surface) !important;
+}
+
+html[data-theme-gradients="off"] :where(.btn-primary, .ni-btn-primary) {
+  background: var(--accent) !important;
+}
+
+html[data-theme-gradients="off"] :where(.btn-secondary, .btn-outline, .launcher-input, .launcher-select) {
+  background: var(--surface-3) !important;
+}
+
+html[data-theme-gradients="off"] :where(
+  .detail-header,
+  .detail-tabs,
+  .detail-strip,
+  .detail-search,
+  .ni-dialog-header,
+  .ni-preview,
+  .theme-bg-panel,
+  .theme-option-row
+) {
+  background: var(--surface-2) !important;
+}
+
+html[data-theme-gradients="off"] :where(.detail-icon, .ni-preview-card, .theme-card[data-active="true"], .detail-tab[data-active="true"]) {
+  background: var(--accent-tint) !important;
+}
+
+html[data-theme-gradients="off"] .ni-slider,
+html[data-theme-gradients="off"] .ni-slider::-webkit-slider-runnable-track {
+  background: var(--surface-2) !important;
 }

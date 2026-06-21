@@ -68,6 +68,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   const [draftBackgroundOpacity, setDraftBackgroundOpacity] = useState(activeTheme.backgroundOpacity ?? 0.34)
   const [draftBackgroundBlur, setDraftBackgroundBlur] = useState(activeTheme.backgroundBlur ?? 0)
   const [draftBackgroundDim, setDraftBackgroundDim] = useState(activeTheme.backgroundDim ?? 0.42)
+  const [draftDisableGradients, setDraftDisableGradients] = useState(activeTheme.disableGradients ?? false)
 
   async function persistActive(id: string) {
     try { await api.config.set('activeThemeId', id) } catch { /* localStorage already holds it */ }
@@ -90,6 +91,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
     setDraftBackgroundOpacity(theme.backgroundOpacity ?? 0.34)
     setDraftBackgroundBlur(theme.backgroundBlur ?? 0)
     setDraftBackgroundDim(theme.backgroundDim ?? 0.42)
+    setDraftDisableGradients(theme.disableGradients ?? false)
   }
 
   function startCreate() {
@@ -130,6 +132,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
       author: 'You',
       version: '1.0.0',
       colors: draftColors,
+      disableGradients: draftDisableGradients,
       ...(draftBackgroundImage.trim()
         ? {
             backgroundImage: draftBackgroundImage.trim(),
@@ -269,6 +272,18 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
                     />
                   </label>
                 </div>
+
+                <label className="theme-option-row">
+                  <input
+                    type="checkbox"
+                    checked={draftDisableGradients}
+                    onChange={(e) => setDraftDisableGradients(e.target.checked)}
+                  />
+                  <span>
+                    <b>Disable gradients</b>
+                    <small>Use flat theme colors across panels, buttons, sidebar, and page backgrounds.</small>
+                  </span>
+                </label>
 
                 <div className="theme-bg-panel">
                   <div className="theme-bg-header">
