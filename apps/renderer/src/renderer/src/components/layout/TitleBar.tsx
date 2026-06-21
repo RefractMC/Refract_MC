@@ -147,13 +147,15 @@ export function TitleBar() {
           title="Activity"
           aria-label="Activity"
           style={{
-            width: 30, height: 28, borderRadius: 'var(--radius-sm)',
+            width: 30, height: 28, borderRadius: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: open ? 'color-mix(in srgb, var(--accent) 16%, transparent)' : 'transparent',
-            border: open ? '1px solid color-mix(in srgb, var(--accent) 36%, transparent)' : '1px solid transparent',
+            background: 'transparent',
+            border: 'none',
             cursor: 'default',
-            color: unread > 0 ? 'var(--accent)' : 'var(--ink-3)',
+            color: open || unread > 0 ? 'var(--accent)' : 'var(--ink-3)',
             position: 'relative',
+            opacity: open || unread > 0 ? 1 : 0.82,
+            padding: 0,
           }}
         >
           <Bell size={16} strokeWidth={1.8} />
