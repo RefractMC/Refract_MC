@@ -41,6 +41,7 @@ class ThemeEngine {
       'text-muted': 'ink-3',
       accent: 'accent',
       'accent-hover': 'accent-hi',
+      'accent-fg': 'accent-fg',
       success: 'grass',
       warning: 'gold',
       error: 'redstone',
@@ -63,6 +64,7 @@ class ThemeEngine {
 
     const accent = c.accent
     if (accent) root.style.setProperty('--accent-tint', `color-mix(in srgb, ${accent} 18%, transparent)`)
+    if (c['accent-hover']) root.style.setProperty('--accent-hover', c['accent-hover'])
   }
 
   private applyBackground(theme: ThemeDefinition): void {

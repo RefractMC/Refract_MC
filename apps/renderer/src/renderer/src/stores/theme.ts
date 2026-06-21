@@ -32,6 +32,10 @@ const BUILTIN_THEMES: Record<string, ThemeDefinition> = {
   light: lightTheme as ThemeDefinition,
 }
 
+function isBuiltinTheme(id: string): boolean {
+  return Boolean(BUILTIN_THEMES[id])
+}
+
 interface ThemeStore {
   activeThemeId: string
   activeTheme: ThemeDefinition
@@ -63,7 +67,7 @@ export const useThemeStore = create<ThemeStore>()(
       applyTheme: (theme) => {
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
         set({ activeThemeId: theme.id, activeTheme: theme })
-        applyAccentColor(get().accentColor)
+        if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
       },
 
       applyBuiltin: (id) => {
@@ -88,7 +92,7 @@ export const useThemeStore = create<ThemeStore>()(
         const merged = { ...get().layoutOverrides, ...override }
         set({ layoutOverrides: merged })
         themeEngine.apply({ ...get().activeTheme, layout: merged })
-        applyAccentColor(get().accentColor)
+        if (isBuiltinTheme(get().activeThemeId)) applyAccentColor(get().accentColor)
       },
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -105,7 +109,7 @@ export const useThemeStore = create<ThemeStore>()(
           customThemes.find((t) => t.id === activeThemeId) ??
           activeTheme
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...layoutOverrides } })
-        if (accentColor) applyAccentColor(accentColor)
+        if (accentColor && isBuiltinTheme(theme.id)) applyAccentColor(accentColor)
       },
     }),
     {
