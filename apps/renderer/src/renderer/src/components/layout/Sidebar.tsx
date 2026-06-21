@@ -555,9 +555,8 @@ function CollapseToggle({ compact, onClick, label }: { compact: boolean; onClick
         transition: 'background 100ms, color 100ms',
       }}
     >
-      <svg width={18} height={18} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-        <path d={compact ? 'M7 4l5 5-5 5' : 'M11 4L6 9l5 5'} />
-        <path d={compact ? 'M4 3v12' : 'M14 3v12'} />
+      <svg width={18} height={18} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d={compact ? 'M6 4l5 5-5 5' : 'M12 4L7 9l5 5'} />
       </svg>
       {!compact && <span>{label}</span>}
     </button>
