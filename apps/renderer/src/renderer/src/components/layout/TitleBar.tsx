@@ -1,15 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useRouterState } from '@tanstack/react-router'
 import { Bell } from 'lucide-react'
 import { api } from '@/lib/api'
-
-const CRUMBS: Record<string, string> = {
-  '/':           'Instance Library',
-  '/browse/':    'Browse Mods',
-  '/modpacks/':  'Modpacks',
-  '/account/':   'Account',
-  '/settings/':  'Settings',
-}
 
 const LAST_SEEN_KEY = 'refract.notifications.lastSeen'
 
@@ -49,8 +40,6 @@ type ActivityEntry = { id: string; label: string; ts: number }
 type UpdateState = { version: string; phase: 'pending' | 'downloading' | 'ready'; percent: number }
 
 export function TitleBar() {
-  const pathname = useRouterState({ select: s => s.location.pathname })
-  const crumb = CRUMBS[pathname] ?? ''
   const [isMaximized, setIsMaximized] = useState(false)
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<ActivityEntry[]>([])
@@ -111,7 +100,7 @@ export function TitleBar() {
         zIndex: 4,
       }}
     >
-      {/* Logo + breadcrumb */}
+      {/* Logo */}
       <div style={{ marginLeft: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="-110 -110 220 220" width={16} height={16} style={{ flexShrink: 0 }}>
           <polygon points="0,-92 14,0 0,92 -14,0" fill="#5316D4"/>
@@ -123,8 +112,6 @@ export function TitleBar() {
           <circle r="24" fill="#1B044F"/>
           <circle r="6" fill="#ECE4FF"/>
         </svg>
-        <b style={{ color: 'var(--ink)', fontWeight: 700 }}>Refract Launcher</b>
-        {crumb && <span style={{ color: 'var(--ink-3)' }}>/ {crumb}</span>}
       </div>
 
       <div style={{ flex: 1 }} />
