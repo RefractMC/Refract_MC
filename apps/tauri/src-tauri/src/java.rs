@@ -102,7 +102,9 @@ fn probe(java_exe: &Path) -> Option<Install> {
         return None;
     }
     // -XshowSettings exits non-zero but still prints; capture both streams.
-    let out = Command::new(java_exe)
+    let mut cmd = Command::new(java_exe);
+    crate::procutil::hide_window(&mut cmd);
+    let out = cmd
         .args(["-XshowSettings:property", "-version"])
         .output()
         .ok()?;
@@ -178,7 +180,9 @@ fn detect_uncached() -> Vec<Install> {
 
     // 2. PATH
     let probe_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(out) = Command::new(probe_cmd).arg("java").output() {
+    let mut cmd = Command::new(probe_cmd);
+    crate::procutil::hide_window(&mut cmd);
+    if let Ok(out) = cmd.arg("java").output() {
         for line in String::from_utf8_lossy(&out.stdout).lines() {
             let p = line.trim();
             if !p.is_empty() {
@@ -189,16 +193,20 @@ fn detect_uncached() -> Vec<Install> {
 
     // 3. Windows registry (JavaSoft hive)
     #[cfg(windows)]
-    if let Ok(out) = Command::new("reg")
-        .args(["query", "HKLM\\SOFTWARE\\JavaSoft", "/s", "/v", "JavaHome"])
-        .output()
     {
-        let text = String::from_utf8_lossy(&out.stdout);
-        for line in text.lines() {
-            if let Some(pos) = line.find("REG_SZ") {
-                let home = line[pos + "REG_SZ".len()..].trim();
-                if !home.is_empty() {
-                    add(probe(&PathBuf::from(home).join("bin").join(JAVA_BIN)));
+        let mut cmd = Command::new("reg");
+        crate::procutil::hide_window(&mut cmd);
+        if let Ok(out) = cmd
+            .args(["query", "HKLM\\SOFTWARE\\JavaSoft", "/s", "/v", "JavaHome"])
+            .output()
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if let Some(pos) = line.find("REG_SZ") {
+                    let home = line[pos + "REG_SZ".len()..].trim();
+                    if !home.is_empty() {
+                        add(probe(&PathBuf::from(home).join("bin").join(JAVA_BIN)));
+                    }
                 }
             }
         }

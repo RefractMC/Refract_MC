@@ -438,6 +438,7 @@ async fn run_processors(
         ))?;
 
         let mut cmd = Command::new(java_exe);
+        crate::procutil::hide_window(&mut cmd);
         cmd.arg("-cp")
             .arg(cp.join(CP_SEP))
             .arg(&main_class)

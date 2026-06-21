@@ -19,6 +19,7 @@ mod mods;
 mod net;
 mod news;
 mod paths;
+mod procutil;
 mod secrets;
 mod servers;
 mod skins;

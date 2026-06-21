@@ -445,9 +445,11 @@ pub fn stop_minecraft(instance_id: String) -> Result<(), String> {
     let pid = pids().lock().unwrap().get(&instance_id).copied();
     if let Some(pid) = pid {
         #[cfg(windows)]
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .output();
+        {
+            let mut cmd = Command::new("taskkill");
+            crate::procutil::hide_window(&mut cmd);
+            let _ = cmd.args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+        }
         #[cfg(not(windows))]
         let _ = Command::new("kill").arg(pid.to_string()).output();
         pids().lock().unwrap().remove(&instance_id);
@@ -670,7 +672,9 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     );
     let (exe, args) = cmd.split_first().ok_or("empty launch command")?;
 
-    let mut child = Command::new(exe)
+    let mut launch_cmd = Command::new(exe);
+    crate::procutil::hide_window(&mut launch_cmd);
+    let mut child = launch_cmd
         .args(args)
         .current_dir(&game_dir)
         .stdout(Stdio::piped())
