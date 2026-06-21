@@ -26,7 +26,15 @@ export function SkinViewer3D({ skinUrl, width = 180, height = 280, walk = true, 
     viewer.animation = walk ? new WalkingAnimation() : new IdleAnimation()
     viewerRef.current = viewer
 
-    return () => { viewer.dispose(); viewerRef.current = null }
+    return () => {
+      // three.js keeps the WebGL context alive after dispose(), so repeated
+      // mounts (opening skin/cape previews) leak contexts until the browser
+      // hits its ~16-context limit and the whole webview stalls. Force the
+      // context loss to release the GPU resources immediately.
+      try { viewer.renderer.forceContextLoss() } catch { /* ignore */ }
+      viewer.dispose()
+      viewerRef.current = null
+    }
   }, [width, height, walk, rotate])
 
   useEffect(() => {
