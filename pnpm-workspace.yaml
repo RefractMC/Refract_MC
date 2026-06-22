@@ -4,11 +4,14 @@ packages:
 overrides:
   '@babel/core': ^7.29.7
   js-yaml: ^4.2.0
+  tar: 7.5.16
   undici: ^6.27.0
   ws: ^8.21.0
 onlyBuiltDependencies:
   - esbuild
   - electron
+  - electron-winstaller
 allowBuilds:
   electron: true
+  electron-winstaller: true
   esbuild: true

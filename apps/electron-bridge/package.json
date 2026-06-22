@@ -13,8 +13,8 @@
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "31.7.7",
-    "electron-builder": "24.13.3"
+    "electron": "42.4.1",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.refract",
