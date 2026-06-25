@@ -18,6 +18,8 @@ const CP_SEP: &str = ";";
 #[cfg(not(target_os = "windows"))]
 const CP_SEP: &str = ":";
 
+const DEFAULT_LIBRARY_BASE: &str = "https://libraries.minecraft.net/";
+
 fn emit(app: &AppHandle, iid: &str, step: &str, percent: f64) {
     let _ = app.emit("mc://progress", json!({
         "instanceId": iid, "step": step, "current": percent as u64, "total": 100u64, "percent": percent,
@@ -88,6 +90,46 @@ fn xml_versions(xml: &str) -> Vec<String> {
         }
     }
     out
+}
+
+fn forge_maven_id(mc: &str, forge_version: &str) -> String {
+    let prefix = format!("{mc}-");
+    if forge_version.starts_with(&prefix) {
+        forge_version.to_string()
+    } else {
+        format!("{prefix}{forge_version}")
+    }
+}
+
+fn resolve_forge_maven_id_from_versions(
+    mc: &str,
+    forge_version: &str,
+    versions: &[String],
+) -> String {
+    let candidate = forge_maven_id(mc, forge_version);
+    if versions.iter().any(|v| v == &candidate) {
+        return candidate;
+    }
+
+    let legacy_prefix = format!("{candidate}-");
+    versions
+        .iter()
+        .rev()
+        .find(|v| v.starts_with(&legacy_prefix))
+        .cloned()
+        .unwrap_or(candidate)
+}
+
+async fn resolve_forge_maven_id(mc: &str, forge_version: &str) -> String {
+    let xml = match get_text(
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml",
+    )
+    .await
+    {
+        Ok(xml) => xml,
+        Err(_) => return forge_maven_id(mc, forge_version),
+    };
+    resolve_forge_maven_id_from_versions(mc, forge_version, &xml_versions(&xml))
 }
 
 /// Newest Forge/NeoForge version string for an MC version (recommended if known).
@@ -323,6 +365,24 @@ fn copy_maven(src: &Path, dst: &Path) {
     }
 }
 
+fn copy_legacy_installer_artifact(profile: &Value, extract: &Path) {
+    let Some(coord) = profile["install"]["path"].as_str() else {
+        return;
+    };
+    let Some(file_path) = profile["install"]["filePath"].as_str() else {
+        return;
+    };
+    let src = extract.join(file_path);
+    if !src.exists() {
+        return;
+    }
+    let dst = resolve_lib_path(coord);
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let _ = fs::copy(src, dst);
+}
+
 /// Download a version/profile library list (downloads.artifact, or maven name+url).
 async fn download_libraries(libs: &[Value]) {
     let libs_dir = paths::libraries_dir();
@@ -339,11 +399,12 @@ async fn download_libraries(libs: &[Value]) {
                 )
                 .await;
             }
-        } else if let (Some(name), Some(base)) = (lib["name"].as_str(), lib["url"].as_str()) {
+        } else if let Some(name) = lib["name"].as_str() {
             let rel = resolve_lib_path(name);
             // resolve_lib_path returns an absolute libs path; recompute the maven
             // relative path for the URL.
             if let Ok(relpath) = rel.strip_prefix(&libs_dir) {
+                let base = lib["url"].as_str().unwrap_or(DEFAULT_LIBRARY_BASE);
                 let base = if base.ends_with('/') {
                     base.to_string()
                 } else {
@@ -477,11 +538,12 @@ pub async fn install_forge(
     forge_version: &str,
     is_neo: bool,
 ) -> Result<(), String> {
-    let forge_id = format!("{mc}-{forge_version}");
+    let forge_id = forge_maven_id(mc, forge_version);
     let installer_url = if is_neo {
         format!("https://maven.neoforged.net/releases/net/neoforged/neoforge/{forge_version}/neoforge-{forge_version}-installer.jar")
     } else {
-        format!("https://maven.minecraftforge.net/net/minecraftforge/forge/{forge_id}/forge-{forge_id}-installer.jar")
+        let artifact_id = resolve_forge_maven_id(mc, forge_version).await;
+        format!("https://maven.minecraftforge.net/net/minecraftforge/forge/{artifact_id}/forge-{artifact_id}-installer.jar")
     };
 
     let installer = cache_dir().join(format!("forge-installer-{forge_id}.jar"));
@@ -523,11 +585,15 @@ async fn install_forge_inner(
     fs::create_dir_all(extract).map_err(|e| e.to_string())?;
     unzip(installer, extract)?;
 
+    let profile: Option<Value> = fs::read_to_string(extract.join("install_profile.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
     let version_json: Value = fs::read_to_string(extract.join("version.json"))
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
+        .or_else(|| profile.as_ref().and_then(|p| p.get("versionInfo").cloned()))
         .ok_or(
-            "Forge version.json not found in installer. Forge may not support this MC version.",
+            "Forge version metadata not found in installer. Forge may not support this MC version.",
         )?;
 
     let loader = if is_neo { "neoforge" } else { "forge" };
@@ -550,11 +616,7 @@ async fn install_forge_inner(
     )
     .await;
 
-    let profile_path = extract.join("install_profile.json");
-    if let Some(profile) = fs::read_to_string(&profile_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-    {
+    if let Some(profile) = profile.as_ref() {
         if let Some(libs) = profile["libraries"].as_array() {
             emit(app, iid, "Downloading Forge tools", 55.0);
             download_libraries(libs).await;
@@ -563,6 +625,7 @@ async fn install_forge_inner(
         if maven_dir.exists() {
             copy_maven(&maven_dir, &paths::libraries_dir());
         }
+        copy_legacy_installer_artifact(profile, extract);
 
         // Processors must run on a Java that satisfies the MC version. Use the
         // vanilla version JSON (already saved by install_minecraft) for the major.
@@ -581,4 +644,29 @@ async fn install_forge_inner(
 
     emit(app, iid, "Forge installed", 100.0);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_legacy_forge_version_with_trailing_mc_suffix() {
+        let versions = vec!["1.7.10-10.13.4.1614-1.7.10".to_string()];
+
+        assert_eq!(
+            resolve_forge_maven_id_from_versions("1.7.10", "10.13.4.1614", &versions),
+            "1.7.10-10.13.4.1614-1.7.10"
+        );
+    }
+
+    #[test]
+    fn keeps_exact_forge_maven_version() {
+        let versions = vec!["1.20.1-47.4.20".to_string()];
+
+        assert_eq!(
+            resolve_forge_maven_id_from_versions("1.20.1", "47.4.20", &versions),
+            "1.20.1-47.4.20"
+        );
+    }
 }

@@ -209,14 +209,17 @@ fn build_classpath(
             }
         }
         let name = lib.get("name").and_then(Value::as_str).unwrap_or("");
-        let jar_path: Option<PathBuf> =
+        let jar_path: Option<PathBuf> = if name.is_empty() {
+            None
+        } else {
             if let Some(p) = lib["downloads"]["artifact"]["path"].as_str() {
                 Some(libs_dir.join(p))
             } else if lib.get("url").and_then(Value::as_str).is_some() {
                 Some(libs_dir.join(maven_to_path(name)))
             } else {
-                None
-            };
+                Some(libs_dir.join(maven_to_path(name)))
+            }
+        };
         if let Some(jp) = jar_path {
             let key = maven_key(name);
             let val = jp.to_string_lossy().to_string();
@@ -327,6 +330,7 @@ fn build_command(
     put("auth_access_token", auth.access_token.clone());
     put("auth_xuid", auth.xuid.clone());
     put("user_type", auth.user_type.clone());
+    put("user_properties", "{}".into());
     put("version_type", "release".into());
     put("resolution_width", "854".into());
     put("resolution_height", "480".into());
@@ -369,13 +373,18 @@ fn build_command(
             .and_then(Value::as_str)
         {
             let mut jvm = vec!["-cp".to_string(), classpath.clone()];
-            let mut game: Vec<String> = substitute(mc_args, &vars)
+            let overlay_legacy_args = overlay
+                .and_then(|o| o.get("minecraftArguments"))
+                .and_then(Value::as_str);
+            let mut game: Vec<String> = substitute(overlay_legacy_args.unwrap_or(mc_args), &vars)
                 .split(' ')
                 .map(String::from)
                 .collect();
             if let Some(ov) = overlay_args {
                 jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
-                game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+                if overlay_legacy_args.is_none() {
+                    game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+                }
             }
             (jvm, game)
         } else {
@@ -725,4 +734,59 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn auth() -> Auth {
+        Auth {
+            username: "Steve".into(),
+            uuid: "00000000-0000-0000-0000-000000000000".into(),
+            access_token: "offline".into(),
+            xuid: String::new(),
+            client_id: String::new(),
+            user_type: "legacy".into(),
+        }
+    }
+
+    #[test]
+    fn legacy_overlay_minecraft_arguments_replace_vanilla_tweaker() {
+        let base = json!({
+            "assetIndex": { "id": "legacy" },
+            "libraries": [],
+            "mainClass": "net.minecraft.launchwrapper.Launch",
+            "minecraftArguments": "--username ${auth_player_name} --tweakClass net.minecraft.launchwrapper.VanillaTweaker"
+        });
+        let overlay = json!({
+            "libraries": [],
+            "mainClass": "net.minecraft.launchwrapper.Launch",
+            "minecraftArguments": "--username ${auth_player_name} --userProperties ${user_properties} --tweakClass cpw.mods.fml.common.launcher.FMLTweaker"
+        });
+
+        let cmd = build_command(
+            "1.7.10",
+            &base,
+            Some(&overlay),
+            Path::new("libraries"),
+            Path::new("assets"),
+            Path::new("natives"),
+            Path::new("game"),
+            Path::new("versions/1.7.10/1.7.10.jar"),
+            "java",
+            1024,
+            None,
+            &auth(),
+        );
+
+        assert!(cmd
+            .iter()
+            .any(|arg| arg == "cpw.mods.fml.common.launcher.FMLTweaker"));
+        assert!(!cmd
+            .iter()
+            .any(|arg| arg == "net.minecraft.launchwrapper.VanillaTweaker"));
+        assert!(cmd.iter().any(|arg| arg == "{}"));
+    }
 }
