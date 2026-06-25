@@ -578,8 +578,8 @@ pub async fn launch_minecraft(app: AppHandle, instance_id: String) -> Result<(),
         .and_then(|s| serde_json::from_str(&s).ok())
         .ok_or("Version JSON missing. Please reinstall.")?;
 
-    // Fabric/Quilt launch via the saved overlay profile. Forge/NeoForge need the
-    // processor-built overlay, which isn't ported yet (#25.2b).
+    // Loaders launch via their saved overlay profile. Forge/NeoForge overlays are
+    // produced by the installer processor step.
     let overlay: Option<Value> = match loader.as_str() {
         "fabric" | "quilt" => {
             let p = paths::versions_dir()

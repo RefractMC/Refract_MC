@@ -521,6 +521,7 @@
     "title":             "SYNC INSTANCES",
     "subtitle":          "Detect instances from other launchers and launch or import them",
     "scan":              "SCAN LAUNCHERS",
+    "scanFolder":        "SCAN FOLDER",
     "scanning":          "SCANNING…",
     "scanHintPre":       "Click",
     "scanHintPost":      "to detect installed instances",

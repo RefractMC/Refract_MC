@@ -36,6 +36,10 @@ function isBuiltinTheme(id: string): boolean {
   return Boolean(BUILTIN_THEMES[id])
 }
 
+function resolveTheme(id: string, customThemes: ThemeDefinition[], fallback: ThemeDefinition): ThemeDefinition {
+  return BUILTIN_THEMES[id] ?? customThemes.find((t) => t.id === id) ?? fallback
+}
+
 interface ThemeStore {
   activeThemeId: string
   activeTheme: ThemeDefinition
@@ -90,9 +94,10 @@ export const useThemeStore = create<ThemeStore>()(
 
       setLayoutOverride: (override) => {
         const merged = { ...get().layoutOverrides, ...override }
-        set({ layoutOverrides: merged })
-        themeEngine.apply({ ...get().activeTheme, layout: merged })
-        if (isBuiltinTheme(get().activeThemeId)) applyAccentColor(get().accentColor)
+        const theme = resolveTheme(get().activeThemeId, get().customThemes, get().activeTheme)
+        set({ layoutOverrides: merged, activeTheme: theme })
+        themeEngine.apply({ ...theme, layout: { ...theme.layout, ...merged } })
+        if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
       },
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -104,10 +109,8 @@ export const useThemeStore = create<ThemeStore>()(
 
       initialize: () => {
         const { activeThemeId, customThemes, layoutOverrides, activeTheme, accentColor } = get()
-        const theme =
-          BUILTIN_THEMES[activeThemeId] ??
-          customThemes.find((t) => t.id === activeThemeId) ??
-          activeTheme
+        const theme = resolveTheme(activeThemeId, customThemes, activeTheme)
+        set({ activeThemeId: theme.id, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...layoutOverrides } })
         if (accentColor && isBuiltinTheme(theme.id)) applyAccentColor(accentColor)
       },
@@ -121,6 +124,9 @@ export const useThemeStore = create<ThemeStore>()(
         sidebarCollapsed: s.sidebarCollapsed,
         accentColor: s.accentColor,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.initialize()
+      },
     }
   )
 )

@@ -1952,6 +1952,20 @@ function Library() {
             } catch { setExternalInstances([]) }
             finally { setExternalScanning(false) }
           }}
+          onScanFolder={async () => {
+            setExternalScanning(true)
+            try {
+              const found = await api.instance.scanExternalFolder()
+              setExternalInstances(prev => {
+                const byDir = new Map<string, ExternalInstance>()
+                for (const inst of prev ?? []) byDir.set(inst.instanceDir, inst)
+                for (const inst of found) byDir.set(inst.instanceDir, inst)
+                return [...byDir.values()]
+              })
+            } catch {
+              setExternalInstances(prev => prev ?? [])
+            } finally { setExternalScanning(false) }
+          }}
           onLink={async (ext) => {
             const inst = await api.instance.linkExternal(ext)
             await queryClient.invalidateQueries({ queryKey: ['instances'] })
@@ -2001,11 +2015,12 @@ interface SyncPanelProps {
   scanning: boolean
   onClose: () => void
   onScan: () => Promise<void>
+  onScanFolder: () => Promise<void>
   onLink: (ext: ExternalInstance) => Promise<Instance>
   onImport: (ext: ExternalInstance) => Promise<Instance>
 }
 
-function SyncPanel({ instances, scanning, onClose, onScan, onLink, onImport }: SyncPanelProps) {
+function SyncPanel({ instances, scanning, onClose, onScan, onScanFolder, onLink, onImport }: SyncPanelProps) {
   const t = useT()
   const [busy, setBusy] = useState<string | null>(null)
   const [done, setDone] = useState<Set<string>>(new Set())
@@ -2055,6 +2070,13 @@ function SyncPanel({ instances, scanning, onClose, onScan, onLink, onImport }: S
             disabled={scanning}
           >
             {scanning ? t.sync.scanning : t.sync.scan}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => { void onScanFolder() }}
+            disabled={scanning}
+          >
+            {t.sync.scanFolder}
           </Button>
           <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
             Prism · MultiMC · Modrinth · ATLauncher · CurseForge · GDLauncher

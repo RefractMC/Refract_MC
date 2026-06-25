@@ -193,6 +193,7 @@ declare global {
         duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
         importMultiMc:  () => Promise<import('@refract/core').Instance | null>
         scanExternal:   () => Promise<ExternalInstance[]>
+        scanExternalFolder: () => Promise<ExternalInstance[]>
         linkExternal:   (ext: ExternalInstance) => Promise<import('@refract/core').Instance>
         importExternal: (ext: ExternalInstance) => Promise<import('@refract/core').Instance>
       }

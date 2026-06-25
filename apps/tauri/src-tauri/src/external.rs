@@ -150,32 +150,73 @@ fn scan_mmc(base_dir: PathBuf, source: &str, source_name: &str) -> Vec<ExternalI
         .collect()
 }
 
-fn scan_modrinth(ad: &Path) -> Vec<ExternalInstance> {
-    subdirs(ad.join("com.modrinth.theseus").join("profiles"))
+fn scan_mmc_folder(root: &Path) -> Vec<ExternalInstance> {
+    let mut out = Vec::new();
+    for (base, source, source_name) in [
+        (root.to_path_buf(), "multimc", "MultiMC / Prism"),
+        (root.join("instances"), "multimc", "MultiMC / Prism"),
+        (
+            root.join("PrismLauncher").join("instances"),
+            "prism",
+            "Prism Launcher",
+        ),
+        (root.join("MultiMC").join("instances"), "multimc", "MultiMC"),
+    ] {
+        if let Some(ext) = parse_mmc_instance(&base, source, source_name) {
+            out.push(ext);
+        }
+        out.extend(scan_mmc(base, source, source_name));
+    }
+    out
+}
+
+fn parse_modrinth_instance(instance_dir: &Path) -> Option<ExternalInstance> {
+    let p = try_read_json(instance_dir.join("profile.json"))?;
+    let meta = p.get("metadata").unwrap_or(&p);
+    let mc = meta.get("game_version").and_then(Value::as_str)?;
+    Some(ExternalInstance {
+        source: "modrinth".into(),
+        source_name: "Modrinth App".into(),
+        name: meta
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| basename(instance_dir)),
+        minecraft_version: mc.into(),
+        mod_loader: loader_name(meta.get("loader").and_then(Value::as_str)),
+        mod_loader_version: meta
+            .get("loader_version")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        instance_dir: instance_dir.to_string_lossy().to_string(),
+        game_dir: instance_dir.to_string_lossy().to_string(),
+    })
+}
+
+fn scan_modrinth_profiles(profiles_dir: PathBuf) -> Vec<ExternalInstance> {
+    subdirs(profiles_dir)
         .into_iter()
-        .filter_map(|instance_dir| {
-            let p = try_read_json(instance_dir.join("profile.json"))?;
-            let meta = p.get("metadata").unwrap_or(&p);
-            let mc = meta.get("game_version").and_then(Value::as_str)?;
-            Some(ExternalInstance {
-                source: "modrinth".into(),
-                source_name: "Modrinth App".into(),
-                name: meta
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| basename(&instance_dir)),
-                minecraft_version: mc.into(),
-                mod_loader: loader_name(meta.get("loader").and_then(Value::as_str)),
-                mod_loader_version: meta
-                    .get("loader_version")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                instance_dir: instance_dir.to_string_lossy().to_string(),
-                game_dir: instance_dir.to_string_lossy().to_string(),
-            })
-        })
+        .filter_map(|instance_dir| parse_modrinth_instance(&instance_dir))
         .collect()
+}
+
+fn scan_modrinth(ad: &Path) -> Vec<ExternalInstance> {
+    scan_modrinth_profiles(ad.join("com.modrinth.theseus").join("profiles"))
+}
+
+fn scan_modrinth_folder(root: &Path) -> Vec<ExternalInstance> {
+    let mut out = Vec::new();
+    if let Some(ext) = parse_modrinth_instance(root) {
+        out.push(ext);
+    }
+    for base in [
+        root.to_path_buf(),
+        root.join("profiles"),
+        root.join("com.modrinth.theseus").join("profiles"),
+    ] {
+        out.extend(scan_modrinth_profiles(base));
+    }
+    out
 }
 
 fn atl_loader_name(raw: Option<&Value>) -> Option<String> {
@@ -193,40 +234,61 @@ fn atl_loader_name(raw: Option<&Value>) -> Option<String> {
     }
 }
 
-fn scan_atlauncher(ad: &Path) -> Vec<ExternalInstance> {
-    subdirs(ad.join("ATLauncher").join("instances"))
+fn parse_atlauncher_instance(instance_dir: &Path) -> Option<ExternalInstance> {
+    let p = try_read_json(instance_dir.join("instance.json"))?;
+    let l = p.get("launcher").unwrap_or(&Value::Null);
+    let mc = l
+        .get("minecraftVersion")
+        .or_else(|| p.get("minecraftVersion"))
+        .and_then(Value::as_str)?;
+    let loader = l.get("loaderVersion").unwrap_or(&Value::Null);
+    Some(ExternalInstance {
+        source: "atlauncher".into(),
+        source_name: "ATLauncher".into(),
+        name: l
+            .get("name")
+            .or_else(|| p.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| basename(instance_dir)),
+        minecraft_version: mc.into(),
+        mod_loader: atl_loader_name(loader.get("type")),
+        mod_loader_version: loader
+            .get("version")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        instance_dir: instance_dir.to_string_lossy().to_string(),
+        game_dir: instance_dir
+            .join(".minecraft")
+            .to_string_lossy()
+            .to_string(),
+    })
+}
+
+fn scan_atlauncher_instances(instances_dir: PathBuf) -> Vec<ExternalInstance> {
+    subdirs(instances_dir)
         .into_iter()
-        .filter_map(|instance_dir| {
-            let p = try_read_json(instance_dir.join("instance.json"))?;
-            let l = p.get("launcher").unwrap_or(&Value::Null);
-            let mc = l
-                .get("minecraftVersion")
-                .or_else(|| p.get("minecraftVersion"))
-                .and_then(Value::as_str)?;
-            let loader = l.get("loaderVersion").unwrap_or(&Value::Null);
-            Some(ExternalInstance {
-                source: "atlauncher".into(),
-                source_name: "ATLauncher".into(),
-                name: l
-                    .get("name")
-                    .or_else(|| p.get("name"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| basename(&instance_dir)),
-                minecraft_version: mc.into(),
-                mod_loader: atl_loader_name(loader.get("type")),
-                mod_loader_version: loader
-                    .get("version")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                instance_dir: instance_dir.to_string_lossy().to_string(),
-                game_dir: instance_dir
-                    .join(".minecraft")
-                    .to_string_lossy()
-                    .to_string(),
-            })
-        })
+        .filter_map(|instance_dir| parse_atlauncher_instance(&instance_dir))
         .collect()
+}
+
+fn scan_atlauncher(ad: &Path) -> Vec<ExternalInstance> {
+    scan_atlauncher_instances(ad.join("ATLauncher").join("instances"))
+}
+
+fn scan_atlauncher_folder(root: &Path) -> Vec<ExternalInstance> {
+    let mut out = Vec::new();
+    if let Some(ext) = parse_atlauncher_instance(root) {
+        out.push(ext);
+    }
+    for base in [
+        root.to_path_buf(),
+        root.join("instances"),
+        root.join("ATLauncher").join("instances"),
+    ] {
+        out.extend(scan_atlauncher_instances(base));
+    }
+    out
 }
 
 fn cf_loader_name(type_id: Option<i64>, name: Option<&str>) -> Option<String> {
@@ -260,80 +322,124 @@ fn cf_loader_version(name: Option<&str>) -> Option<String> {
     None
 }
 
+fn parse_curseforge_instance(instance_dir: &Path) -> Option<ExternalInstance> {
+    let p = try_read_json(instance_dir.join("minecraftinstance.json"))?;
+    let mc = p.get("gameVersion").and_then(Value::as_str)?;
+    let loader = p.get("baseModLoader").unwrap_or(&Value::Null);
+    let loader_name = loader.get("name").and_then(Value::as_str);
+    Some(ExternalInstance {
+        source: "curseforge".into(),
+        source_name: "CurseForge".into(),
+        name: p
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| basename(instance_dir)),
+        minecraft_version: mc.into(),
+        mod_loader: cf_loader_name(loader.get("type").and_then(Value::as_i64), loader_name),
+        mod_loader_version: cf_loader_version(loader_name),
+        instance_dir: instance_dir.to_string_lossy().to_string(),
+        game_dir: instance_dir.to_string_lossy().to_string(),
+    })
+}
+
+fn scan_curseforge_instances(instances_dir: PathBuf) -> Vec<ExternalInstance> {
+    subdirs(instances_dir)
+        .into_iter()
+        .filter_map(|instance_dir| parse_curseforge_instance(&instance_dir))
+        .collect()
+}
+
 fn scan_curseforge() -> Vec<ExternalInstance> {
     let h = home();
-    let candidates = [
+    [
         h.join("curseforge").join("minecraft").join("Instances"),
         h.join("Documents")
             .join("curseforge")
             .join("minecraft")
             .join("Instances"),
         PathBuf::from(r"C:\curseforge\minecraft\Instances"),
-    ];
-    for base in candidates {
-        let results: Vec<ExternalInstance> = subdirs(base)
-            .into_iter()
-            .filter_map(|instance_dir| {
-                let p = try_read_json(instance_dir.join("minecraftinstance.json"))?;
-                let mc = p.get("gameVersion").and_then(Value::as_str)?;
-                let loader = p.get("baseModLoader").unwrap_or(&Value::Null);
-                let loader_name = loader.get("name").and_then(Value::as_str);
-                Some(ExternalInstance {
-                    source: "curseforge".into(),
-                    source_name: "CurseForge".into(),
-                    name: p
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                        .unwrap_or_else(|| basename(&instance_dir)),
-                    minecraft_version: mc.into(),
-                    mod_loader: cf_loader_name(
-                        loader.get("type").and_then(Value::as_i64),
-                        loader_name,
-                    ),
-                    mod_loader_version: cf_loader_version(loader_name),
-                    instance_dir: instance_dir.to_string_lossy().to_string(),
-                    game_dir: instance_dir.to_string_lossy().to_string(),
-                })
-            })
-            .collect();
-        if !results.is_empty() {
-            return results;
-        }
+    ]
+    .into_iter()
+    .flat_map(scan_curseforge_instances)
+    .collect()
+}
+
+fn scan_curseforge_folder(root: &Path) -> Vec<ExternalInstance> {
+    let mut out = Vec::new();
+    if let Some(ext) = parse_curseforge_instance(root) {
+        out.push(ext);
     }
-    vec![]
+    for base in [
+        root.to_path_buf(),
+        root.join("Instances"),
+        root.join("curseforge").join("minecraft").join("Instances"),
+        root.join("minecraft").join("Instances"),
+    ] {
+        out.extend(scan_curseforge_instances(base));
+    }
+    out
+}
+
+fn parse_gdlauncher_instance(instance_dir: &Path) -> Option<ExternalInstance> {
+    let p = try_read_json(instance_dir.join("instance.json"))?;
+    let cfg = p.get("config").unwrap_or(&p);
+    let mc = cfg.get("version").and_then(Value::as_str)?;
+    let loader = cfg.get("loader").unwrap_or(&Value::Null);
+    Some(ExternalInstance {
+        source: "gdlauncher".into(),
+        source_name: "GDLauncher".into(),
+        name: cfg
+            .get("name")
+            .or_else(|| p.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| basename(instance_dir)),
+        minecraft_version: mc.into(),
+        mod_loader: loader_name(loader.get("type").and_then(Value::as_str)),
+        mod_loader_version: loader
+            .get("version")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        instance_dir: instance_dir.to_string_lossy().to_string(),
+        game_dir: instance_dir
+            .join(".minecraft")
+            .to_string_lossy()
+            .to_string(),
+    })
+}
+
+fn scan_gdlauncher_instances(instances_dir: PathBuf) -> Vec<ExternalInstance> {
+    subdirs(instances_dir)
+        .into_iter()
+        .filter_map(|instance_dir| parse_gdlauncher_instance(&instance_dir))
+        .collect()
 }
 
 fn scan_gdlauncher(ad: &Path) -> Vec<ExternalInstance> {
-    subdirs(ad.join("gdlauncher_carbon").join("instances"))
+    scan_gdlauncher_instances(ad.join("gdlauncher_carbon").join("instances"))
+}
+
+fn scan_gdlauncher_folder(root: &Path) -> Vec<ExternalInstance> {
+    let mut out = Vec::new();
+    if let Some(ext) = parse_gdlauncher_instance(root) {
+        out.push(ext);
+    }
+    for base in [
+        root.to_path_buf(),
+        root.join("instances"),
+        root.join("gdlauncher_carbon").join("instances"),
+    ] {
+        out.extend(scan_gdlauncher_instances(base));
+    }
+    out
+}
+
+fn dedupe_instances(instances: Vec<ExternalInstance>) -> Vec<ExternalInstance> {
+    let mut seen = std::collections::HashSet::new();
+    instances
         .into_iter()
-        .filter_map(|instance_dir| {
-            let p = try_read_json(instance_dir.join("instance.json"))?;
-            let cfg = p.get("config").unwrap_or(&p);
-            let mc = cfg.get("version").and_then(Value::as_str)?;
-            let loader = cfg.get("loader").unwrap_or(&Value::Null);
-            Some(ExternalInstance {
-                source: "gdlauncher".into(),
-                source_name: "GDLauncher".into(),
-                name: cfg
-                    .get("name")
-                    .or_else(|| p.get("name"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| basename(&instance_dir)),
-                minecraft_version: mc.into(),
-                mod_loader: loader_name(loader.get("type").and_then(Value::as_str)),
-                mod_loader_version: loader
-                    .get("version")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                instance_dir: instance_dir.to_string_lossy().to_string(),
-                game_dir: instance_dir
-                    .join(".minecraft")
-                    .to_string_lossy()
-                    .to_string(),
-            })
-        })
+        .filter(|ext| seen.insert(ext.instance_dir.clone()))
         .collect()
 }
 
@@ -355,7 +461,22 @@ pub fn scan_external_instances() -> Vec<ExternalInstance> {
     out.extend(scan_atlauncher(&ad));
     out.extend(scan_curseforge());
     out.extend(scan_gdlauncher(&ad));
-    out
+    dedupe_instances(out)
+}
+
+#[tauri::command]
+pub fn scan_external_folder(folder: String) -> Vec<ExternalInstance> {
+    let root = PathBuf::from(folder);
+    if !root.is_dir() {
+        return vec![];
+    }
+    let mut out = Vec::new();
+    out.extend(scan_mmc_folder(&root));
+    out.extend(scan_modrinth_folder(&root));
+    out.extend(scan_atlauncher_folder(&root));
+    out.extend(scan_curseforge_folder(&root));
+    out.extend(scan_gdlauncher_folder(&root));
+    dedupe_instances(out)
 }
 
 fn input_from_external(ext: &ExternalInstance, imported: bool) -> Value {

@@ -248,6 +248,7 @@ function createBrowserApi(): RefractAPI {
       duplicate:     async () => null,
       importMultiMc:  async () => { throw new Error('MultiMC import requires the desktop app.') },
       scanExternal:   async () => [],
+      scanExternalFolder: async () => [],
       linkExternal:   async () => { throw new Error('Link requires the desktop app.') },
       importExternal: async () => { throw new Error('Import requires the desktop app.') },
     },
@@ -682,6 +683,10 @@ function createTauriApi(): RefractAPI {
         return typeof p === 'string' ? await tinvoke('import_multimc_instance', { instanceFolder: p }) : null
       }) as RefractAPI['instance']['importMultiMc'],
       scanExternal: (() => tinvoke('scan_external_instances')) as RefractAPI['instance']['scanExternal'],
+      scanExternalFolder: (async () => {
+        const p = await dialogOpen({ directory: true, multiple: false, title: 'Select launcher or instances folder' })
+        return typeof p === 'string' ? await tinvoke('scan_external_folder', { folder: p }) : []
+      }) as RefractAPI['instance']['scanExternalFolder'],
       linkExternal: ((ext) => tinvoke('link_external_instance', { ext })) as RefractAPI['instance']['linkExternal'],
       importExternal: ((ext) => tinvoke('import_external_instance', { ext })) as RefractAPI['instance']['importExternal'],
       export: (async (id: string) => {

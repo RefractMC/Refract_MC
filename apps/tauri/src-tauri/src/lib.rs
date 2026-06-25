@@ -60,6 +60,7 @@ pub fn run() {
             instances::duplicate_instance,
             instances::export_instance,
             external::scan_external_instances,
+            external::scan_external_folder,
             external::link_external_instance,
             external::import_external_instance,
             external::import_multimc_instance,

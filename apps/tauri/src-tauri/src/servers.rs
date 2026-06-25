@@ -145,9 +145,10 @@ fn ping(host: &str, port: u16) -> std::io::Result<(i64, i64, u128)> {
 pub async fn ping_server(ip: String) -> Option<Value> {
     // host[:port] — default port 25565. (No SRV resolution.)
     let (host, port) = match ip.rfind(':') {
-        Some(i) if ip[i + 1..].parse::<u16>().is_ok() => {
-            (ip[..i].to_string(), ip[i + 1..].parse::<u16>().unwrap())
-        }
+        Some(i) => match ip[i + 1..].parse::<u16>() {
+            Ok(port) => (ip[..i].to_string(), port),
+            Err(_) => (ip.clone(), 25565u16),
+        },
         _ => (ip.clone(), 25565u16),
     };
     tauri::async_runtime::spawn_blocking(move || {

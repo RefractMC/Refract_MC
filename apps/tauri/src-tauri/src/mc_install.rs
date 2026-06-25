@@ -466,8 +466,7 @@ pub async fn install_minecraft(
         }
     }
 
-    // 6. Mod loader overlay (Fabric/Quilt). Forge/NeoForge — which need the
-    // installer's processor runner — are a follow-up (#25.2b).
+    // 6. Mod loader overlay. Forge/NeoForge use their installer processor runner.
     let mut resolved_loader = mod_loader_version.clone();
     match mod_loader.as_deref() {
         Some("fabric") => {
