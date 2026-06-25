@@ -44,6 +44,7 @@ export function TitleBar() {
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<ActivityEntry[]>([])
   const [lastSeen, setLastSeen] = useState<number>(() => Number(localStorage.getItem(LAST_SEEN_KEY) ?? 0))
+  const [bellHover, setBellHover] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const [update, setUpdate] = useState<UpdateState | null>(null)
 
@@ -141,21 +142,24 @@ export function TitleBar() {
       )}
 
       {/* Activity */}
-      <div className="no-drag-region" style={{ position: 'relative', marginRight: 4 }} ref={panelRef}>
+      <div className="no-drag-region" style={{ position: 'relative', alignSelf: 'stretch', display: 'flex', alignItems: 'center' }} ref={panelRef}>
         <button
           onClick={togglePanel}
           title="Activity"
           aria-label="Activity"
+          onMouseEnter={() => setBellHover(true)}
+          onMouseLeave={() => setBellHover(false)}
           style={{
-            width: 30, height: 28, borderRadius: 0,
+            width: 46, height: '100%', borderRadius: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'transparent',
+            background: bellHover ? 'rgba(255,255,255,.08)' : 'transparent',
             border: 'none',
             cursor: 'pointer',
             color: open || unread > 0 ? 'var(--accent)' : 'var(--ink-3)',
             position: 'relative',
             opacity: open || unread > 0 ? 1 : 0.82,
             padding: 0,
+            transition: 'background 80ms',
           }}
         >
           <Bell size={16} strokeWidth={1.8} />
