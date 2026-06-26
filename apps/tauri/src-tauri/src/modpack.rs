@@ -306,6 +306,42 @@ fn copy_dir(src: &Path, dst: &Path) {
     }
 }
 
+fn copy_dir_checked(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.exists() {
+        return Ok(());
+    }
+    let entries = fs::read_dir(src).map_err(|e| {
+        format!(
+            "Could not read {} while copying import files: {e}",
+            src.display()
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|e| {
+            format!(
+                "Could not read an entry in {} while copying import files: {e}",
+                src.display()
+            )
+        })?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            fs::create_dir_all(&to)
+                .map_err(|e| format!("Could not create {}: {e}", to.display()))?;
+            copy_dir_checked(&from, &to)?;
+        } else {
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
+            }
+            fs::copy(&from, &to).map_err(|e| {
+                format!("Could not copy {} to {}: {e}", from.display(), to.display())
+            })?;
+        }
+    }
+    Ok(())
+}
+
 async fn mojang_url(mc: &str) -> Result<String, String> {
     let manifest = get_json(MOJANG_MANIFEST).await?;
     manifest["versions"]
@@ -356,6 +392,35 @@ fn create_instance(
         input["modLoaderVersion"] = json!(lv);
     }
     instances::create_instance(input)
+}
+
+fn create_imported_instance_from_stage(
+    name: &str,
+    mc: &str,
+    loader: Option<&str>,
+    loader_version: Option<&str>,
+    staged_game_dir: &Path,
+) -> Result<String, String> {
+    let instance = create_instance(name, mc, loader, loader_version, "", "", "")?;
+    let id = instance["id"]
+        .as_str()
+        .ok_or("instance has no id")?
+        .to_string();
+    let result = (|| -> Result<(), String> {
+        let game_dir = instances::resolve_instance_dir(&id).join("minecraft");
+        if game_dir.exists() {
+            fs::remove_dir_all(&game_dir)
+                .map_err(|e| format!("Could not replace {}: {e}", game_dir.display()))?;
+        }
+        copy_dir_checked(staged_game_dir, &game_dir)?;
+        instances::update_instance(id.clone(), json!({ "isInstalled": true }))?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = instances::delete_instance(id);
+        return Err(error);
+    }
+    Ok(id)
 }
 
 async fn finalize(
@@ -936,11 +1001,14 @@ async fn install_from_file_inner(
     project_id: &str,
     file_path: &str,
     temp: &Path,
+    stage_id: &str,
+    stage_dir: &Path,
     name_opt: Option<String>,
 ) -> Result<String, String> {
     progress(app, project_id, "Extracting archive", 2.0);
-    unzip(Path::new(file_path), temp)?;
-    let game_of = |id: &str| instances::resolve_instance_dir(id).join("minecraft");
+    unzip(Path::new(file_path), temp)
+        .map_err(|e| format!("Could not extract {}: {e}", file_path))?;
+    let staged_game_dir = stage_dir.join("minecraft");
     let pick_name = |fallback: Option<&str>| {
         name_opt
             .clone()
@@ -958,14 +1026,9 @@ async fn install_from_file_inner(
         let mc = deps["minecraft"].as_str().unwrap_or("1.20.1").to_string();
         let (loader, lv) = loader_from_deps(deps);
         let name = pick_name(index["name"].as_str());
-        progress(app, project_id, "Creating instance", 5.0);
-        let instance = create_instance(&name, &mc, loader.as_deref(), lv.as_deref(), "", "", "")?;
-        let id = instance["id"]
-            .as_str()
-            .ok_or("instance has no id")?
-            .to_string();
-        let game_dir = game_of(&id);
-        fs::create_dir_all(game_dir.join("mods")).ok();
+        progress(app, project_id, "Staging import", 5.0);
+        fs::create_dir_all(staged_game_dir.join("mods"))
+            .map_err(|e| format!("Could not create staged mods folder: {e}"))?;
 
         let files: Vec<Value> = index["files"].as_array().cloned().unwrap_or_default();
         let client: Vec<&Value> = files
@@ -974,15 +1037,21 @@ async fn install_from_file_inner(
             .collect();
         let total = client.len().max(1);
         for (i, f) in client.iter().enumerate() {
-            if let (Some(p), Some(url)) = (f["path"].as_str(), f["downloads"][0].as_str()) {
-                if let Some(dest) = safe_join(&game_dir, p) {
-                    let expected = f["hashes"]["sha512"]
-                        .as_str()
-                        .map(net::ExpectedHash::Sha512)
-                        .or_else(|| f["hashes"]["sha1"].as_str().map(net::ExpectedHash::Sha1));
-                    download_to(url, &dest, net::MODRINTH_HOSTS, expected).await?;
-                }
-            }
+            let path = f["path"]
+                .as_str()
+                .ok_or_else(|| format!("Modrinth file entry #{i} has no path."))?;
+            let url = f["downloads"][0]
+                .as_str()
+                .ok_or_else(|| format!("Modrinth file {path} has no download URL."))?;
+            let dest = safe_join(&staged_game_dir, path)
+                .ok_or_else(|| format!("Modrinth file path escapes the game directory: {path}"))?;
+            let expected = f["hashes"]["sha512"]
+                .as_str()
+                .map(net::ExpectedHash::Sha512)
+                .or_else(|| f["hashes"]["sha1"].as_str().map(net::ExpectedHash::Sha1));
+            download_to(url, &dest, net::MODRINTH_HOSTS, expected)
+                .await
+                .map_err(|e| format!("Could not download Modrinth file {path} from {url}: {e}"))?;
             progress(
                 app,
                 project_id,
@@ -991,11 +1060,27 @@ async fn install_from_file_inner(
             );
         }
         progress(app, project_id, "Copying overrides", 32.0);
-        copy_dir(&temp.join("overrides"), &game_dir);
-        copy_dir(&temp.join("client-overrides"), &game_dir);
+        copy_dir_checked(&temp.join("overrides"), &staged_game_dir)?;
+        copy_dir_checked(&temp.join("client-overrides"), &staged_game_dir)?;
         progress(app, project_id, "Installing Minecraft…", 38.0);
         let url = mojang_url(&mc).await?;
-        mc_install::install_minecraft(app.clone(), id.clone(), mc, url, loader, lv).await?;
+        mc_install::install_minecraft(
+            app.clone(),
+            stage_id.to_string(),
+            mc.clone(),
+            url,
+            loader.clone(),
+            lv.clone(),
+        )
+        .await?;
+        progress(app, project_id, "Creating instance", 96.0);
+        let id = create_imported_instance_from_stage(
+            &name,
+            &mc,
+            loader.as_deref(),
+            lv.as_deref(),
+            &staged_game_dir,
+        )?;
         progress(app, project_id, "Done", 100.0);
         done_ok(app, project_id, &id);
         return Ok(id);
@@ -1012,15 +1097,10 @@ async fn install_from_file_inner(
             .to_string();
         let (loader, lv) = parse_cf_loader(&manifest);
         let name = pick_name(manifest["name"].as_str());
-        progress(app, project_id, "Creating instance", 5.0);
-        let instance = create_instance(&name, &mc, loader.as_deref(), lv.as_deref(), "", "", "")?;
-        let id = instance["id"]
-            .as_str()
-            .ok_or("instance has no id")?
-            .to_string();
-        let game_dir = game_of(&id);
-        let mods_dir = game_dir.join("mods");
-        fs::create_dir_all(&mods_dir).ok();
+        progress(app, project_id, "Staging import", 5.0);
+        let mods_dir = staged_game_dir.join("mods");
+        fs::create_dir_all(&mods_dir)
+            .map_err(|e| format!("Could not create staged mods folder: {e}"))?;
 
         let files: Vec<Value> = manifest["files"].as_array().cloned().unwrap_or_default();
         let total = files.len().max(1);
@@ -1037,10 +1117,26 @@ async fn install_from_file_inner(
         }
         progress(app, project_id, "Copying overrides", 37.0);
         let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
-        copy_dir(&temp.join(overrides), &game_dir);
+        copy_dir_checked(&temp.join(overrides), &staged_game_dir)?;
         progress(app, project_id, "Installing Minecraft…", 42.0);
         let url = mojang_url(&mc).await?;
-        mc_install::install_minecraft(app.clone(), id.clone(), mc, url, loader, lv).await?;
+        mc_install::install_minecraft(
+            app.clone(),
+            stage_id.to_string(),
+            mc.clone(),
+            url,
+            loader.clone(),
+            lv.clone(),
+        )
+        .await?;
+        progress(app, project_id, "Creating instance", 96.0);
+        let id = create_imported_instance_from_stage(
+            &name,
+            &mc,
+            loader.as_deref(),
+            lv.as_deref(),
+            &staged_game_dir,
+        )?;
         progress(app, project_id, "Done", 100.0);
         done_ok(app, project_id, &id);
         return Ok(id);
@@ -1051,19 +1147,24 @@ async fn install_from_file_inner(
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| "Imported Pack".into());
     let mc = "1.21.1".to_string();
-    progress(app, project_id, "Creating instance", 5.0);
-    let instance = create_instance(&name, &mc, None, None, "", "", "")?;
-    let id = instance["id"]
-        .as_str()
-        .ok_or("instance has no id")?
-        .to_string();
-    let game_dir = game_of(&id);
-    fs::create_dir_all(&game_dir).ok();
+    progress(app, project_id, "Staging import", 5.0);
+    fs::create_dir_all(&staged_game_dir)
+        .map_err(|e| format!("Could not create staged game folder: {e}"))?;
     progress(app, project_id, "Copying files", 10.0);
-    copy_dir(temp, &game_dir);
+    copy_dir_checked(temp, &staged_game_dir)?;
     progress(app, project_id, "Installing Minecraft…", 52.0);
     let url = mojang_url(&mc).await?;
-    mc_install::install_minecraft(app.clone(), id.clone(), mc, url, None, None).await?;
+    mc_install::install_minecraft(
+        app.clone(),
+        stage_id.to_string(),
+        mc.clone(),
+        url,
+        None,
+        None,
+    )
+    .await?;
+    progress(app, project_id, "Creating instance", 96.0);
+    let id = create_imported_instance_from_stage(&name, &mc, None, None, &staged_game_dir)?;
     progress(app, project_id, "Done", 100.0);
     done_ok(app, project_id, &id);
     Ok(id)
@@ -1082,8 +1183,20 @@ pub async fn modpack_install_from_file(
     let cache = paths::data_dir().join("cache");
     let _ = fs::create_dir_all(&cache);
     let temp = cache.join(format!("import-{}", uuid::Uuid::new_v4()));
-    let r = install_from_file_inner(&app, &project_id, &file_path, &temp, name).await;
+    let stage_id = format!("import-stage-{}", uuid::Uuid::new_v4());
+    let stage_dir = instances::resolve_instance_dir(&stage_id);
+    let r = install_from_file_inner(
+        &app,
+        &project_id,
+        &file_path,
+        &temp,
+        &stage_id,
+        &stage_dir,
+        name,
+    )
+    .await;
     let _ = fs::remove_dir_all(&temp);
+    let _ = fs::remove_dir_all(&stage_dir);
     match r {
         Ok(id) => Ok(json!({ "id": id })),
         Err(e) => {

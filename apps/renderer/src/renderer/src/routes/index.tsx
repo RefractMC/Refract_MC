@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useRef } from 'react'
 import type React from 'react'
-import type { Instance, MinecraftVersion } from '@refract/core'
+import type { Instance, JavaInstallation, MinecraftVersion } from '@refract/core'
 import { localDateKey } from '@refract/core'
 import { useT, type T } from '@/i18n'
 import { PixelScene, loaderToScene } from '@/components/ui/PixelScene'
@@ -33,6 +33,93 @@ type FileImportState = {
   status: 'importing' | 'done' | 'error'
   instanceId?: string
   error?: string
+}
+
+type CrashReportData = {
+  text: string
+  filename: string
+  path: string
+  modifiedAt: number
+}
+
+type LauncherLogEntry = {
+  time: string
+  level: 'info' | 'warn' | 'error'
+  source: string
+  message: string
+  stack?: string
+}
+
+function formatLauncherLog(entry: LauncherLogEntry) {
+  const stack = entry.stack ? `\n${entry.stack}` : ''
+  return `[${entry.time || 'unknown'}] ${entry.level.toUpperCase()} ${entry.source}: ${entry.message}${stack}`
+}
+
+function buildCrashDiagnosticBundle({
+  instanceId,
+  instance,
+  code,
+  error,
+  report,
+  lastLines,
+  launcherLogs,
+  javas,
+}: {
+  instanceId: string
+  instance?: Instance
+  code: number | null
+  error?: string
+  report: CrashReportData | null
+  lastLines: string[]
+  launcherLogs: LauncherLogEntry[]
+  javas: JavaInstallation[]
+}) {
+  const configuredJava = instance?.javaPath?.trim() || 'Auto-select'
+  const javaCandidates = javas.length
+    ? javas.map(java => `- Java ${java.version} (${java.vendor}): ${java.path}`).join('\n')
+    : 'No Java installations were detected by the launcher scan.'
+  const loader = instance?.modLoader
+    ? `${instance.modLoader}${instance.modLoaderVersion ? ` ${instance.modLoaderVersion}` : ''}`
+    : 'vanilla'
+  const modpack = instance?.modpackSource
+    ? `${instance.modpackSource} project=${instance.modpackProjectId ?? 'unknown'} version=${instance.modpackVersionId ?? 'unknown'}`
+    : 'none'
+  const orderedLogs = [...launcherLogs].reverse()
+
+  return [
+    'Refract crash diagnostic bundle',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    'Launch result',
+    `Instance ID: ${instanceId}`,
+    `Instance name: ${instance?.name ?? 'unknown'}`,
+    `Exit code: ${code ?? 'unknown'}`,
+    `Error: ${error ?? 'none'}`,
+    `Crash report file: ${report?.filename ?? 'none'}`,
+    `Crash report path: ${report?.path ?? 'none'}`,
+    '',
+    'Minecraft / loader',
+    `Minecraft version: ${instance?.minecraftVersion ?? 'unknown'}`,
+    `Mod loader: ${loader}`,
+    `Modpack: ${modpack}`,
+    '',
+    'Java',
+    `Configured Java: ${configuredJava}`,
+    'Detected Java installations:',
+    javaCandidates,
+    '',
+    'Instance config',
+    JSON.stringify(instance ?? { id: instanceId }, null, 2),
+    '',
+    'Last game output',
+    lastLines.length > 0 ? lastLines.join('\n') : 'No recent game output was captured.',
+    '',
+    'Last launcher log lines',
+    orderedLogs.length > 0 ? orderedLogs.map(formatLauncherLog).join('\n') : 'No launcher log lines were captured.',
+    '',
+    'Crash report',
+    report?.text ?? 'No crash report file was found.',
+  ].join('\n')
 }
 
 type ActiveAccount = Awaited<ReturnType<typeof api.auth.active>>
@@ -412,6 +499,7 @@ function EmptyState({ onOpen }: { onOpen: () => void }) {
 function CrashReportModal({
   instanceName,
   text,
+  diagnosticText,
   lastLines,
   code,
   error,
@@ -422,6 +510,7 @@ function CrashReportModal({
 }: {
   instanceName: string
   text: string
+  diagnosticText: string
   lastLines: string[]
   code: number | null
   error?: string
@@ -432,6 +521,7 @@ function CrashReportModal({
 }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
+  const [diagnosticCopied, setDiagnosticCopied] = useState(false)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -443,6 +533,12 @@ function CrashReportModal({
     navigator.clipboard?.writeText(text).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  function copyDiagnosticsNow() {
+    navigator.clipboard?.writeText(diagnosticText).catch(() => {})
+    setDiagnosticCopied(true)
+    setTimeout(() => setDiagnosticCopied(false), 2000)
   }
 
   return (
@@ -457,6 +553,9 @@ function CrashReportModal({
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={copyNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: copied ? 'var(--grass)' : 'var(--surface-2)', color: copied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', transition: 'background .15s' }}>
               {copied ? 'Copied!' : 'Copy report'}
+            </button>
+            <button onClick={copyDiagnosticsNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: diagnosticCopied ? 'var(--grass)' : 'var(--surface-2)', color: diagnosticCopied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', transition: 'background .15s' }}>
+              {diagnosticCopied ? 'Copied!' : 'Copy diagnostics'}
             </button>
             <button onClick={onOpenConsole} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}>Open logs</button>
             <button onClick={onOpenFolder} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}>Open folder</button>
@@ -820,7 +919,7 @@ function Library() {
   const [whatsNew, setWhatsNew] = useState<ChangelogEntry[]>(FALLBACK_WHATS_NEW)
   const [fileImport, setFileImport] = useState<FileImportState | null>(null)
   const [onboardingStep, setOnboardingStep] = useState<number | null>(null)
-  const [crashReport, setCrashReport] = useState<{ instanceId: string; text: string; lastLines: string[]; code: number | null; error?: string; reportFileName?: string } | null>(null)
+  const [crashReport, setCrashReport] = useState<{ instanceId: string; text: string; diagnosticText: string; lastLines: string[]; code: number | null; error?: string; reportFileName?: string } | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null)
@@ -1134,37 +1233,39 @@ function Library() {
       // refetch to refresh playtime totals and the daily streak.
       void queryClient.invalidateQueries({ queryKey: ['instances'] })
       if (error || (typeof code === 'number' && code !== 0)) {
-        api.mc.crashReport(instanceId)
-          .then(report => {
-            const lastLines = consoleLogsRef.current.get(instanceId)?.slice(-30) ?? []
-            const fallbackText = [
-              error ? `Minecraft crashed: ${error}` : `Minecraft exited with code ${code}.`,
-              '',
-              lastLines.length > 0 ? lastLines.join('\n') : 'No recent game output was captured.',
-            ].join('\n')
-            setCrashReport({
+        void (async () => {
+          const lastLines = consoleLogsRef.current.get(instanceId)?.slice(-30) ?? []
+          const report = await api.mc.crashReport(instanceId).catch(() => null)
+          const launcherLogs = await api.log.read(40).catch(() => [])
+          const instance = instances.find(i => i.id === instanceId)
+          const fallbackText = [
+            error ? `Minecraft crashed: ${error}` : `Minecraft exited with code ${code}.`,
+            '',
+            lastLines.length > 0 ? lastLines.join('\n') : 'No recent game output was captured.',
+          ].join('\n')
+          setCrashReport({
+            instanceId,
+            code,
+            error,
+            text: report?.text ?? fallbackText,
+            diagnosticText: buildCrashDiagnosticBundle({
               instanceId,
+              instance,
               code,
               error,
-              text: report?.text ?? fallbackText,
-              reportFileName: report?.filename,
+              report,
               lastLines,
-            })
+              launcherLogs,
+              javas,
+            }),
+            reportFileName: report?.filename,
+            lastLines,
           })
-          .catch(() => {
-            const lastLines = consoleLogsRef.current.get(instanceId)?.slice(-30) ?? []
-            setCrashReport({
-              instanceId,
-              code,
-              error,
-              text: error ? `Minecraft crashed: ${error}` : `Minecraft exited with code ${code}.`,
-              lastLines,
-            })
-          })
+        })()
       }
     })
     return () => { if (typeof unsub === 'function') unsub() }
-  }, [])
+  }, [instances, javas, queryClient])
 
   // Accumulate MC log lines per instance
   useEffect(() => {
@@ -1883,6 +1984,7 @@ function Library() {
           <CrashReportModal
             instanceName={inst?.name ?? crashReport.instanceId}
             text={crashReport.text}
+            diagnosticText={crashReport.diagnosticText}
             lastLines={crashReport.lastLines}
             code={crashReport.code}
             error={crashReport.error}

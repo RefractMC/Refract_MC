@@ -90,9 +90,18 @@ pub fn mc_delete_world(instance_id: String, world_name: String) -> Result<(), St
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrashReport {
+    text: String,
+    filename: String,
+    path: String,
+    modified_at: f64,
+}
+
 /// Contents of the most recent crash report, or null if there are none.
 #[tauri::command]
-pub fn mc_crash_report(instance_id: String) -> Option<String> {
+pub fn mc_crash_report(instance_id: String) -> Option<CrashReport> {
     let dir = instances::game_dir(&instance_id).join("crash-reports");
     let mut reports: Vec<(PathBuf, f64)> = fs::read_dir(&dir)
         .ok()?
@@ -106,7 +115,17 @@ pub fn mc_crash_report(instance_id: String) -> Option<String> {
         .collect();
     reports.sort_by(|a, b| b.1.total_cmp(&a.1));
     let latest = reports.first()?;
-    fs::read_to_string(&latest.0).ok()
+    let text = fs::read_to_string(&latest.0).ok()?;
+    Some(CrashReport {
+        text,
+        filename: latest
+            .0
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "crash-report.txt".to_string()),
+        path: latest.0.to_string_lossy().to_string(),
+        modified_at: latest.1,
+    })
 }
 
 /// Zip a world folder to `dest_path` (chosen via a save dialog in the renderer),
