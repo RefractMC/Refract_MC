@@ -225,15 +225,35 @@ function FriendsPanel() {
   const [adding, setAdding] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [listLoading, setListLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [myUsername, setMyUsername] = useState<string | null>(null)
   const [skinTarget, setSkinTarget] = useState<Friend | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    api.friends.list().then(list => setFriends(list as Friend[])).catch(() => {})
-    api.auth.active().then(a => setMyUsername(a?.username ?? null)).catch(() => {})
+  const refreshFriends = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true)
+    else setListLoading(true)
+    setError(null)
+    try {
+      const [list, active] = await Promise.all([
+        api.friends.list(),
+        api.auth.active().catch(() => null),
+      ])
+      setFriends(list as Friend[])
+      setMyUsername(active?.username ?? null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh friends.')
+    } finally {
+      if (showRefreshing) setRefreshing(false)
+      else setListLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void refreshFriends(false)
+  }, [refreshFriends])
 
   const handleNoteChange = useCallback(async (uuid: string, note: string) => {
     await api.friends.updateNote(uuid, note).catch(() => {})
@@ -289,32 +309,50 @@ function FriendsPanel() {
         <h5 style={{ margin: 0, fontSize: 10, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
           {t.sidebar.friends}{friends.length > 0 && ` · ${friends.length}`}
         </h5>
-        {!adding && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
-            onClick={startAdd}
-            title={t.sidebar.addFriendTitle}
+            onClick={() => void refreshFriends(true)}
+            title="Refresh friends"
+            disabled={refreshing || listLoading}
             style={{
               background: 'none', border: '1px solid var(--border-r)',
-              color: 'var(--ink-4)', cursor: 'pointer',
+              color: refreshing || listLoading ? 'var(--ink-5)' : 'var(--ink-4)',
+              cursor: refreshing || listLoading ? 'wait' : 'pointer',
               width: 18, height: 18, borderRadius: 3,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 14, lineHeight: 1, padding: 0,
+              fontSize: 12, lineHeight: 1, padding: 0,
               transition: 'color .12s, border-color .12s',
             }}
-            onMouseEnter={e => {
-              const b = e.currentTarget
-              b.style.color = 'var(--accent)'
-              b.style.borderColor = 'var(--accent)'
-            }}
-            onMouseLeave={e => {
-              const b = e.currentTarget
-              b.style.color = 'var(--ink-4)'
-              b.style.borderColor = 'var(--border-r)'
-            }}
           >
-            +
+            {refreshing ? '...' : 'R'}
           </button>
-        )}
+          {!adding && (
+            <button
+              onClick={startAdd}
+              title={t.sidebar.addFriendTitle}
+              style={{
+                background: 'none', border: '1px solid var(--border-r)',
+                color: 'var(--ink-4)', cursor: 'pointer',
+                width: 18, height: 18, borderRadius: 3,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 14, lineHeight: 1, padding: 0,
+                transition: 'color .12s, border-color .12s',
+              }}
+              onMouseEnter={e => {
+                const b = e.currentTarget
+                b.style.color = 'var(--accent)'
+                b.style.borderColor = 'var(--accent)'
+              }}
+              onMouseLeave={e => {
+                const b = e.currentTarget
+                b.style.color = 'var(--ink-4)'
+                b.style.borderColor = 'var(--border-r)'
+              }}
+            >
+              +
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Add friend form */}
@@ -368,7 +406,11 @@ function FriendsPanel() {
       )}
 
       {/* Friend list */}
-      {friends.length === 0 && !adding ? (
+      {listLoading ? (
+        <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
+          Loading friends...
+        </div>
+      ) : friends.length === 0 && !adding ? (
         <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
           {t.sidebar.noFriends}{' '}
           <button
@@ -397,10 +439,12 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
   const t = useT()
   const [hovered, setHovered]       = useState(false)
   const [imgSrc, setImgSrc] = useState<string | null>(null)
+  const [faceLoading, setFaceLoading] = useState(false)
   const [editingNote, setEditingNote] = useState(false)
   const [noteDraft, setNoteDraft]   = useState(friend.note ?? '')
   const [copied, setCopied]         = useState<string | null>(null)
   const noteRef = useRef<HTMLInputElement>(null)
+  const nameMcUrl = 'https://namemc.com/profile/' + friend.uuid
 
   function copy(text: string, key: string) {
     navigator.clipboard.writeText(text).catch(() => {})
@@ -409,14 +453,18 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
   }
 
   function openNameMC() {
-    void api.external.open(`https://namemc.com/profile/${friend.uuid}`)
+    void api.external.open(nameMcUrl)
   }
 
   useEffect(() => {
     let alive = true
     const load = async () => {
+      setFaceLoading(true)
       const face = await loadSkinFaceDataUrl(friend.uuid, 64, api.auth.fetchSkinTextureUrl)
-      if (alive) setImgSrc(face)
+      if (alive) {
+        setImgSrc(face)
+        setFaceLoading(false)
+      }
     }
     setImgSrc(null)
     void load()
@@ -459,6 +507,10 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
               style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
               onError={() => setImgSrc(null)}
             />
+          ) : faceLoading ? (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--ink-4)' }}>
+              ...
+            </div>
           ) : (
             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--ink-3)' }}>
               {friend.username[0]?.toUpperCase()}
@@ -478,11 +530,17 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
         {/* Action buttons (visible on hover) */}
         {hovered && (
           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-            <ActionBtn title={t.sidebar.copyUuid} active={copied === 'uuid'} onClick={() => copy(friend.uuid, 'uuid')}>
-              {copied === 'uuid' ? '✓' : '#'}
+            <ActionBtn title="Copy username" active={copied === 'name'} onClick={() => copy(friend.username, 'name')}>
+              A
             </ActionBtn>
-            <ActionBtn title="Copy /whitelist add command" active={copied === 'wl'} onClick={() => copy(`/whitelist add ${friend.username}`, 'wl')}>
-              {copied === 'wl' ? '✓' : '⊕'}
+            <ActionBtn title={t.sidebar.copyUuid} active={copied === 'uuid'} onClick={() => copy(friend.uuid, 'uuid')}>
+              #
+            </ActionBtn>
+            <ActionBtn title="Copy NameMC profile link" active={copied === 'namemc'} onClick={() => copy(nameMcUrl, 'namemc')}>
+              N
+            </ActionBtn>
+            <ActionBtn title="Copy /whitelist add command" active={copied === 'wl'} onClick={() => copy('/whitelist add ' + friend.username, 'wl')}>
+              +
             </ActionBtn>
             <ActionBtn title={t.sidebar.addNote} onClick={startNote}>✎</ActionBtn>
             <ActionBtn title={t.sidebar.removeFriend} danger onClick={onRemove}>✕</ActionBtn>
