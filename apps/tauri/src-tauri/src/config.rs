@@ -24,6 +24,7 @@ fn defaults() -> Value {
         "onboardingDone": false,
         "analyticsEnabled": true,
         "analyticsNoticeShown": false,
+        "migrationNotice120Shown": false,
         "accounts": []
     })
 }

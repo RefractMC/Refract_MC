@@ -43,6 +43,7 @@ declare global {
           reopenOnGameExit?: boolean
           analyticsEnabled?: boolean
           analyticsNoticeShown?: boolean
+          migrationNotice120Shown?: boolean
           systemRamGb?: number
           curseforgeApiKey?: string
           accounts: Array<{

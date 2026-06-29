@@ -104,6 +104,7 @@ function build(l: Locale) {
       instances: (n: number) => i(n !== 1 ? l.sync.instanceCountPlural : l.sync.instanceCount, { n }),
     },
 
+    migration: { ...l.migration },
     privacy: { ...l.privacy },
   }
 }

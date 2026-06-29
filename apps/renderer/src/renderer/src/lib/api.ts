@@ -45,6 +45,7 @@ const DEFAULT_CONFIG: AppConfig = {
   windowBounds: { width: 1280, height: 800 },
   defaultMemoryMb: 2048,
   onboardingDone: false,
+  migrationNotice120Shown: false,
   accounts: [],
 }
 

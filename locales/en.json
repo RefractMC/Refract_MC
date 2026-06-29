@@ -538,6 +538,13 @@
     "legendImport":      "copies mods/saves/configs into Refract (independent)"
   },
 
+  "migration": {
+    "title":             "Refract 1.2.0 update",
+    "body":              "Your launcher data is preserved after the Tauri upgrade. Microsoft accounts need a one-time sign-in again; offline accounts continue to work.",
+    "openAccounts":      "Open Accounts",
+    "dismiss":           "Dismiss"
+  },
+
   "privacy": {
     "title":             "Privacy",
     "analytics":         "Anonymous analytics",
