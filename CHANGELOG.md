@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+- **Tauri desktop app** - Refract now ships as a Tauri app with the same app identity and the same launcher data folder, so existing instances, settings, themes, worlds, screenshots, options, and server lists carry over.
+- **Electron-to-Tauri migration** - old Electron installs can update through a one-time bridge that downloads and starts the new Tauri installer; future updates are handled by the Tauri updater.
+- **Account migration note** - Microsoft accounts need a one-time sign-in again because tokens now live in a new secure vault; offline accounts continue to work.
+- **Native backend port** - install, launch, auth, Java management, mods, modpacks, worlds, screenshots, servers, skins, logs, activity, and Discord presence now run through the Rust/Tauri backend.
+- **Updater and release flow** - added signed Tauri updater artifacts, latest.json support, release workflows, and bridge release automation.
+- **UI polish** - refreshed top title bar, theme-aware chrome, sidebar controls, activity bell, theme manager, Minecraft News tab, Modrinth modpack changelogs, and packaged skin/friend heads.
+- **Reliability and security** - hardened Tauri capabilities, download paths, runtime panic handling, update checks, Forge/NeoForge launch paths, import rollback, crash diagnostics, and dependency audit overrides.
+
 ## 1.1.3
 - **Refreshed look** — a cleaner, flatter design across the app: a single consistent button style, calmer surfaces with the purple accent, and the pixel font and busy background effects retired.
 - **FTB modpacks** — browse, search and install Feed The Beast packs (with a version picker) right alongside Modrinth and CurseForge.
