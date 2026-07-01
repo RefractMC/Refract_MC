@@ -457,6 +457,7 @@
     "emptyContentSub": "Install content from the Content Browser.",
     "refresh":         "Refresh",
     "exportZip":       "Export ZIP",
+    "exportMrpack":    "Export .mrpack",
     "exporting":       "Exporting…",
     "addFile":         "+ Add File",
     "adding":          "Adding…",

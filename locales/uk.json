@@ -457,6 +457,7 @@
     "emptyContentSub": "Встановіть контент через браузер контенту.",
     "refresh":         "Оновити",
     "exportZip":       "Експорт ZIP",
+    "exportMrpack":    "Експорт .mrpack",
     "exporting":       "Експорт…",
     "addFile":         "+ Додати файл",
     "adding":          "Додавання…",

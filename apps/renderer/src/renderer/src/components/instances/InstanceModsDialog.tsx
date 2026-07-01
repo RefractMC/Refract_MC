@@ -340,7 +340,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     finally { setBusy(prev => { const n = new Set(prev); targets.forEach(e => n.delete(e.filename)); return n }) }
   }
 
-  async function handleExport() {
+  async function handleExport(format: 'zip' | 'mrpack' = 'zip') {
     if (!instance || exporting) return
     setExporting(true)
     setExportMsg(null)
@@ -349,7 +349,9 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
       if (p.id === instance.id) setExportPct(Math.round(p.percent))
     })
     try {
-      const path = await api.instance.export(instance.id)
+      const path = format === 'mrpack'
+        ? await api.instance.exportMrpack(instance.id, instance.name)
+        : await api.instance.export(instance.id)
       if (path) setExportMsg(`Exported to ${path}`)
     } catch (e) {
       setExportMsg(`Export failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -448,12 +450,22 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             <Button
               variant="secondary"
               size="sm"
-              onClick={handleExport}
+              onClick={() => handleExport('zip')}
               disabled={exporting}
               title="Export instance as ZIP"
               style={{ fontSize: 11 }}
             >
               {exporting ? td.exporting : td.exportZip}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleExport('mrpack')}
+              disabled={exporting}
+              title="Share as a Modrinth modpack (.mrpack) — importable in any launcher"
+              style={{ fontSize: 11 }}
+            >
+              {exporting ? td.exporting : td.exportMrpack}
             </Button>
             {tab === 'updates' && updatesAvailable.length > 0 && (
               <Button

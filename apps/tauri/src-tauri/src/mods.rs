@@ -865,6 +865,246 @@ pub async fn apply_mod_updates(
     Ok(results)
 }
 
+// ── .mrpack export ───────────────────────────────────────────────────────────
+
+/// Modrinth pack-format dependency key for an instance's loader.
+fn mrpack_loader_key(loader: &str) -> Option<&'static str> {
+    match loader {
+        "fabric" => Some("fabric-loader"),
+        "quilt" => Some("quilt-loader"),
+        "forge" => Some("forge"),
+        "neoforge" => Some("neoforge"),
+        _ => None,
+    }
+}
+
+fn emit_export_progress(app: &tauri::AppHandle, id: &str, current: u64, total: u64) {
+    use tauri::Emitter;
+    let percent = if total > 0 {
+        current as f64 * 100.0 / total as f64
+    } else {
+        100.0
+    };
+    let _ = app.emit(
+        "instance://export-progress",
+        json!({ "id": id, "current": current, "total": total, "percent": percent }),
+    );
+}
+
+/// Recursively collect (absolute path, zip-relative path) pairs under `dir`,
+/// where the relative path is prefixed with `prefix` (forward slashes).
+fn collect_override_files(dir: &Path, prefix: &str, out: &mut Vec<(PathBuf, String)>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let path = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        let rel = format!("{prefix}/{name}");
+        if path.is_dir() {
+            collect_override_files(&path, &rel, out);
+        } else {
+            out.push((path, rel));
+        }
+    }
+}
+
+/// Export an instance as a Modrinth-format modpack (.mrpack): content files that
+/// Modrinth recognises (by sha512) become downloadable `files` entries in
+/// `modrinth.index.json`; everything else (unknown jars, disabled files, config,
+/// options.txt, servers.dat) is bundled under `overrides/`. The result imports
+/// into any launcher that speaks the Modrinth pack format, including this one.
+#[tauri::command]
+pub async fn export_mrpack(
+    app: tauri::AppHandle,
+    instance_id: String,
+    dest_path: String,
+) -> Result<String, String> {
+    let instance =
+        instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
+    let game_root = game_dir(&instance_id);
+    let name = instance
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("Instance")
+        .to_string();
+    let mc_version = instance
+        .get("minecraftVersion")
+        .and_then(Value::as_str)
+        .ok_or("instance has no Minecraft version")?
+        .to_string();
+
+    emit_export_progress(&app, &instance_id, 0, 1);
+
+    // Enabled content files are candidates for Modrinth `files` entries; disabled
+    // ones go straight to overrides (keeping the .disabled suffix so the pack
+    // round-trips through import).
+    let scan: [(&str, &str); 4] = [
+        ("mods", ".jar"),
+        ("resourcepacks", ".zip"),
+        ("shaderpacks", ".zip"),
+        ("datapacks", ".zip"),
+    ];
+    let mut candidates: Vec<(PathBuf, String)> = Vec::new(); // (path, subdir/filename)
+    let mut overrides: Vec<(PathBuf, String)> = Vec::new(); // (path, zip-relative path)
+    for (subdir, ext) in scan {
+        let dir = game_root.join(subdir);
+        let Ok(read) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in read.flatten() {
+            let filename = entry.file_name().to_string_lossy().to_string();
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if filename.ends_with(ext) {
+                candidates.push((path, format!("{subdir}/{filename}")));
+            } else if filename.ends_with(".disabled") {
+                overrides.push((path, format!("overrides/{subdir}/{filename}")));
+            }
+        }
+    }
+    // Config and client settings travel as overrides.
+    collect_override_files(&game_root.join("config"), "overrides/config", &mut overrides);
+    for extra in ["options.txt", "servers.dat"] {
+        let p = game_root.join(extra);
+        if p.is_file() {
+            overrides.push((p, format!("overrides/{extra}")));
+        }
+    }
+
+    // Hash candidates off the async runtime, reusing the mtime/size hash cache.
+    let hashed: Vec<(PathBuf, String, String)> = {
+        let candidates = candidates.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut out = Vec::new();
+            for (path, rel) in candidates {
+                if let Ok(meta) = fs::metadata(&path) {
+                    if let Ok(hash) = sha512_file_cached(&path, &meta) {
+                        out.push((path, rel, hash));
+                    }
+                }
+            }
+            out
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    };
+
+    // Resolve which files Modrinth knows. A lookup failure downgrades everything
+    // to overrides rather than failing the export.
+    let mut known_map: HashMap<String, Value> = HashMap::new();
+    if !hashed.is_empty() {
+        let hashes: Vec<String> = hashed.iter().map(|(_, _, h)| h.clone()).collect();
+        let res = reqwest::Client::new()
+            .post("https://api.modrinth.com/v2/version_files")
+            .header("accept", "application/json")
+            .json(&json!({ "hashes": hashes, "algorithm": "sha512" }))
+            .send()
+            .await;
+        if let Ok(res) = res {
+            if net::validate_url(res.url().as_str(), net::MODRINTH_HOSTS).is_ok()
+                && res.status().is_success()
+            {
+                if let Ok(map) = res.json::<HashMap<String, Value>>().await {
+                    known_map = map;
+                }
+            }
+        }
+    }
+
+    // Split candidates into index `files` (Modrinth-known) and overrides.
+    let mut index_files: Vec<Value> = Vec::new();
+    for (path, rel, hash) in hashed {
+        let matched = known_map.get(&hash).and_then(|version| {
+            let files = version.get("files")?.as_array()?;
+            files.iter().find(|f| {
+                f.get("hashes")
+                    .and_then(|h| h.get("sha512"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| s.eq_ignore_ascii_case(&hash))
+            })
+        });
+        let entry = matched.and_then(|f| {
+            let url = f.get("url").and_then(Value::as_str)?;
+            net::validate_url(url, net::MODRINTH_HOSTS).ok()?;
+            let sha1 = f
+                .get("hashes")
+                .and_then(|h| h.get("sha1"))
+                .and_then(Value::as_str)?;
+            let size = f.get("size").and_then(Value::as_u64)?;
+            Some(json!({
+                "path": rel,
+                "hashes": { "sha1": sha1, "sha512": hash },
+                "env": { "client": "required", "server": "required" },
+                "downloads": [url],
+                "fileSize": size,
+            }))
+        });
+        match entry {
+            Some(e) => index_files.push(e),
+            None => overrides.push((path, format!("overrides/{rel}"))),
+        }
+    }
+
+    let mut dependencies = serde_json::Map::new();
+    dependencies.insert("minecraft".into(), json!(mc_version));
+    if let (Some(loader), Some(version)) = (
+        instance.get("modLoader").and_then(Value::as_str),
+        instance.get("modLoaderVersion").and_then(Value::as_str),
+    ) {
+        if let Some(key) = mrpack_loader_key(loader) {
+            dependencies.insert(key.into(), json!(version));
+        }
+    }
+    let index = json!({
+        "formatVersion": 1,
+        "game": "minecraft",
+        "versionId": "1.0.0",
+        "name": name,
+        "files": index_files,
+        "dependencies": dependencies,
+    });
+
+    // Write the archive off the main thread, streaming the shared export
+    // progress event so the existing UI progress bar just works.
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        use std::io::Write;
+        let total = overrides.len() as u64 + 1;
+        let file = fs::File::create(&dest_path).map_err(|e| {
+            format!("Couldn't write to {dest_path}: {e}. Pick a different folder (e.g. Downloads).")
+        })?;
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(true);
+
+        zip.start_file("modrinth.index.json", opts)
+            .map_err(|e| e.to_string())?;
+        let index_text = serde_json::to_string_pretty(&index).map_err(|e| e.to_string())?;
+        zip.write_all(index_text.as_bytes())
+            .map_err(|e| e.to_string())?;
+        let mut done = 1u64;
+        emit_export_progress(&app, &instance_id, done, total);
+
+        for (path, rel) in overrides {
+            // Skip unreadable files (e.g. locked by a running game) rather than
+            // aborting the whole export.
+            if let Ok(bytes) = fs::read(&path) {
+                zip.start_file(rel, opts).map_err(|e| e.to_string())?;
+                zip.write_all(&bytes).map_err(|e| e.to_string())?;
+            }
+            done += 1;
+            emit_export_progress(&app, &instance_id, done, total);
+        }
+        zip.finish().map_err(|e| e.to_string())?;
+        Ok(dest_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ── mod profiles (saved enabled-mod sets) ────────────────────────────────────
 
 fn profiles_path(instance_id: &str) -> PathBuf {

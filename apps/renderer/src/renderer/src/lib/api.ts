@@ -246,6 +246,7 @@ function createBrowserApi(): RefractAPI {
       openFolder:    async () => undefined,
       browseFolder:  async () => null,
       export:        async () => null,
+      exportMrpack:  async () => null,
       duplicate:     async () => null,
       importMultiMc:  async () => { throw new Error('MultiMC import requires the desktop app.') },
       scanExternal:   async () => [],
@@ -695,6 +696,12 @@ function createTauriApi(): RefractAPI {
         if (!dest) return null
         return tinvoke('export_instance', { id, destPath: dest })
       }) as RefractAPI['instance']['export'],
+      exportMrpack: (async (id: string, fileName?: string) => {
+        const base = (fileName ?? 'modpack').replace(/[<>:"/\\|?*]/g, '').trim() || 'modpack'
+        const dest = await dialogSave({ defaultPath: `${base}.mrpack`, filters: [{ name: 'Modrinth Modpack', extensions: ['mrpack'] }] })
+        if (!dest) return null
+        return tinvoke('export_mrpack', { instanceId: id, destPath: dest })
+      }) as RefractAPI['instance']['exportMrpack'],
     },
     // Modrinth stays on the fallback — its API is CORS-open, so the WebView
     // reaches it directly. CurseForge (key + no CORS) and FTB go through Rust.

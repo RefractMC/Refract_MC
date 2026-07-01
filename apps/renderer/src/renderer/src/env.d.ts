@@ -191,6 +191,7 @@ declare global {
         openFolder:   (id: string) => Promise<void>
         browseFolder: () => Promise<string | null>
         export:       (id: string) => Promise<string | null>
+        exportMrpack: (id: string, fileName?: string) => Promise<string | null>
         duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
         importMultiMc:  () => Promise<import('@refract/core').Instance | null>
         scanExternal:   () => Promise<ExternalInstance[]>

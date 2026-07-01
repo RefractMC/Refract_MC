@@ -108,6 +108,7 @@ pub fn run() {
             mods::mods_install_local,
             mods::install_mod_file,
             mods::install_content_file,
+            mods::export_mrpack,
             mods::check_mod_updates,
             mods::apply_mod_updates,
             mods::uninstall_mod,
