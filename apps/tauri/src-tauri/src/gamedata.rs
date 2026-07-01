@@ -128,6 +128,82 @@ pub fn mc_crash_report(instance_id: String) -> Option<CrashReport> {
     })
 }
 
+/// Newest crash report file path, if any.
+fn latest_crash_report_path(instance_id: &str) -> Option<PathBuf> {
+    let dir = instances::game_dir(instance_id).join("crash-reports");
+    let mut reports: Vec<(PathBuf, f64)> = fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "txt").unwrap_or(false))
+        .map(|p| {
+            let t = mtime_ms(&p);
+            (p, t)
+        })
+        .collect();
+    reports.sort_by(|a, b| b.1.total_cmp(&a.1));
+    reports.into_iter().next().map(|(p, _)| p)
+}
+
+/// mclo.gs caps uploads at 10 MB / 25k lines and silently truncates the *end*;
+/// trim to the last lines ourselves so the tail (where the error is) survives.
+fn tail_for_mclogs(text: &str) -> String {
+    const MAX_LINES: usize = 25_000;
+    const MAX_BYTES: usize = 10 * 1024 * 1024;
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.len().saturating_sub(MAX_LINES);
+    let mut out = lines[start..].join("\n");
+    if out.len() > MAX_BYTES {
+        let cut = out.len() - MAX_BYTES;
+        // Trim to a char boundary at/after the cut point.
+        let boundary = (cut..out.len())
+            .find(|i| out.is_char_boundary(*i))
+            .unwrap_or(out.len());
+        out = out[boundary..].to_string();
+    }
+    out
+}
+
+/// Upload a log to mclo.gs and return the share URL. `source` picks what to
+/// send: the game's latest.log, the newest crash report, or the launcher log.
+#[tauri::command]
+pub async fn mc_upload_log(instance_id: String, source: String) -> Result<String, String> {
+    let path = match source.as_str() {
+        "latest" => instances::game_dir(&instance_id).join("logs").join("latest.log"),
+        "crash" => latest_crash_report_path(&instance_id).ok_or("No crash report found.")?,
+        "launcher" => crate::paths::data_dir().join("logs").join("refract.log"),
+        other => return Err(format!("Unknown log source: {other}")),
+    };
+    let text = fs::read_to_string(&path)
+        .map_err(|_| format!("Log file not found: {}", path.display()))?;
+    if text.trim().is_empty() {
+        return Err("The log file is empty.".into());
+    }
+    let content = tail_for_mclogs(&text);
+
+    let res = reqwest::Client::new()
+        .post("https://api.mclo.gs/1/log")
+        .form(&[("content", content)])
+        .send()
+        .await
+        .map_err(|e| format!("Upload failed: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("mclo.gs returned HTTP {}", res.status()));
+    }
+    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if body.get("success").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err(body
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("mclo.gs rejected the upload")
+            .to_string());
+    }
+    body.get("url")
+        .and_then(serde_json::Value::as_str)
+        .map(String::from)
+        .ok_or("mclo.gs response had no URL".into())
+}
+
 /// Zip a world folder to `dest_path` (chosen via a save dialog in the renderer),
 /// off the main thread. Returns the path written.
 #[tauri::command]

@@ -139,6 +139,7 @@ pub fn run() {
             gamedata::mc_worlds,
             gamedata::mc_delete_world,
             gamedata::mc_crash_report,
+            gamedata::mc_upload_log,
             gamedata::mc_backup_world,
             gamedata::mc_screenshots,
             gamedata::mc_open_screenshot,

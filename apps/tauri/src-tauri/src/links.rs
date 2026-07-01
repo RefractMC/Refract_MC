@@ -24,6 +24,7 @@ const ALLOWED_EXTERNAL_HOSTS: &[&str] = &[
     "discordapp.com",
     "namemc.com",
     "www.namemc.com",
+    "mclo.gs",
 ];
 
 fn validate_external_url(value: &str) -> Result<String, String> {

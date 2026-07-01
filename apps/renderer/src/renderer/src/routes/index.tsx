@@ -496,7 +496,51 @@ function EmptyState({ onOpen }: { onOpen: () => void }) {
   )
 }
 
+/// Uploads a log to mclo.gs, copies the share link and opens it. A second click
+/// after a successful upload just re-opens the link.
+function UploadLogButton({ instanceId, source, style }: { instanceId: string; source: 'latest' | 'crash'; style?: React.CSSProperties }) {
+  const [state, setState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
+  const [url, setUrl] = useState<string | null>(null)
+  async function upload() {
+    if (state === 'uploading') return
+    if (url) { void api.external.open(url); return }
+    setState('uploading')
+    try {
+      const link = await api.mc.uploadLog(instanceId, source)
+      setUrl(link)
+      navigator.clipboard?.writeText(link).catch(() => {})
+      setState('done')
+      void api.external.open(link)
+    } catch {
+      setState('error')
+      setTimeout(() => setState('idle'), 3000)
+    }
+  }
+  const label = state === 'uploading' ? 'Uploading…'
+    : state === 'done' ? 'Link copied ↗'
+    : state === 'error' ? 'Upload failed'
+    : 'Upload to mclo.gs'
+  return (
+    <button
+      onClick={upload}
+      disabled={state === 'uploading'}
+      title="Upload the log to mclo.gs and copy a shareable link"
+      style={{
+        height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700,
+        background: state === 'done' ? 'var(--grass)' : 'var(--surface-2)',
+        color: state === 'done' ? '#fff' : state === 'error' ? 'var(--lava, #d93b3b)' : 'var(--ink)',
+        border: '1px solid var(--border-r)', borderRadius: 3,
+        cursor: state === 'uploading' ? 'default' : 'pointer', transition: 'background .15s',
+        ...style,
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
 function CrashReportModal({
+  instanceId,
   instanceName,
   text,
   diagnosticText,
@@ -508,6 +552,7 @@ function CrashReportModal({
   onOpenConsole,
   onOpenFolder,
 }: {
+  instanceId: string
   instanceName: string
   text: string
   diagnosticText: string
@@ -557,6 +602,7 @@ function CrashReportModal({
             <button onClick={copyDiagnosticsNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: diagnosticCopied ? 'var(--grass)' : 'var(--surface-2)', color: diagnosticCopied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', transition: 'background .15s' }}>
               {diagnosticCopied ? 'Copied!' : 'Copy diagnostics'}
             </button>
+            <UploadLogButton instanceId={instanceId} source={reportFileName ? 'crash' : 'latest'} />
             <button onClick={onOpenConsole} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}>Open logs</button>
             <button onClick={onOpenFolder} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}>Open folder</button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
@@ -662,7 +708,7 @@ const secondaryBtnStyle: React.CSSProperties = {
   fontSize: 14, fontWeight: 600,
 }
 
-function ConsoleModal({ instanceName, lines, onClose }: { instanceName: string; lines: string[]; onClose: () => void }) {
+function ConsoleModal({ instanceId, instanceName, lines, onClose }: { instanceId: string; instanceName: string; lines: string[]; onClose: () => void }) {
   const t = useT()
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [lines])
@@ -695,7 +741,10 @@ function ConsoleModal({ instanceName, lines, onClose }: { instanceName: string; 
           <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, fontWeight: 600, color: 'var(--grass)', letterSpacing: '.02em' }}>
             {t.home.consoleTitle(instanceName)}
           </span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <UploadLogButton instanceId={instanceId} source="latest" style={{ height: 26 }} />
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
+          </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
           {lines.length === 0
@@ -1971,6 +2020,7 @@ function Library() {
         const inst = instances.find(i => i.id === consoleOpen)
         return (
           <ConsoleModal
+            instanceId={consoleOpen}
             instanceName={inst?.name ?? consoleOpen}
             lines={consoleLogs.get(consoleOpen) ?? []}
             onClose={() => setConsoleOpen(null)}
@@ -1982,6 +2032,7 @@ function Library() {
         const inst = instances.find(i => i.id === crashReport.instanceId)
         return (
           <CrashReportModal
+            instanceId={crashReport.instanceId}
             instanceName={inst?.name ?? crashReport.instanceId}
             text={crashReport.text}
             diagnosticText={crashReport.diagnosticText}
