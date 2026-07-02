@@ -154,6 +154,7 @@ function createBrowserApi(): RefractAPI {
     },
     auth: {
       accounts: async () => getConfig().accounts,
+      validate: async () => true,
       active: async () => {
         const config = getConfig()
         return config.accounts.find((account) => account.uuid === config.activeAccountId) ?? null
@@ -906,6 +907,7 @@ function createTauriApi(): RefractAPI {
     auth: {
       ...base.auth,
       accounts: (() => tinvoke('auth_accounts')) as RefractAPI['auth']['accounts'],
+      validate: ((uuid: string) => tinvoke('auth_validate', { uuid })) as RefractAPI['auth']['validate'],
       active: (() => tinvoke('auth_active')) as RefractAPI['auth']['active'],
       microsoftBegin: (() => tinvoke('auth_microsoft_begin')) as RefractAPI['auth']['microsoftBegin'],
       microsoftComplete: ((deviceCode: string) => tinvoke('auth_microsoft_complete', { deviceCode })) as RefractAPI['auth']['microsoftComplete'],

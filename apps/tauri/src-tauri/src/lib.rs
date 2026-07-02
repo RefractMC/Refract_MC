@@ -69,6 +69,7 @@ pub fn run() {
             auth::auth_microsoft_complete,
             auth::auth_yggdrasil_login,
             auth::auth_accounts,
+            auth::auth_validate,
             auth::auth_active,
             auth::auth_create_offline,
             auth::auth_rename_offline,

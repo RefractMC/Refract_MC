@@ -86,6 +86,7 @@ declare global {
           licenseStatus: 'verified' | 'guest'
           needsReauth?: boolean
         }>>
+        validate: (uuid: string) => Promise<boolean>
         active: () => Promise<{
           uuid: string
           username: string

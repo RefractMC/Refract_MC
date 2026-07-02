@@ -111,6 +111,16 @@ function Account() {
 
   useEffect(() => {
     refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)))
+    // Proactively validate signed-in sessions (silently refreshing tokens where
+    // possible) so an expired account shows its re-login prompt right away
+    // instead of failing at the next launch.
+    void (async () => {
+      const accs = await api.auth.accounts().catch(() => [])
+      const authed = accs.filter(a => a.type === 'microsoft' || a.type === 'yggdrasil')
+      if (authed.length === 0) return
+      await Promise.all(authed.map(a => api.auth.validate(a.uuid).catch(() => false)))
+      await refresh().catch(() => {})
+    })()
   }, [])
 
   async function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {

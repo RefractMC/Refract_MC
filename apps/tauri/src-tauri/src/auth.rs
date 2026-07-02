@@ -578,6 +578,26 @@ pub fn auth_accounts() -> Vec<Value> {
     accounts().iter().map(safe_account).collect()
 }
 
+/// Proactively check an authenticated account's session, silently refreshing
+/// the token when possible. On failure `mc_token` marks the account
+/// `needsReauth`, so the accounts page can show its re-login prompt without
+/// waiting for a launch to fail. Offline accounts are always valid.
+#[tauri::command]
+pub async fn auth_validate(uuid: String) -> bool {
+    let ty = accounts()
+        .into_iter()
+        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
+        .and_then(|a| {
+            a.get("type")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string())
+        });
+    match ty.as_deref() {
+        Some("microsoft") | Some("yggdrasil") => mc_token(&uuid).await.is_ok(),
+        _ => true,
+    }
+}
+
 #[tauri::command]
 pub fn auth_active() -> Option<Value> {
     let cfg = config::read();
