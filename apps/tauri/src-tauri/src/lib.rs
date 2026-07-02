@@ -48,6 +48,7 @@ pub fn run() {
             theme::theme_delete,
             theme::theme_browse_background_image,
             system::system_ram_gb,
+            system::system_available_ram_mb,
             log::log_write,
             log::logs_read,
             log::logs_clear,

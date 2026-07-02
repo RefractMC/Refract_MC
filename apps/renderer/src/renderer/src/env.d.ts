@@ -29,6 +29,7 @@ declare global {
       }
       system: {
         ramGb: () => Promise<number>
+        availableRamMb: () => Promise<number | null>
       }
       config: {
         get: () => Promise<{

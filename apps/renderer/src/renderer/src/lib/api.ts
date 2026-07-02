@@ -130,6 +130,7 @@ function createBrowserApi(): RefractAPI {
     },
     system: {
       ramGb: async () => 16,
+      availableRamMb: async () => null,
     },
     config: {
       get: async () => getConfig(),
@@ -636,6 +637,7 @@ function createTauriApi(): RefractAPI {
     system: {
       ...base.system,
       ramGb: (() => tinvoke('system_ram_gb')) as RefractAPI['system']['ramGb'],
+      availableRamMb: (() => tinvoke('system_available_ram_mb')) as RefractAPI['system']['availableRamMb'],
     },
     log: {
       ...base.log,

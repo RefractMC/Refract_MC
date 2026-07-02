@@ -28,6 +28,7 @@ function build(l: Locale) {
       bulkDeleteBody:(n: number)    => i(l.home.bulkDeleteBody, { n }),
       moveDesc:      (n: number)    => i(l.home.moveDesc, { n }),
       modCount:      (n: number)    => i(l.home.modCount, { n }),
+      ramWarnBody:   (need: string, avail: string) => i(l.home.ramWarnBody, { need, avail }),
     },
 
     browse: {
