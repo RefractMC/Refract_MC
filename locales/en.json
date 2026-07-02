@@ -484,6 +484,8 @@
     "copied":          "Copied!",
     "join":            "Join",
     "play":            "Play",
+    "importWorld":     "Import World",
+    "importingWorld":  "Importing…",
     "openViewer":      "Open in viewer ↗",
     "profiles":        "Profiles",
     "saveProfile":     "+ Save Profile",

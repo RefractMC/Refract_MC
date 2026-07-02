@@ -109,6 +109,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   const [busy, setBusy]                  = useState<Set<string>>(new Set())
   const [error, setError]                = useState<string | null>(null)
   const [exporting, setExporting]        = useState(false)
+  const [importingWorld, setImportingWorld] = useState(false)
   const [exportMsg, setExportMsg]        = useState<string | null>(null)
   const [exportPct, setExportPct]        = useState<number | null>(null)
   const [updatingAll, setUpdatingAll]    = useState(false)
@@ -340,6 +341,19 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
     finally { setBusy(prev => { const n = new Set(prev); targets.forEach(e => n.delete(e.filename)); return n }) }
   }
 
+  async function handleImportWorld() {
+    if (!instance || importingWorld) return
+    setImportingWorld(true)
+    try {
+      const name = await api.mc.importWorld(instance.id)
+      if (name) await loadWorlds()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImportingWorld(false)
+    }
+  }
+
   async function handleExport(format: 'zip' | 'mrpack' = 'zip') {
     if (!instance || exporting) return
     setExporting(true)
@@ -500,6 +514,18 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 style={{ fontSize: 11 }}
               >
                 {addingMod ? td.adding : td.addFile}
+              </Button>
+            )}
+            {tab === 'worlds' && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleImportWorld}
+                disabled={importingWorld}
+                title="Import a world from a zip backup"
+                style={{ fontSize: 11 }}
+              >
+                {importingWorld ? td.importingWorld : td.importWorld}
               </Button>
             )}
             <Button

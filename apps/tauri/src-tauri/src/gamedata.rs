@@ -128,6 +128,100 @@ pub fn mc_crash_report(instance_id: String) -> Option<CrashReport> {
     })
 }
 
+/// Import a world from a zip archive (e.g. a Refract world backup) into the
+/// instance's saves dir. Accepts level.dat at the archive root or inside a
+/// single top-level folder. Returns the created world folder name.
+#[tauri::command]
+pub async fn mc_import_world(instance_id: String, zip_path: String) -> Result<String, String> {
+    let saves = instances::game_dir(&instance_id).join("saves");
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let file =
+            fs::File::open(&zip_path).map_err(|e| format!("Couldn't open archive: {e}"))?;
+        let mut zip =
+            zip::ZipArchive::new(file).map_err(|_| "Not a valid zip archive.".to_string())?;
+
+        // Find level.dat to learn the layout: at the root, or under one folder.
+        let mut prefix: Option<String> = None;
+        for i in 0..zip.len() {
+            let name = {
+                let entry = zip.by_index(i).map_err(|e| e.to_string())?;
+                entry.name().replace('\\', "/")
+            };
+            if name == "level.dat" {
+                prefix = Some(String::new());
+                break;
+            }
+            if let Some(dir) = name.strip_suffix("/level.dat") {
+                if !dir.contains('/') {
+                    prefix = Some(format!("{dir}/"));
+                    break;
+                }
+            }
+        }
+        let prefix =
+            prefix.ok_or("No level.dat found — this doesn't look like a world archive.")?;
+
+        // World folder name: the archive's top folder, else the zip's file stem.
+        let raw_name = if prefix.is_empty() {
+            Path::new(&zip_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "world".into())
+        } else {
+            prefix.trim_end_matches('/').to_string()
+        };
+        let invalid = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+        let base: String = raw_name
+            .chars()
+            .filter(|c| !invalid.contains(c) && !c.is_control())
+            .collect();
+        let base = base.trim().trim_end_matches('.').trim().to_string();
+        let base = if base.is_empty() {
+            "world".to_string()
+        } else {
+            base
+        };
+        let mut name = base.clone();
+        let mut n = 2;
+        while saves.join(&name).exists() {
+            name = format!("{base} ({n})");
+            n += 1;
+        }
+        let dest = saves.join(&name);
+        fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+            let Some(rel) = entry.enclosed_name().map(|p| p.to_path_buf()) else {
+                continue;
+            };
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            let Some(stripped) = rel_str.strip_prefix(prefix.as_str()) else {
+                continue;
+            };
+            if stripped.is_empty() {
+                continue;
+            }
+            let out = dest.join(stripped);
+            if !out.starts_with(&dest) {
+                continue;
+            }
+            if entry.is_dir() {
+                fs::create_dir_all(&out).ok();
+            } else {
+                if let Some(p) = out.parent() {
+                    fs::create_dir_all(p).ok();
+                }
+                let mut f = fs::File::create(&out).map_err(|e| e.to_string())?;
+                std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(name)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Newest crash report file path, if any.
 fn latest_crash_report_path(instance_id: &str) -> Option<PathBuf> {
     let dir = instances::game_dir(instance_id).join("crash-reports");

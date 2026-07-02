@@ -383,6 +383,7 @@ function createBrowserApi(): RefractAPI {
       stop: async () => undefined,
       crashReport: async () => null,
       uploadLog: async () => { throw new Error('Log upload requires the desktop app.') },
+      importWorld: async () => { throw new Error('World import requires the desktop app.') },
       worlds: async () => [],
       deleteWorld: async () => undefined,
       screenshots: async () => [],
@@ -943,6 +944,11 @@ function createTauriApi(): RefractAPI {
       deleteWorld: ((instanceId: string, worldName: string) => tinvoke('mc_delete_world', { instanceId, worldName })) as RefractAPI['mc']['deleteWorld'],
       crashReport: ((instanceId: string) => tinvoke('mc_crash_report', { instanceId })) as RefractAPI['mc']['crashReport'],
       uploadLog: ((instanceId: string, source: 'latest' | 'crash' | 'launcher') => tinvoke('mc_upload_log', { instanceId, source })) as RefractAPI['mc']['uploadLog'],
+      importWorld: (async (instanceId: string) => {
+        const src = await dialogOpen({ multiple: false, title: 'Select World Backup (.zip)', filters: [{ name: 'ZIP Archive', extensions: ['zip'] }] })
+        if (typeof src !== 'string') return null
+        return tinvoke('mc_import_world', { instanceId, zipPath: src })
+      }) as RefractAPI['mc']['importWorld'],
       backupWorld: (async (instanceId: string, worldName: string) => {
         const dest = await dialogSave({ defaultPath: `${worldName}-backup.zip`, filters: [{ name: 'ZIP Archive', extensions: ['zip'] }] })
         if (!dest) return null
