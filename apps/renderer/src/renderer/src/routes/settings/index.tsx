@@ -477,6 +477,12 @@ function Settings() {
                   <SegmentButton active={!(config?.reopenOnGameExit)} disabled={false} onClick={() => { api.config.set('reopenOnGameExit', false).catch(() => {}); setConfig(c => c ? { ...c, reopenOnGameExit: false } : c); showToast(t.settings.reopenOnExitOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
+              <Field label={t.settings.showCat} note={t.settings.showCatNote}>
+                <Segmented>
+                  <SegmentButton active={!!(config?.showCat)} disabled={false} onClick={() => { api.config.set('showCat', true).catch(() => {}); setConfig(c => c ? { ...c, showCat: true } : c); showToast(t.settings.showCatOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={!(config?.showCat)} disabled={false} onClick={() => { api.config.set('showCat', false).catch(() => {}); setConfig(c => c ? { ...c, showCat: false } : c); showToast(t.settings.showCatOff) }}>{t.settings.off}</SegmentButton>
+                </Segmented>
+              </Field>
             </div>
           </Panel>
 

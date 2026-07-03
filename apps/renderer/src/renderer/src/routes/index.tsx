@@ -13,6 +13,7 @@ import { InstanceModsDialog } from '@/components/instances/InstanceModsDialog'
 import { ServersDialog } from '@/components/instances/ServersDialog'
 import { InstallProgress } from '@/components/minecraft/InstallProgress'
 import { Button } from '@/components/ui/Button'
+import { CornerCat } from '@/components/ui/CornerCat'
 import { useInstances, useCreateInstance, useUpdateInstance, useDeleteInstance } from '@/hooks/use-instances'
 import { analyticsAvailable, api, type AppConfig, type QuickPlayTarget } from '@/lib/api'
 import { getFilePath } from '@/lib/file-path'
@@ -2232,6 +2233,8 @@ function Library() {
           <button onClick={() => dismissAnalyticsNotice()} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>{t.privacy.noticeDismiss}</button>
         </div>
       )}
+
+      <CornerCat />
     </div>
   )
 }

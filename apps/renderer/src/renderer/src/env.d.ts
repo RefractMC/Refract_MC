@@ -42,6 +42,7 @@ declare global {
           startMinimized?: boolean
           launchMinimizesToTray?: boolean
           reopenOnGameExit?: boolean
+          showCat?: boolean
           analyticsEnabled?: boolean
           analyticsNoticeShown?: boolean
           migrationNotice120Shown?: boolean

@@ -362,7 +362,11 @@
     "hideOnLaunchOn": "Hide on launch on.",
     "hideOnLaunchOff": "Hide on launch off.",
     "reopenOnExitOn": "Reopen on exit on.",
-    "reopenOnExitOff": "Reopen on exit off."
+    "reopenOnExitOff": "Reopen on exit off.",
+    "showCat": "Show the cat",
+    "showCatNote": "A little pixel cat keeps you company on the home screen. It dresses up for holidays.",
+    "showCatOn": "The cat has arrived. meow~",
+    "showCatOff": "The cat went home."
   },
   "account": {
     "title": "Accounts",
