@@ -80,8 +80,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # XProtect's behavioral scanner intermittently locks the DMG staging dir,
+      # making `hdiutil create` fail with "Resource busy" — see
+      # https://github.com/actions/runner-images/issues/7522
+      - name: Stop XProtect (hdiutil "Resource busy" workaround)
+        if: runner.os == 'macOS'
+        run: |
+          sudo pkill -9 XProtect >/dev/null 2>&1 || true
+          while pgrep XProtect >/dev/null; do sleep 3; done
+
       - name: Build development bundle
-        run: pnpm --filter @refract/tauri-poc build
+        run: pnpm --filter @refract/tauri-poc build --verbose
 
       - name: Upload development artifacts
         uses: actions/upload-artifact@v4

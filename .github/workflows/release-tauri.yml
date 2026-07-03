@@ -72,6 +72,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # XProtect's behavioral scanner intermittently locks the DMG staging dir,
+      # making `hdiutil create` fail with "Resource busy" — see
+      # https://github.com/actions/runner-images/issues/7522
+      - name: Stop XProtect (hdiutil "Resource busy" workaround)
+        if: runner.os == 'macOS'
+        run: |
+          sudo pkill -9 XProtect >/dev/null 2>&1 || true
+          while pgrep XProtect >/dev/null; do sleep 3; done
+
       - name: Build, sign & publish
         uses: tauri-apps/tauri-action@v0.6.2
         env:
