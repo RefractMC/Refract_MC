@@ -48,6 +48,7 @@ declare global {
           migrationNotice120Shown?: boolean
           systemRamGb?: number
           curseforgeApiKey?: string
+          curseforgeApiKeyConfigured?: boolean
           accounts: Array<{
             uuid: string
             username: string
@@ -319,3 +320,4 @@ declare global {
     }
   }
 }
+

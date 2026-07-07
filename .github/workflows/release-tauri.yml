@@ -91,6 +91,9 @@ jobs:
           # Baked into the Rust binary at compile time via option_env! in analytics.rs.
           # Without this, analytics stays inert in released Tauri builds.
           GA_API_SECRET: ${{ secrets.GA_API_SECRET }}
+          # Baked into the Rust binary at compile time via option_env! in config.rs.
+          # User-provided Settings keys still override this for local testing.
+          CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         with:
           projectPath: apps/tauri
           tagName: ${{ github.event.inputs.tag || github.ref_name }}

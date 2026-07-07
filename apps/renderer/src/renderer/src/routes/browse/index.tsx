@@ -831,7 +831,8 @@ function SideLabel({ children }: { children: React.ReactNode }) {
 function Browse() {
   const t = useT()
   const [source, setSource] = useState<'mr' | 'cf'>('mr')
-  const [cfApiKey, setCfApiKey] = useState<string | null>(null)
+  const [cfAvailable, setCfAvailable] = useState(false)
+  const [cfError, setCfError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [loader, setLoader] = useState('All')
@@ -871,7 +872,7 @@ function Browse() {
 
   useEffect(() => {
     api.instance.list().then(setInstances).catch(() => setInstances([]))
-    api.config.get().then(cfg => setCfApiKey((cfg as { curseforgeApiKey?: string }).curseforgeApiKey ?? null)).catch(() => {})
+    api.config.get().then(cfg => setCfAvailable(!!(cfg as { curseforgeApiKey?: string; curseforgeApiKeyConfigured?: boolean }).curseforgeApiKeyConfigured || !!(cfg as { curseforgeApiKey?: string }).curseforgeApiKey)).catch(() => {})
   }, [])
 
   // Restore filters from localStorage on mount
@@ -974,12 +975,12 @@ function Browse() {
   }
 
   useEffect(() => {
-    if (source === 'cf' && !cfApiKey) return
+    if (source === 'cf' && !cfAvailable) return
     if (searchRef.current) clearTimeout(searchRef.current)
     searchRef.current = setTimeout(() => doSearch(0), query ? 400 : 0)
     return () => { if (searchRef.current) clearTimeout(searchRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, category, loader, gameVersion, sort, source, cfApiKey, suggested])
+  }, [query, category, loader, gameVersion, sort, source, cfAvailable, suggested])
 
   async function doSearch(newOffset: number) {
     setLoading(true)
@@ -988,7 +989,8 @@ function Browse() {
     const effectiveVersion = query === '' && gameVersion === null ? suggested?.version ?? null : gameVersion
     const effectiveLoader = query === '' && loader === 'All' ? (suggested?.loader ?? null) : (loader !== 'All' ? loader : null)
     try {
-      if (source === 'cf' && cfApiKey) {
+      setCfError(null)
+      if (source === 'cf' && cfAvailable) {
         const gameLoader = effectiveLoader ?? undefined
         const res = await api.curseforge.searchMods(query || undefined, effectiveVersion ?? undefined, gameLoader, LIMIT, newOffset)
         const cfRes = res as { data: CFProject[]; pagination: { totalCount: number } }
@@ -1009,7 +1011,13 @@ function Browse() {
         setTotal(res.total_hits)
       }
     } catch (e) {
-      showToast(`Search failed: ${e instanceof Error ? e.message : 'Unknown error'}`, false)
+      const message = e instanceof Error ? e.message : 'Unknown error'
+      if (source === 'cf') {
+        setCfResults([])
+        setTotal(0)
+        setCfError(message)
+      }
+      showToast(`Search failed: ${message}`, false)
     } finally {
       setLoading(false)
     }
@@ -1142,7 +1150,7 @@ function Browse() {
       </div>
 
       {/* No API key notice */}
-      {source === 'cf' && !cfApiKey ? (
+      {source === 'cf' && !cfAvailable ? (
         <div style={{ padding: '40px 24px', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '.04em', color: 'var(--ender)' }}>
             {t.browse.noApiKey}
@@ -1225,7 +1233,11 @@ function Browse() {
           {loading ? (
             <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.loading}</div>
           ) : source === 'cf' ? (
-            cfResults.length === 0 ? (
+            cfError ? (
+              <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>
+                CurseForge is unavailable: {cfError}
+              </div>
+            ) : cfResults.length === 0 ? (
               <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.noMods}</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
@@ -1830,3 +1842,4 @@ function CFModDetailModal({ mod, onClose, onInstall }: { mod: CFProject; onClose
     </div>
   )
 }
+

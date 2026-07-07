@@ -29,6 +29,13 @@ fn defaults() -> Value {
     })
 }
 
+fn baked_curseforge_api_key() -> Option<String> {
+    option_env!("CURSEFORGE_API_KEY")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// Load config, filling in any keys missing from the on-disk file (same
 /// forward-compatible merge config.ts does).
 fn load() -> Value {
@@ -64,6 +71,10 @@ pub fn config_get() -> Result<Value, String> {
     }
     if let Some(map) = cfg.as_object_mut() {
         map.insert("systemRamGb".into(), json!(system::ram_gb_value()));
+        map.insert(
+            "curseforgeApiKeyConfigured".into(),
+            json!(curseforge_api_key().is_some()),
+        );
     }
     Ok(cfg)
 }
@@ -73,7 +84,10 @@ pub fn curseforge_api_key() -> Option<String> {
     load()
         .get("curseforgeApiKey")
         .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
         .map(str::to_string)
+        .or_else(baked_curseforge_api_key)
 }
 
 /// Read the merged config (accounts, defaultMemoryMb, …) for non-command callers

@@ -1193,6 +1193,7 @@ function ContentBrowser() {
   const [cfResults, setCfResults]         = useState<CFProject[]>([])
   const [cfTotal, setCfTotal]             = useState(0)
   const [cfHasKey, setCfHasKey]           = useState(true)
+  const [cfError, setCfError]             = useState<string | null>(null)
   const [cfInstallTarget, setCfInstall]   = useState<CFProject | null>(null)
   const [cfDetailTarget, setCfDetail]     = useState<CFProject | null>(null)
   const [ftbResults, setFtbResults]       = useState<FtbModpack[]>([])
@@ -1216,7 +1217,7 @@ function ContentBrowser() {
 
   useEffect(() => {
     api.instance.list().then(setInstances).catch(() => {})
-    api.config.get().then(c => setCfHasKey(!!c.curseforgeApiKey)).catch(() => {})
+    api.config.get().then(c => setCfHasKey(!!c.curseforgeApiKeyConfigured || !!c.curseforgeApiKey)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -1297,10 +1298,15 @@ function ContentBrowser() {
 
     if (tab === 'modpack' && cfSource === 'curseforge') {
       try {
+        setCfError(null)
         const res = await api.curseforge.searchModpacks(query || undefined, gameVersion ?? undefined, LIMIT, newOffset)
         setCfResults(res.data as CFProject[])
         setCfTotal(res.pagination.totalCount)
-      } catch { setCfResults([]); setCfTotal(0) }
+      } catch (e) {
+        setCfResults([])
+        setCfTotal(0)
+        setCfError(e instanceof Error ? e.message : 'Unknown error')
+      }
       finally { setLoading(false) }
       return
     }
@@ -1488,7 +1494,11 @@ function ContentBrowser() {
       {loading ? (
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.content.loading}</div>
       ) : tab === 'modpack' && cfSource === 'curseforge' ? (
-        cfHasKey && (cfResults.length === 0
+        !cfHasKey
+          ? <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.browse.noApiKeyDesc}</div>
+          : cfError
+          ? <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>CurseForge is unavailable: {cfError}</div>
+          : cfResults.length === 0
           ? <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.content.cfNoModpacks}</div>
           : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
               {cfResults.map(p => (
@@ -1500,7 +1510,7 @@ function ContentBrowser() {
                   onInstall={() => setCfInstall(p)}
                 />
               ))}
-            </div>)
+            </div>
       ) : tab === 'modpack' && cfSource === 'ftb' ? (
         ftbResults.length === 0
           ? <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>{t.content.cfNoModpacks}</div>
@@ -2018,3 +2028,4 @@ function CFModpackDetailModal({ project, onClose, onInstall }: {
     </div>
   )
 }
+

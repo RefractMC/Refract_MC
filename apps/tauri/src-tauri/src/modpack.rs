@@ -8,8 +8,13 @@
 use crate::{config, instances, mc_install, net, paths};
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha1::{Digest as Sha1Digest, Sha1};
 use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 const UA: &str = "Refract/1.0 (github.com/ShevRuslan1)";
@@ -209,9 +214,150 @@ async fn cf_file_name(project: u64, file: u64, cd: &str, final_url: &str) -> Str
         .unwrap_or_else(|| format!("{project}-{file}.jar"))
 }
 
+#[derive(Clone, Debug)]
+struct CfRequiredFile {
+    project: u64,
+    file: u64,
+    file_name: Option<String>,
+    sha1: Option<String>,
+}
+
+fn safe_filename(name: &str) -> String {
+    Path::new(name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "mod.jar".to_string())
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn cf_display_name(file: &CfRequiredFile) -> String {
+    file.file_name
+        .clone()
+        .unwrap_or_else(|| format!("{}:{}", file.project, file.file))
+}
+
+fn sha1_file(path: &Path) -> Result<String, String> {
+    let mut file =
+        File::open(path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    let mut hasher = Sha1::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+async fn cf_required_file(project: u64, file: u64) -> CfRequiredFile {
+    let mut out = CfRequiredFile {
+        project,
+        file,
+        file_name: None,
+        sha1: None,
+    };
+    let Some(key) = config::curseforge_api_key() else {
+        return out;
+    };
+    let url = format!("https://api.curseforge.com/v1/mods/{project}/files/{file}");
+    let Ok(res) = client()
+        .get(url)
+        .header("x-api-key", key)
+        .header("Accept", "application/json")
+        .send()
+        .await
+    else {
+        return out;
+    };
+    if !res.status().is_success() {
+        return out;
+    }
+    let Ok(body) = res.json::<Value>().await else {
+        return out;
+    };
+    let data = &body["data"];
+    out.file_name = data["fileName"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string);
+    out.sha1 = data["hashes"].as_array().and_then(|hashes| {
+        hashes.iter().find_map(|h| {
+            let value = h["value"].as_str()?.trim();
+            let algo = h["algo"].as_i64();
+            if algo == Some(1) || value.len() == 40 {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
+    });
+    out
+}
+
+async fn cf_required_files(files: &[Value]) -> Vec<CfRequiredFile> {
+    let mut out = Vec::new();
+    for f in files {
+        if let (Some(project), Some(file)) = (f["projectID"].as_u64(), f["fileID"].as_u64()) {
+            out.push(cf_required_file(project, file).await);
+        }
+    }
+    out
+}
+
+fn cf_file_present(mods_dir: &Path, required: &CfRequiredFile) -> bool {
+    if let Some(want) = required.sha1.as_deref() {
+        let Ok(entries) = fs::read_dir(mods_dir) else {
+            return false;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file()
+                && sha1_file(&path)
+                    .map(|got| got.eq_ignore_ascii_case(want))
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    required
+        .file_name
+        .as_deref()
+        .map(|name| mods_dir.join(safe_filename(name)).exists())
+        .unwrap_or(false)
+}
+
+fn audit_cf_manifest(mods_dir: &Path, required: &[CfRequiredFile]) -> Vec<CfRequiredFile> {
+    required
+        .iter()
+        .filter(|file| !cf_file_present(mods_dir, file))
+        .cloned()
+        .collect()
+}
+
 /// Download a CurseForge file via the public CDN (works for redistributable
-/// mods); filename comes from Content-Disposition, then CF metadata. Best-effort.
-async fn download_cf_cdn(project: u64, file: u64, dest_dir: &Path) -> Result<(), String> {
+/// mods); filename comes from Content-Disposition, then CF metadata.
+async fn download_cf_cdn(
+    project: u64,
+    file: u64,
+    dest_dir: &Path,
+    expected_sha1: Option<&str>,
+    preferred_name: Option<&str>,
+) -> Result<PathBuf, String> {
     let url = format!("https://www.curseforge.com/api/v1/mods/{project}/files/{file}/download");
     net::validate_url(&url, net::CURSEFORGE_HOSTS)?;
     let res = client().get(&url).send().await.map_err(|e| e.to_string())?;
@@ -225,20 +371,29 @@ async fn download_cf_cdn(project: u64, file: u64, dest_dir: &Path) -> Result<(),
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let name = cf_file_name(project, file, &cd, res.url().as_str()).await;
-    let safe: String = name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '.' || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
+    let name = if let Some(name) = preferred_name {
+        name.to_string()
+    } else if let Some(name) = filename_from_disposition(&cd) {
+        name
+    } else {
+        cf_file_name(project, file, &cd, res.url().as_str()).await
+    };
+    let safe = safe_filename(&name);
     let bytes = res.bytes().await.map_err(|e| e.to_string())?;
     fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
-    fs::write(dest_dir.join(safe), &bytes).map_err(|e| e.to_string())
+    let dest = dest_dir.join(safe);
+    fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    if let Some(want) = expected_sha1.filter(|s| !s.is_empty()) {
+        let got = sha1_file(&dest)?;
+        if !got.eq_ignore_ascii_case(want) {
+            let _ = fs::remove_file(&dest);
+            return Err(format!(
+                "SHA-1 mismatch for {}: expected {want}, got {got}",
+                dest.display()
+            ));
+        }
+    }
+    Ok(dest)
 }
 
 fn filename_from_disposition(cd: &str) -> Option<String> {
@@ -259,6 +414,200 @@ fn filename_from_disposition(cd: &str) -> Option<String> {
     Path::new(&val)
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
+}
+
+fn downloads_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = dirs::download_dir() {
+        dirs.push(dir);
+    }
+    if let Some(home) = dirs::home_dir() {
+        let fallback = home.join("Downloads");
+        if !dirs.iter().any(|dir| dir == &fallback) {
+            dirs.push(fallback);
+        }
+    }
+    dirs
+}
+
+fn find_downloaded_cf_file(required: &CfRequiredFile) -> Option<PathBuf> {
+    let want_sha1 = required.sha1.as_deref();
+    let want_name = required.file_name.as_deref().map(safe_filename);
+    for dir in downloads_dirs() {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            if name.ends_with(".crdownload") || name.ends_with(".part") || name.ends_with(".tmp") {
+                continue;
+            }
+            if let Some(want) = want_sha1 {
+                if sha1_file(&path)
+                    .map(|got| got.eq_ignore_ascii_case(want))
+                    .unwrap_or(false)
+                {
+                    return Some(path);
+                }
+            } else if want_name.as_deref() == Some(name) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn open_cf_download(project: u64, file: u64) -> Result<(), String> {
+    let url = format!("https://www.curseforge.com/api/v1/mods/{project}/files/{file}/download");
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut cmd = Command::new("explorer");
+        cmd.arg(&url);
+        cmd
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut cmd = Command::new("open");
+        cmd.arg(&url);
+        cmd
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(&url);
+        cmd
+    };
+
+    cmd.spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn wait_for_downloaded_cf_file(required: &CfRequiredFile) -> Option<PathBuf> {
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while Instant::now() < deadline {
+        if let Some(path) = find_downloaded_cf_file(required) {
+            return Some(path);
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    None
+}
+
+async fn resolve_blocked_cf_files(
+    app: &AppHandle,
+    project_id: &str,
+    mods_dir: &Path,
+    missing: &[CfRequiredFile],
+) -> Vec<CfRequiredFile> {
+    let mut unresolved = Vec::new();
+    for (i, required) in missing.iter().enumerate() {
+        progress(
+            app,
+            project_id,
+            &format!(
+                "Waiting for CurseForge browser download ({}/{})",
+                i + 1,
+                missing.len()
+            ),
+            48.0,
+        );
+        let found = find_downloaded_cf_file(required).or_else(|| {
+            let _ = open_cf_download(required.project, required.file);
+            wait_for_downloaded_cf_file(required)
+        });
+        let Some(src) = found else {
+            unresolved.push(required.clone());
+            continue;
+        };
+        let name = required
+            .file_name
+            .as_deref()
+            .map(safe_filename)
+            .or_else(|| src.file_name().and_then(|s| s.to_str()).map(safe_filename))
+            .unwrap_or_else(|| format!("{}-{}.jar", required.project, required.file));
+        if fs::create_dir_all(mods_dir).is_err() || fs::copy(&src, mods_dir.join(name)).is_err() {
+            unresolved.push(required.clone());
+        }
+    }
+    unresolved
+}
+
+async fn download_and_audit_cf_mods(
+    app: &AppHandle,
+    project_id: &str,
+    manifest_files: &[Value],
+    mods_dir: &Path,
+    base_percent: f64,
+    span_percent: f64,
+) -> Result<(), String> {
+    let required = cf_required_files(manifest_files).await;
+    let unverifiable = required
+        .iter()
+        .filter(|file| file.sha1.is_none())
+        .map(cf_display_name)
+        .take(8)
+        .collect::<Vec<_>>();
+    if !unverifiable.is_empty() {
+        return Err(format!(
+            "CurseForge manifest audit could not verify {} mod file(s): {}. Check the bundled or Settings CurseForge API key and retry.",
+            unverifiable.len(),
+            unverifiable.join(", ")
+        ));
+    }
+    let total = required.len().max(1);
+    for (i, file) in required.iter().enumerate() {
+        let _ = download_cf_cdn(
+            file.project,
+            file.file,
+            mods_dir,
+            file.sha1.as_deref(),
+            file.file_name.as_deref(),
+        )
+        .await;
+        progress(
+            app,
+            project_id,
+            &format!("Downloading mods ({}/{})", i + 1, total),
+            base_percent + (i as f64 / total as f64) * span_percent,
+        );
+    }
+
+    let missing = audit_cf_manifest(mods_dir, &required);
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let unresolved = resolve_blocked_cf_files(app, project_id, mods_dir, &missing).await;
+    let still_missing = if unresolved.is_empty() {
+        audit_cf_manifest(mods_dir, &required)
+    } else {
+        unresolved
+    };
+    if still_missing.is_empty() {
+        return Ok(());
+    }
+
+    let names = still_missing
+        .iter()
+        .map(cf_display_name)
+        .take(8)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = if still_missing.len() > 8 { "..." } else { "" };
+    Err(format!(
+        "CurseForge blocked {} mod download(s): {names}{suffix}. Refract opened the browser and watched your Downloads folder, but these files were not found. Download them in the browser, then retry the install.",
+        still_missing.len()
+    ))
 }
 
 fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
@@ -797,18 +1146,7 @@ async fn install_curseforge_inner(
     fs::create_dir_all(&mods_dir).ok();
 
     let files: Vec<Value> = manifest["files"].as_array().cloned().unwrap_or_default();
-    let total = files.len().max(1);
-    for (i, f) in files.iter().enumerate() {
-        if let (Some(p), Some(fl)) = (f["projectID"].as_u64(), f["fileID"].as_u64()) {
-            let _ = download_cf_cdn(p, fl, &mods_dir).await; // non-fatal
-        }
-        progress(
-            app,
-            project_id,
-            &format!("Downloading mods ({}/{})", i + 1, total),
-            26.0 + (i as f64 / total as f64) * 22.0,
-        );
-    }
+    download_and_audit_cf_mods(app, project_id, &files, &mods_dir, 26.0, 22.0).await?;
 
     progress(app, project_id, "Copying overrides", 48.0);
     let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
@@ -923,7 +1261,7 @@ async fn install_ftb(
                 f["curseforge"]["project"].as_u64(),
                 f["curseforge"]["file"].as_u64(),
             ) {
-                let _ = download_cf_cdn(p, fl, &dest_dir).await;
+                let _ = download_cf_cdn(p, fl, &dest_dir, f["sha1"].as_str(), None).await;
             }
         }
         progress(
@@ -1103,18 +1441,7 @@ async fn install_from_file_inner(
             .map_err(|e| format!("Could not create staged mods folder: {e}"))?;
 
         let files: Vec<Value> = manifest["files"].as_array().cloned().unwrap_or_default();
-        let total = files.len().max(1);
-        for (i, f) in files.iter().enumerate() {
-            if let (Some(p), Some(fl)) = (f["projectID"].as_u64(), f["fileID"].as_u64()) {
-                let _ = download_cf_cdn(p, fl, &mods_dir).await;
-            }
-            progress(
-                app,
-                project_id,
-                &format!("Downloading mods ({}/{})", i + 1, total),
-                10.0 + (i as f64 / total as f64) * 25.0,
-            );
-        }
+        download_and_audit_cf_mods(app, project_id, &files, &mods_dir, 10.0, 25.0).await?;
         progress(app, project_id, "Copying overrides", 37.0);
         let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
         copy_dir_checked(&temp.join(overrides), &staged_game_dir)?;
