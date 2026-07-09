@@ -1,6 +1,7 @@
 import { useLanguageStore } from '@/stores/language'
 import enJson from '@locales/en.json'
 import ukJson from '@locales/uk.json'
+import zhCNJson from '@locales/zh-CN.json'
 
 type Locale = typeof enJson
 
@@ -114,11 +115,12 @@ function build(l: Locale) {
 
 export type T = ReturnType<typeof build>
 
-const locales: Record<string, Locale> = { en: enJson, uk: ukJson as unknown as Locale }
+const locales: Record<string, Locale> = { en: enJson, uk: ukJson as unknown as Locale, 'zh-CN': zhCNJson as unknown as Locale }
 
 export const translations: Record<string, T> = {
   en: build(enJson),
   uk: build(ukJson as unknown as Locale),
+  'zh-CN': build(zhCNJson as unknown as Locale),
 }
 
 export function useT(): T {
