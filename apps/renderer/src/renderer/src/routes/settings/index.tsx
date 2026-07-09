@@ -420,6 +420,9 @@ function Settings() {
                   <SegmentButton active={lang === 'uk'} disabled={false} onClick={() => setLang('uk')}>
                     {t.settings.langUk}
                   </SegmentButton>
+                  <SegmentButton active={lang === 'zh-CN'} disabled={false} onClick={() => setLang('zh-CN')}>
+                    {t.settings.langZhCN}
+                  </SegmentButton>
                 </Segmented>
               </Field>
 
