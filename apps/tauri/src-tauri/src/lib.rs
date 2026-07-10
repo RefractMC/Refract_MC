@@ -30,6 +30,14 @@ mod theme;
 /// Tauri entry point. Native app handlers are exposed as `#[tauri::command]`
 /// registered here; the renderer calls them via `invoke(...)`.
 pub fn run() {
+    // WebKitGTK's DMA-BUF renderer causes freezes and blank frames on many
+    // Linux driver stacks (NVIDIA especially). Disable it before the webview
+    // is created; users can still override by exporting the var themselves.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

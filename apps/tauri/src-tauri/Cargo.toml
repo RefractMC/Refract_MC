@@ -41,4 +41,12 @@ base64 = "0.22"
 regex = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 fastnbt = "2"
+
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
