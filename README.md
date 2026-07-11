@@ -106,12 +106,10 @@ curl -fsSL https://refractmc.net/install.sh | sh
 | Platform              | Package                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Windows 10/11         | [Download `.exe`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Windows-x64.exe)            |
-| Windows 10/11         | [Download `.msi`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Windows-x64.msi)            |
 | macOS — Apple Silicon | [Download ARM64 `.dmg`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-macOS-arm64.dmg)      |
 | macOS — Intel         | [Download Intel `.dmg`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-macOS-x64.dmg)        |
 | Linux — AppImage      | [Download `.AppImage`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-x86_64.AppImage) |
 | Linux — Debian/Ubuntu | [Download `.deb`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-amd64.deb)            |
-| Linux — Fedora/RHEL   | [Download `.rpm`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-x86_64.rpm)           |
 | Other packages        | [View the latest release](https://github.com/RefractMC/Refract_MC/releases/latest)                                     |
 
 > [!NOTE]
