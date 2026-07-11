@@ -26,6 +26,7 @@ const SORT_OPTIONS: Array<{ value: ModrinthSortIndex }> = [
 const LOADER_COLOR: Record<string, string> = {
   fabric: '#b8a892', forge: '#4b8fc4', quilt: '#b070b0', neoforge: '#e8883c',
 }
+const ACTIVE_INSTANCE_STORAGE_KEY = 'refract.browse.activeInstanceId'
 
 interface ModrinthProjectDetail {
   id: string
@@ -80,13 +81,9 @@ function formatDate(iso: string): string {
 function bestVersionForInstance(versions: ModrinthVersion[], instance: Instance): ModrinthVersion | null {
   const mcVer = instance.minecraftVersion
   const loader = instance.modLoader?.toLowerCase()
-  const exact = versions.filter(v =>
+  return versions.find(v =>
     v.game_versions.includes(mcVer) && (!loader || v.loaders.some(l => l.toLowerCase() === loader))
-  )
-  if (exact.length > 0) return exact[0]
-  const mcOnly = versions.filter(v => v.game_versions.includes(mcVer))
-  if (mcOnly.length > 0) return mcOnly[0]
-  return null
+  ) ?? null
 }
 
 function versionCompatibility(v: ModrinthVersion, instance: Instance | null): 'compatible' | 'partial' | 'incompatible' {
@@ -423,16 +420,18 @@ function DepsModal({ target, onClose, onConfirm, onSkip }: {
 interface InstallModalProps {
   mod: ModrinthProject
   instances: Instance[]
+  activeInstance: Instance | null
   onClose: () => void
+  onInstanceChange: (instance: Instance) => void
   onInstall: (instanceId: string, version: ModrinthVersion) => void
 }
 
-function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps) {
+function InstallModal({ mod, instances, activeInstance, onClose, onInstanceChange, onInstall }: InstallModalProps) {
   useScrollLock()
   const t = useT()
   const [versions, setVersions] = useState<ModrinthVersion[]>([])
   const [loadingVersions, setLoadingVersions] = useState(true)
-  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
+  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(activeInstance)
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [installedInstanceIds, setInstalledInstanceIds] = useState<Set<string>>(new Set())
 
@@ -450,6 +449,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
   }, [mod.project_id])
 
   useEffect(() => {
+    setSelectedVersionId(null)
     if (!selectedInstance || versions.length === 0) return
     const best = bestVersionForInstance(versions, selectedInstance)
     if (best) setSelectedVersionId(best.id)
@@ -473,6 +473,12 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
     return () => { cancelled = true }
   }, [instances, mod.project_id])
 
+  const compatibleVersions = useMemo(
+    () => selectedInstance
+      ? versions.filter(version => versionCompatibility(version, selectedInstance) === 'compatible')
+      : [],
+    [selectedInstance, versions],
+  )
   const canInstall = selectedInstance !== null && selectedVersionId !== null
 
   return (
@@ -480,7 +486,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
       style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={onClose}
     >
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', width: 680, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-floating)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', width: selectedInstance ? 520 : 680, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-floating)' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {mod.icon_url && (
             <img src={mod.icon_url} alt="" style={{ width: 32, height: 32, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />
@@ -493,7 +499,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
+          {!selectedInstance && <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '10px 14px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>
               {t.browse.selectInstance}
             </div>
@@ -501,10 +507,9 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
               {instances.length === 0 ? (
                 <div style={{ padding: '20px 8px', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>{t.browse.noInstances}</div>
               ) : instances.map(inst => {
-                const active = selectedInstance?.id === inst.id
                 const alreadyHas = installedInstanceIds.has(inst.id)
                 return (
-                  <Button variant="secondary" key={inst.id} onClick={() => setSelectedInstance(inst)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 4, background: active ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 'var(--radius-sm)' }}>
+                  <Button variant="secondary" key={inst.id} onClick={() => { setSelectedInstance(inst); onInstanceChange(inst) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 4, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-sm)' }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{inst.name}</span>
                       {alreadyHas && <span style={{ fontSize: 9, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)', padding: '0 3px', flexShrink: 0 }}>✓</span>}
@@ -516,7 +521,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                 )
               })}
             </div>
-          </div>
+          </div>}
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -530,21 +535,27 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {loadingVersions ? (
                 <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.loadingVersions}</div>
-              ) : versions.length === 0 ? (
+              ) : !selectedInstance ? (
+                <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.selectInstanceHint}</div>
+              ) : compatibleVersions.length === 0 ? (
                 <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-4)' }}>{t.browse.noVersions}</div>
-              ) : versions.map(v => {
-                const compat = versionCompatibility(v, selectedInstance)
-                const isBest = selectedInstance ? bestVersionForInstance(versions, selectedInstance)?.id === v.id : false
+              ) : compatibleVersions.map(v => {
+                const isBest = bestVersionForInstance(compatibleVersions, selectedInstance)?.id === v.id
                 const isSelected = selectedVersionId === v.id
-                const dimmed = compat === 'incompatible' && !isSelected
                 return (
-                  <Button variant="secondary" key={v.id} onClick={() => setSelectedVersionId(v.id)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 4, background: isBest ? 'rgba(91,156,58,.12)' : isSelected ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${isBest ? 'var(--grass)' : isSelected ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 'var(--radius-sm)', opacity: dimmed ? 0.45 : 1 }}>
+                  <Button
+                    variant="secondary"
+                    key={v.id}
+                    onClick={() => setSelectedVersionId(v.id)}
+                    className="version-row"
+                    data-selected={isSelected || undefined}
+                    data-best={isBest || undefined}
+                    aria-pressed={isSelected}
+                  >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{v.version_number}</span>
                         {isBest && <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', color: '#fff', background: 'var(--grass)', padding: '0 5px', borderRadius: 'var(--radius-sm)' }}>{t.browse.recommended}</span>}
-                        {compat === 'partial' && !isBest && <span style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 'var(--radius-sm)', padding: '0 4px' }}>{t.browse.loaderMismatch}</span>}
-                        {compat === 'incompatible' && <span style={{ fontSize: 10, color: 'var(--redstone)', border: '1px solid var(--redstone)', borderRadius: 'var(--radius-sm)', padding: '0 4px' }}>{t.browse.incompatible}</span>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 3, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <span>{v.game_versions.slice(0, 3).join(', ')}{v.game_versions.length > 3 ? '…' : ''}</span>
@@ -556,6 +567,7 @@ function InstallModal({ mod, instances, onClose, onInstall }: InstallModalProps)
                       <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: 'var(--ink-4)' }}>↓ {formatDownloads(v.downloads)}</div>
                       <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2 }}>{formatDate(v.date_published)}</div>
                     </div>
+                    {isSelected && <span aria-hidden className="version-row-check">✓</span>}
                   </Button>
                 )
               })}
@@ -893,7 +905,13 @@ function Browse() {
   }, [instances])
 
   useEffect(() => {
-    api.instance.list().then(setInstances).catch(() => setInstances([]))
+    api.instance.list().then(list => {
+      setInstances(list)
+      try {
+        const activeId = localStorage.getItem(ACTIVE_INSTANCE_STORAGE_KEY)
+        if (activeId) setActiveInstance(list.find(instance => instance.id === activeId) ?? null)
+      } catch { /* ignore */ }
+    }).catch(() => setInstances([]))
     api.config.get().then(cfg => setCfAvailable(!!(cfg as { curseforgeApiKey?: string; curseforgeApiKeyConfigured?: boolean }).curseforgeApiKeyConfigured || !!(cfg as { curseforgeApiKey?: string }).curseforgeApiKey)).catch(() => {})
   }, [])
 
@@ -1048,6 +1066,14 @@ function Browse() {
   function showToast(msg: string, ok: boolean) {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 3500)
+  }
+
+  function selectActiveInstance(instance: Instance | null) {
+    setActiveInstance(instance)
+    try {
+      if (instance) localStorage.setItem(ACTIVE_INSTANCE_STORAGE_KEY, instance.id)
+      else localStorage.removeItem(ACTIVE_INSTANCE_STORAGE_KEY)
+    } catch { /* ignore */ }
   }
 
   // Install a single mod directly (no deps to resolve).
@@ -1207,11 +1233,11 @@ function Browse() {
               value={activeInstance}
               onChange={inst => {
                 if (!inst) {
-                  setActiveInstance(null)
+                  selectActiveInstance(null)
                   setGameVersion(null)
                   setLoader('All')
                 } else {
-                  setActiveInstance(inst)
+                  selectActiveInstance(inst)
                 }
               }}
             />
@@ -1320,7 +1346,9 @@ function Browse() {
         <InstallModal
           mod={installTarget}
           instances={instances}
+          activeInstance={activeInstance}
           onClose={() => setInstallTarget(null)}
+          onInstanceChange={selectActiveInstance}
           onInstall={handleInstall}
         />
       )}
@@ -1346,7 +1374,9 @@ function Browse() {
         <CFInstallModal
           mod={cfInstallTarget}
           instances={instances}
+          activeInstance={activeInstance}
           onClose={() => setCfInstallTarget(null)}
+          onInstanceChange={selectActiveInstance}
           onInstall={handleCfInstall}
         />
       )}
@@ -1580,17 +1610,19 @@ function CFModTile({ mod, installing, status, onDetail, onInstall }: {
 
 // ─── CFInstallModal ───────────────────────────────────────────────────────────
 
-function CFInstallModal({ mod, instances, onClose, onInstall }: {
+function CFInstallModal({ mod, instances, activeInstance, onClose, onInstanceChange, onInstall }: {
   mod: CFProject
   instances: Instance[]
+  activeInstance: Instance | null
   onClose: () => void
+  onInstanceChange: (instance: Instance) => void
   onInstall: (instanceId: string, file: CFFile, displayName: string) => void
 }) {
   useScrollLock()
   const t = useT()
   const [files, setFiles] = useState<CFFile[]>([])
   const [loadingFiles, setLoadingFiles] = useState(true)
-  const [selectedInst, setSelInst] = useState<Instance | null>(null)
+  const [selectedInst, setSelInst] = useState<Instance | null>(activeInstance)
   const [selectedFile, setSelFile] = useState<CFFile | null>(null)
 
   useEffect(() => {
@@ -1616,7 +1648,7 @@ function CFInstallModal({ mod, instances, onClose, onInstall }: {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', width: 660, maxHeight: '78vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-floating)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', width: selectedInst ? 500 : 660, maxHeight: '78vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-floating)' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
           {mod.logo?.thumbnailUrl && <img src={mod.logo.thumbnailUrl} alt="" style={{ width: 28, height: 28, imageRendering: 'pixelated', border: '1px solid var(--border-r)' }} />}
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1627,15 +1659,14 @@ function CFInstallModal({ mod, instances, onClose, onInstall }: {
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          <div style={{ width: 210, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
+          {!selectedInst && <div style={{ width: 210, flexShrink: 0, borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{t.browse.cfSelectInstance}</div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
               {instances.length === 0
                 ? <div style={{ padding: 16, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>{t.browse.noInstances}</div>
                 : instances.map(inst => {
-                    const active = selectedInst?.id === inst.id
                     return (
-                      <Button variant="secondary" key={inst.id} onClick={() => { setSelInst(inst); setSelFile(null) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 8px', marginBottom: 3, background: active ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 'var(--radius-sm)' }}>
+                      <Button variant="secondary" key={inst.id} onClick={() => { setSelInst(inst); setSelFile(null); onInstanceChange(inst) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 8px', marginBottom: 3, background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-sm)' }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inst.name}</div>
                         <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: 'var(--ink-4)', marginTop: 1 }}>{inst.minecraftVersion} · {inst.modLoader?.toUpperCase() ?? 'VANILLA'}</div>
                       </Button>
@@ -1643,7 +1674,7 @@ function CFInstallModal({ mod, instances, onClose, onInstall }: {
                   })
               }
             </div>
-          </div>
+          </div>}
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '.12em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{t.browse.cfSelectVersion}</div>

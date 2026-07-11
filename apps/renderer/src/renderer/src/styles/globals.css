@@ -1737,3 +1737,43 @@ html[data-theme-gradients="off"] .ni-slider,
 html[data-theme-gradients="off"] .ni-slider::-webkit-slider-runnable-track {
   background: var(--surface-2) !important;
 }
+
+/* ── Version rows (install-mod dialog) ──────────────────────────────────── */
+/* Selection state must survive the flat-UI border reset above and the theme
+   repairs that force .btn-secondary backgrounds with !important — so state
+   lives here with matching !important, and the ring uses `outline` (the one
+   edge treatment the flat pass doesn't strip). */
+.btn.version-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2) !important;
+  outline: 1px solid transparent;
+  outline-offset: -2px;
+  transition: background 120ms ease, outline-color 120ms ease;
+}
+.btn.version-row:not(:disabled):hover {
+  filter: none;
+  background: var(--surface-3) !important;
+  outline-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.btn.version-row[data-best="true"] {
+  background: color-mix(in srgb, var(--grass) 10%, var(--surface-2)) !important;
+}
+.btn.version-row[data-selected="true"] {
+  background: var(--accent-tint) !important;
+  outline: 2px solid var(--accent);
+}
+.version-row-check {
+  flex: none;
+  align-self: center;
+  margin-left: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--accent);
+}
