@@ -159,40 +159,83 @@ jobs:
           releaseAssetNamePattern: "Refract_[version]_[platform]_[arch][setup][ext]"
           args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }}
 
-      # Version-less copies of the installers so download links never change
-      # (e.g. the mget one-line install). Uploaded alongside the versioned
-      # assets tauri-action already published; the updater manifest keeps
-      # pointing at the versioned ones.
-      - name: Upload stable-named release assets
+      - name: Prepare stable release filenames
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          set -euo pipefail
+          VERSION="${TAG#v}"
           BUNDLE="apps/tauri/src-tauri/target/release/bundle"
-
-          stable() { # <built file glob> <stable name>
-            local src
-            src=$(compgen -G "$1" | head -n 1) || { echo "no match for $1" >&2; return 1; }
-            cp "$src" "$2"
-            gh release upload "$TAG" "$2" --clobber
-          }
 
           case "${{ runner.os }}" in
             Windows)
-              stable "$BUNDLE/nsis/Refract_*_x64-setup.exe" "Refract-Windows-x64.exe"
+              cp "$BUNDLE/nsis/Refract_${VERSION}_x64-setup.exe" \
+                 "Refract-Windows-x64.exe"
+              gh release upload "$TAG" "Refract-Windows-x64.exe" --clobber
               ;;
+
             macOS)
-              if compgen -G "$BUNDLE/dmg/Refract_*_aarch64.dmg" > /dev/null; then
-                stable "$BUNDLE/dmg/Refract_*_aarch64.dmg" "Refract-macOS-arm64.dmg"
-              else
-                stable "$BUNDLE/dmg/Refract_*_x64.dmg" "Refract-macOS-x64.dmg"
-              fi
+              cp "$BUNDLE/dmg/Refract_${VERSION}_aarch64.dmg" \
+                 "Refract-macOS-arm64.dmg" 2>/dev/null || true
+
+              cp "$BUNDLE/dmg/Refract_${VERSION}_x64.dmg" \
+                 "Refract-macOS-x64.dmg" 2>/dev/null || true
+              gh release upload "$TAG" Refract-macOS-*.dmg --clobber
               ;;
+
             Linux)
-              stable "$BUNDLE/appimage/Refract_*_amd64.AppImage" "Refract-Linux-x86_64.AppImage"
-              stable "$BUNDLE/deb/Refract_*_amd64.deb" "Refract-Linux-amd64.deb"
+              cp "$BUNDLE/appimage/Refract_${VERSION}_amd64.AppImage" \
+                 "Refract-Linux-x86_64.AppImage"
+
+              cp "$BUNDLE/deb/Refract_${VERSION}_amd64.deb" \
+                 "Refract-Linux-amd64.deb"
+              gh release upload "$TAG" "Refract-Linux-x86_64.AppImage" "Refract-Linux-amd64.deb" --clobber
               ;;
           esac
+
+  # Runs once after all platform builds: point the updater manifest at the
+  # stable filenames, then drop the versioned duplicates. The signatures in
+  # latest.json stay valid because the stable files are byte-identical copies.
+  # Skipped if any build failed, leaving a consistent versioned release.
+  finalize:
+    name: Finalize release assets
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Rewrite updater manifest to stable filenames
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/${GH_REPO}/releases/download/${TAG}"
+
+          gh release download "$TAG" --pattern latest.json
+
+          jq --arg base "$BASE" '
+            del(.platforms["windows-x86_64-msi"], .platforms["linux-x86_64-rpm"])
+            | if .platforms["windows-x86_64"]        then .platforms["windows-x86_64"].url        = $base + "/Refract-Windows-x64.exe"       else . end
+            | if .platforms["windows-x86_64-nsis"]   then .platforms["windows-x86_64-nsis"].url   = $base + "/Refract-Windows-x64.exe"       else . end
+            | if .platforms["linux-x86_64"]          then .platforms["linux-x86_64"].url          = $base + "/Refract-Linux-x86_64.AppImage" else . end
+            | if .platforms["linux-x86_64-appimage"] then .platforms["linux-x86_64-appimage"].url = $base + "/Refract-Linux-x86_64.AppImage" else . end
+            | if .platforms["linux-x86_64-deb"]      then .platforms["linux-x86_64-deb"].url      = $base + "/Refract-Linux-amd64.deb"       else . end
+          ' latest.json > latest.fixed.json
+          mv latest.fixed.json latest.json
+
+          gh release upload "$TAG" latest.json --clobber
+
+      - name: Delete versioned duplicate assets
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          # Every versioned asset name contains the version string; the stable
+          # copies, app.tar.gz updater archives and latest.json never do.
+          gh release view "$TAG" --json assets -q '.assets[].name' \
+            | { grep -F "$VERSION" || true; } \
+            | while read -r name; do
+                gh release delete-asset "$TAG" "$name" -y
+                echo "deleted $name"
+              done
 
