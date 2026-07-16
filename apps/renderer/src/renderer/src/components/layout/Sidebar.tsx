@@ -201,7 +201,7 @@ function SkinPopup({ friend, onClose }: { friend: Friend; onClose: () => void })
         onClick={e => e.stopPropagation()}
         style={{
           background: 'var(--surface)', border: '1px solid var(--border-r)',
-          borderRadius: 'var(--radius)', padding: '16px 16px 12px',
+          borderRadius: 8, padding: '16px 16px 12px',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
           position: 'relative', boxShadow: '0 16px 48px rgba(0,0,0,.6)',
         }}
@@ -318,7 +318,7 @@ function FriendsPanel() {
               background: 'none', border: '1px solid var(--border-r)',
               color: refreshing || listLoading ? 'var(--ink-5)' : 'var(--ink-4)',
               cursor: refreshing || listLoading ? 'wait' : 'pointer',
-              width: 18, height: 18, borderRadius: 'var(--radius-xs)',
+              width: 18, height: 18, borderRadius: 3,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 12, lineHeight: 1, padding: 0,
               transition: 'color .12s, border-color .12s',
@@ -333,7 +333,7 @@ function FriendsPanel() {
               style={{
                 background: 'none', border: '1px solid var(--border-r)',
                 color: 'var(--ink-4)', cursor: 'pointer',
-                width: 18, height: 18, borderRadius: 'var(--radius-xs)',
+                width: 18, height: 18, borderRadius: 3,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 14, lineHeight: 1, padding: 0,
                 transition: 'color .12s, border-color .12s',
@@ -368,7 +368,7 @@ function FriendsPanel() {
               style={{
                 flex: 1, height: 26, fontSize: 11, padding: '0 7px',
                 background: 'var(--bg)', border: '1px solid var(--border-r)',
-                color: 'var(--ink)', borderRadius: 'var(--radius-xs)', outline: 'none',
+                color: 'var(--ink)', borderRadius: 3, outline: 'none',
                 opacity: loading ? 0.6 : 1,
               }}
             />
@@ -379,7 +379,7 @@ function FriendsPanel() {
                 height: 26, padding: '0 8px', fontSize: 11, fontWeight: 600,
                 background: loading || !input.trim() ? 'var(--surface-3)' : 'var(--accent)',
                 color: loading || !input.trim() ? 'var(--ink-4)' : '#fff',
-                border: 'none', borderRadius: 'var(--radius-xs)',
+                border: 'none', borderRadius: 3,
                 cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
               }}
             >
@@ -392,7 +392,7 @@ function FriendsPanel() {
               style={{
                 height: 26, width: 26, fontSize: 13,
                 background: 'var(--surface-2)', border: '1px solid var(--border-r)',
-                color: 'var(--ink-4)', borderRadius: 'var(--radius-xs)', cursor: 'pointer',
+                color: 'var(--ink-4)', borderRadius: 3, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
@@ -488,7 +488,7 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
 
   return (
     <div
-      style={{ padding: '5px 6px', borderRadius: 'var(--radius-xs)', background: hovered ? 'var(--surface-2)' : 'transparent', transition: 'background .1s' }}
+      style={{ padding: '5px 6px', borderRadius: 4, background: hovered ? 'var(--surface-2)' : 'transparent', transition: 'background .1s' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -625,7 +625,7 @@ function CollapseToggle({ compact, onClick, label }: { compact: boolean; onClick
         gap: compact ? 0 : 10,
         background: hover ? 'var(--sidebar-item-hover-bg)' : 'transparent',
         border: '1px solid transparent',
-        borderRadius: 'var(--radius-xs)',
+        borderRadius: 4,
         cursor: 'pointer',
         color: hover ? 'var(--ink)' : 'var(--ink-2)',
         fontSize: 13,
@@ -691,7 +691,7 @@ export function Sidebar() {
         </div>
       )}
 
-      <Link to="/account" style={{ textDecoration:'none', display:'block', borderRadius:'var(--radius-xs)', transition:'background 100ms, border-color 100ms', border:'1px solid transparent', marginBottom:10 }}
+      <Link to="/account" style={{ textDecoration:'none', display:'block', borderRadius:4, transition:'background 100ms, border-color 100ms', border:'1px solid transparent', marginBottom:10 }}
         onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = 'rgba(255,255,255,.05)'; el.style.borderColor = 'rgba(255,255,255,.07)' }}
         onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = 'transparent'; el.style.borderColor = 'transparent' }}
       >
@@ -713,7 +713,7 @@ export function Sidebar() {
         <button
           title={compact ? 'Discord' : undefined}
           onClick={openDiscord}
-          style={{ display:'flex', alignItems:'center', justifyContent: compact ? 'center' : 'flex-start', gap: compact ? 0 : 10, padding: compact ? '9px 0' : '8px 10px', borderRadius:'var(--radius-xs)', color:'var(--ink-2)', fontSize:13, fontWeight:500, background:'none', border:'1px solid transparent', cursor:'pointer', textAlign:'left' }}
+          style={{ display:'flex', alignItems:'center', justifyContent: compact ? 'center' : 'flex-start', gap: compact ? 0 : 10, padding: compact ? '9px 0' : '8px 10px', borderRadius:4, color:'var(--ink-2)', fontSize:13, fontWeight:500, background:'none', border:'1px solid transparent', cursor:'pointer', textAlign:'left' }}
           onMouseEnter={e => { e.currentTarget.style.color = '#5865F2'; e.currentTarget.style.background = 'rgba(88,101,242,.1)' }}
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-2)'; e.currentTarget.style.background = 'none' }}
         >

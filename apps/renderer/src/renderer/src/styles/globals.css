@@ -65,17 +65,14 @@
   --diamond:  #62c9ff;  /* info    */
   --ender:    #b79cff;  /* alt     */
 
-  /* Radius scale. --radius is the theme-driven base (theme engine sets it from
-     the theme's "Corner radius"); the rest derive from it so every corner in
-     the app follows the theme with one knob. Defaults match the old literals
-     (4/6/10/12/14 at base 8). */
-  --radius:     8px;
-  --radius-xs:  calc(var(--radius) * .5);
-  --radius-sm:  calc(var(--radius) * .75);
-  --radius-md:  calc(var(--radius) * 1.25);
-  --radius-lg:  calc(var(--radius) * 1.5);
-  --radius-xl:  calc(var(--radius) * 1.75);
+  /* Radius scale */
+  --radius-xs:  4px;
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  12px;
+  --radius-xl:  14px;
   --radius-max: 999px;
+  --radius:     8px;  /* legacy alias → md */
 
   /* Spacing scale */
   --gap-xs: 4px;
@@ -161,31 +158,11 @@ body.modal-open .app-scroll { overflow: hidden !important; }
 }
 
 /* ── Legacy hover for un-migrated inline buttons ────────────────────────── */
-:where(button, [role="button"]):not(.btn) {
-  transition:
-    filter 120ms ease,
-    translate 120ms cubic-bezier(.2, .8, .2, 1),
-    scale 80ms ease,
-    border-color 120ms ease,
-    background-color 120ms ease,
-    color 120ms ease;
+button {
+  transition: filter 120ms ease;
 }
-
-:where(button, [role="button"]):not(.btn):not(:disabled):not([aria-disabled="true"]):hover {
-  filter: brightness(1.12) saturate(1.04);
-  translate: 0 -1px;
-}
-
-:where(button, [role="button"]):not(.btn):not(:disabled):not([aria-disabled="true"]):active {
-  filter: brightness(1.04);
-  translate: 0;
-  scale: .98;
-}
-
-:where(button, [role="button"]):not(.btn):disabled,
-:where(button, [role="button"]):not(.btn)[aria-disabled="true"] {
-  translate: 0;
-  scale: 1;
+button:not(:disabled):hover {
+  filter: brightness(1.1);
 }
 
 /* ── Button component ───────────────────────────────────────────────────── */
@@ -210,31 +187,16 @@ body.modal-open .app-scroll { overflow: hidden !important; }
   text-decoration: none;
   background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
   color: var(--ink);
-  transition:
-    filter 120ms ease,
-    translate 120ms cubic-bezier(.2, .8, .2, 1),
-    scale 80ms ease,
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    box-shadow 120ms ease;
+  transition: filter 120ms ease, background 120ms ease, border-color 120ms ease, scale 80ms ease;
 }
 .btn svg { width: 16px; height: 16px; flex-shrink: 0; }
-.btn:not(:disabled):hover  { filter: brightness(1.12) saturate(1.04); translate: 0 -1px; }
-.btn:not(:disabled):active { filter: brightness(1.04); translate: 0; scale: .97; }
+.btn:not(:disabled):hover  { filter: brightness(1.12); }
+.btn:not(:disabled):active { scale: .97; }
 .btn:disabled { opacity: .5; cursor: not-allowed; filter: grayscale(35%); }
 
 .btn-primary   { background: linear-gradient(180deg, var(--accent-hi), var(--accent)); color: var(--accent-fg); box-shadow: 0 10px 24px -16px var(--accent); }
 .btn-secondary { background: var(--surface-3); color: var(--ink); border-color: var(--border-r); }
 .btn-danger    { background: var(--redstone); color: #fff; }
-
-.btn-primary:not(:disabled):hover {
-  box-shadow: 0 12px 28px -15px color-mix(in srgb, var(--accent) 75%, transparent);
-}
-
-.btn-secondary:not(:disabled):hover {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-r));
-}
 
 .btn-outline {
   background: transparent;
@@ -253,21 +215,6 @@ body.modal-open .app-scroll { overflow: hidden !important; }
   /* ink-based tint so the hover shows on both dark and light themes */
   background: color-mix(in srgb, var(--ink) 9%, transparent);
   color: var(--ink);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :where(button, [role="button"]):not(.btn),
-  .btn {
-    transition: filter 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-  }
-
-  :where(button, [role="button"]):not(.btn):not(:disabled):not([aria-disabled="true"]):hover,
-  :where(button, [role="button"]):not(.btn):not(:disabled):not([aria-disabled="true"]):active,
-  .btn:not(:disabled):hover,
-  .btn:not(:disabled):active {
-    translate: 0;
-    scale: 1;
-  }
 }
 
 /* Sizes */
@@ -335,7 +282,7 @@ body.modal-open .app-scroll { overflow: hidden !important; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--surface-3);
-  border-radius: var(--radius-max);
+  border-radius: 99px;
   border: 2px solid var(--bg);
   background-clip: padding-box;
 }
@@ -664,7 +611,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   color: var(--ink-2);
   background: color-mix(in srgb, var(--bg) 84%, var(--surface));
   border: 1px solid var(--border-r);
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   padding: 10px 6px;
   cursor: pointer;
   transition: border-color 140ms, background 140ms, color 140ms, box-shadow 140ms;
@@ -673,7 +620,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 }
 .ni-seg-btn .ni-glyph {
   width: 14px; height: 14px;
-  flex: none; border-radius: var(--radius-xs);
+  flex: none; border-radius: 4px;
   background:
     linear-gradient(135deg, color-mix(in srgb, currentColor 70%, transparent), transparent 56%),
     var(--ink-4);
@@ -697,7 +644,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .ni-slider {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 8px;
-  border-radius: var(--radius-max); cursor: pointer;
+  border-radius: 99px; cursor: pointer;
   margin: 6px 0 0;
   background: linear-gradient(90deg, var(--accent) 0%, var(--accent) var(--fill, 7%), var(--surface-2) var(--fill, 7%), var(--surface-2) 100%);
   border: 1px solid var(--border-r);
@@ -723,7 +670,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   color: var(--ink-2);
   background: var(--bg);
   border: 1px solid var(--border-r);
-  border-radius: var(--radius);
+  border-radius: 8px;
   padding: 8px 6px;
   cursor: pointer;
   transition: border-color 140ms, background 140ms, color 140ms;
@@ -739,7 +686,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .ni-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
 .ni-check-input { position: absolute; opacity: 0; width: 0; height: 0; }
 .ni-checkmark-box {
-  width: 18px; height: 18px; border-radius: var(--radius-sm); flex: none;
+  width: 18px; height: 18px; border-radius: 5px; flex: none;
   background: var(--bg); border: 1.5px solid var(--border-2);
   display: grid; place-items: center;
   transition: background 150ms, border-color 150ms;
@@ -755,7 +702,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 
 /* Close button */
 .ni-close {
-  width: 34px; height: 34px; flex: none; border-radius: var(--radius-md); cursor: pointer;
+  width: 34px; height: 34px; flex: none; border-radius: 9px; cursor: pointer;
   background: transparent; border: 1px solid transparent; color: var(--ink-3);
   display: grid; place-items: center;
   transition: background 150ms, border-color 150ms, color 150ms;
@@ -771,7 +718,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-family: var(--font-ui);
   font-weight: 600; font-size: 14px;
-  border-radius: var(--radius-md); border: 1px solid transparent;
+  border-radius: 10px; border: 1px solid transparent;
   cursor: pointer; padding: 11px 16px;
   transition: transform 120ms ease, background 150ms, border-color 150ms, box-shadow 150ms;
   white-space: nowrap;
@@ -930,7 +877,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .theme-swatch {
   width: 24px;
   height: 24px;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), inset 0 0 0 999px rgba(0,0,0,.02);
 }
 
@@ -1039,7 +986,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .theme-color-chip {
   width: 24px;
   height: 24px;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
 }
 
@@ -1255,7 +1202,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .ni-template-mark {
   width: 14px;
   height: 14px;
-  border-radius: var(--radius-xs);
+  border-radius: 4px;
   display: inline-block;
   flex: none;
   background:

@@ -19,7 +19,7 @@ export function SkinViewer3DLazy(props: Props) {
         width: props.width ?? 180,
         height: props.height ?? 280,
         background: 'var(--surface-2)',
-        borderRadius: 'var(--radius-sm)',
+        borderRadius: 6,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

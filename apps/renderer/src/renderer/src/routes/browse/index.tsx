@@ -365,7 +365,7 @@ function DepsModal({ target, onClose, onConfirm, onSkip }: {
               <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>{t.browse.depsRequired(requiredMissing.length)}</div>
               {requiredMissing.map(dep => (
                 <div key={dep.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'var(--accent-tint)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)' }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 'var(--radius-xs)', background: 'var(--accent)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                  <span style={{ width: 14, height: 14, borderRadius: 4, background: 'var(--accent)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                     <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.2 2.2L8 3" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{dep.name}</span>
@@ -380,7 +380,7 @@ function DepsModal({ target, onClose, onConfirm, onSkip }: {
                 const on = picked.has(dep.key)
                 return (
                   <button key={dep.key} onClick={() => toggle(dep.key)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: on ? 'var(--accent-tint)' : 'var(--surface-2)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}>
-                    <span style={{ width: 14, height: 14, borderRadius: 'var(--radius-xs)', background: on ? 'var(--accent)' : 'var(--bg)', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border-2)'}`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <span style={{ width: 14, height: 14, borderRadius: 4, background: on ? 'var(--accent)' : 'var(--bg)', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border-2)'}`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                       {on && <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.2 2.2L8 3" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>{dep.name}</span>

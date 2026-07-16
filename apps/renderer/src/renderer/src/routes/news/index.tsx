@@ -61,7 +61,7 @@ function MinecraftNewsPage() {
             border: '1px solid var(--border-r)',
             background: 'var(--surface)',
             color: 'var(--ink)',
-            borderRadius: 'var(--radius)',
+            borderRadius: 8,
             padding: '9px 12px',
             cursor: loading ? 'default' : 'pointer',
             opacity: loading ? 0.7 : 1,
@@ -132,7 +132,7 @@ function MinecraftNewsPage() {
                       border: '1px solid var(--border-r)',
                       background: 'var(--surface-2)',
                       color: 'var(--ink)',
-                      borderRadius: 'var(--radius)',
+                      borderRadius: 8,
                       padding: '8px 10px',
                       cursor: 'pointer',
                     }}

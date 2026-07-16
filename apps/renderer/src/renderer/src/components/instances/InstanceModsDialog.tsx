@@ -1023,7 +1023,7 @@ function ServerRow({ server, onJoin, onShortcut }: { server: ServerEntry; onJoin
 function EmptyMsg({ msg, sub }: { msg: string; sub: string }) {
   return (
     <div className="detail-empty">
-      <div style={{ width: 34, height: 34, borderRadius: 'var(--radius-md)', background: 'var(--accent-tint)', border: '1px solid color-mix(in srgb, var(--accent) 38%, transparent)', margin: '0 auto 14px', boxShadow: '0 0 22px color-mix(in srgb, var(--accent) 18%, transparent)' }} />
+      <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', border: '1px solid color-mix(in srgb, var(--accent) 38%, transparent)', margin: '0 auto 14px', boxShadow: '0 0 22px color-mix(in srgb, var(--accent) 18%, transparent)' }} />
       <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--ink-2)', letterSpacing: '.04em', marginBottom: 6 }}>{msg}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{sub}</div>
     </div>

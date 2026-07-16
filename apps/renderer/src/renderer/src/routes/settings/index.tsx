@@ -956,7 +956,7 @@ function Settings() {
       )}
 
       {error && (
-        <div style={{ padding:12, color:'#fff', background:'rgba(217,59,59,.18)', border:'1px solid var(--redstone)', borderRadius:'var(--radius-xs)', fontSize:13 }}>
+        <div style={{ padding:12, color:'#fff', background:'rgba(217,59,59,.18)', border:'1px solid var(--redstone)', borderRadius:4, fontSize:13 }}>
           {error}
         </div>
       )}

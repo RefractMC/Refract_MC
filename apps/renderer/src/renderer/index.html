@@ -8,15 +8,16 @@
       :root {
         color-scheme: dark;
         --startup-bg: #08070d;
-        --startup-sidebar: #0e0c15;
-        --startup-chrome: #100e17;
-        --startup-surface: #12101a;
-        --startup-line: rgba(255, 255, 255, .09);
-        --startup-block: rgba(255, 255, 255, .075);
-        --startup-highlight: rgba(255, 255, 255, .10);
+        --startup-panel: #12101a;
+        --startup-line: rgba(255, 255, 255, .10);
+        --startup-text: #f4f0ff;
+        --startup-muted: #918aa3;
+        --startup-accent: #9a6cff;
+        --startup-diamond: #4fb8e8;
       }
 
-      html, body {
+      html,
+      body {
         margin: 0;
         width: 100%;
         height: 100%;
@@ -28,14 +29,15 @@
         inset: 0;
         z-index: 2147483647;
         display: grid;
-        grid-template-columns: 232px minmax(0, 1fr);
-        grid-template-rows: 34px minmax(0, 1fr);
-        overflow: hidden;
-        background: var(--startup-bg);
-        color: #f4f0ff;
+        place-items: center;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, .035), transparent 34%),
+          radial-gradient(circle at 50% 42%, rgba(154, 108, 255, .13), transparent 34%),
+          var(--startup-bg);
+        color: var(--startup-text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         opacity: 1;
-        transition: opacity 160ms ease;
+        transition: opacity 220ms ease;
       }
 
       #startup-loader[data-state="done"] {
@@ -43,284 +45,96 @@
         pointer-events: none;
       }
 
-      .startup-sidebar {
-        grid-column: 1;
-        grid-row: 1 / -1;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-        padding: 14px 12px 12px;
-        box-sizing: border-box;
-        background: linear-gradient(180deg, #12101a, var(--startup-sidebar));
-        border-right: 1px solid rgba(255, 255, 255, .035);
-      }
-
-      .startup-brand {
-        height: 40px;
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        padding: 0 6px 12px;
-        box-sizing: border-box;
-        border-bottom: 1px solid var(--startup-line);
+      .startup-mark {
+        width: min(260px, calc(100vw - 48px));
+        display: grid;
+        justify-items: center;
+        gap: 18px;
       }
 
       .startup-logo {
-        width: 32px;
-        height: 32px;
-        display: block;
+        width: 58px;
+        height: 58px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--startup-line);
+        border-radius: 14px;
+        background: var(--startup-panel);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, .35);
+      }
+
+      .startup-logo-img {
+        width: 42px;
+        height: 42px;
         object-fit: contain;
-        flex: 0 0 auto;
+        display: block;
+        animation: startup-pulse 1100ms ease-in-out infinite;
       }
 
-      .startup-brand-name { width: 112px; height: 13px; margin-top: 8px; }
-
-      .startup-profile {
-        display: grid;
-        grid-template-columns: 34px 1fr;
-        grid-template-rows: 10px 8px;
-        gap: 7px 10px;
-        align-items: center;
-        padding: 12px 6px 13px;
+      .startup-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0;
       }
 
-      .startup-avatar { grid-row: 1 / 3; width: 34px; height: 34px; border-radius: 4px; }
-      .startup-profile-name { width: 72%; height: 10px; }
-      .startup-profile-meta { width: 46%; height: 8px; }
-      .startup-section-label { width: 52px; height: 7px; margin: 7px 8px 8px; }
-      .startup-nav { display: flex; flex-direction: column; gap: 3px; }
-
-      .startup-nav-row {
-        height: 34px;
-        display: flex;
-        align-items: center;
-        gap: 11px;
-        padding: 0 10px;
-        border-radius: 4px;
-        box-sizing: border-box;
+      .startup-subtitle {
+        margin: -8px 0 0;
+        color: var(--startup-muted);
+        font-size: 12px;
+        line-height: 1.3;
+        letter-spacing: 0;
       }
 
-      .startup-nav-row:first-child {
-        background: rgba(154, 108, 255, .08);
-        border: 1px solid rgba(154, 108, 255, .12);
-      }
-
-      .startup-nav-icon { width: 18px; height: 18px; border-radius: 4px; flex: 0 0 auto; }
-      .startup-nav-label { width: 82px; height: 9px; }
-      .startup-nav-row:nth-child(2) .startup-nav-label { width: 104px; }
-      .startup-nav-row:nth-child(3) .startup-nav-label { width: 64px; }
-      .startup-nav-row:nth-child(4) .startup-nav-label { width: 92px; }
-      .startup-nav-row:nth-child(5) .startup-nav-label { width: 58px; }
-
-      .startup-sidebar-bottom {
-        margin-top: auto;
-        padding-top: 10px;
-        border-top: 1px solid var(--startup-line);
-      }
-
-      .startup-titlebar {
-        grid-column: 2;
-        grid-row: 1;
-        display: flex;
-        justify-content: flex-end;
-        align-items: stretch;
-        background: var(--startup-chrome);
-        border-bottom: 1px solid var(--startup-line);
-      }
-
-      .startup-title-control { width: 46px; border-left: 1px solid rgba(255, 255, 255, .025); }
-
-      .startup-app {
-        grid-column: 2;
-        grid-row: 2;
-        min-width: 0;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
+      .startup-bar {
+        width: 100%;
+        height: 4px;
         overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .08);
       }
 
-      .startup-content {
-        flex: 1;
-        min-height: 0;
-        padding: 24px 28px 28px;
-        box-sizing: border-box;
-        overflow: hidden;
-      }
-
-      .startup-heading {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 24px;
-        margin-bottom: 18px;
-      }
-
-      .startup-heading-copy { width: min(380px, 50%); }
-      .startup-heading-title { width: 168px; height: 17px; margin-bottom: 8px; }
-      .startup-heading-subtitle { width: 100%; height: 9px; }
-      .startup-heading-action { width: 112px; height: 32px; border-radius: 4px; }
-
-      .startup-toolbar {
-        height: 38px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 0 12px;
-        margin-bottom: 16px;
-        box-sizing: border-box;
-        background: var(--startup-surface);
-        border: 1px solid var(--startup-line);
-        border-radius: 6px;
-      }
-
-      .startup-search-icon { width: 14px; height: 14px; border-radius: 4px; }
-      .startup-search-line { width: min(240px, 38%); height: 9px; }
-      .startup-filters { display: flex; gap: 7px; margin-bottom: 16px; }
-      .startup-filter { width: 72px; height: 25px; border-radius: 4px; }
-      .startup-filter:nth-child(2) { width: 92px; }
-      .startup-filter:nth-child(3) { width: 78px; }
-
-      .startup-cards {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .startup-card {
-        min-width: 0;
-        height: 142px;
-        display: grid;
-        grid-template-columns: 48px minmax(0, 1fr);
-        grid-template-rows: 13px 9px 1fr 28px;
-        gap: 8px 12px;
-        padding: 14px;
-        box-sizing: border-box;
-        background: var(--startup-surface);
-        border: 1px solid var(--startup-line);
-        border-radius: 7px;
-      }
-
-      .startup-card-icon { grid-row: 1 / 4; width: 48px; height: 48px; border-radius: 6px; }
-      .startup-card-title { width: 62%; height: 12px; }
-      .startup-card-meta { width: 38%; height: 8px; }
-      .startup-card-copy { width: 91%; height: 8px; align-self: start; }
-      .startup-card-action { width: 88px; height: 28px; align-self: end; border-radius: 4px; }
-
-      .startup-statusbar {
-        height: 24px;
-        flex: 0 0 24px;
-        background: var(--startup-chrome);
-        border-top: 1px solid var(--startup-line);
-      }
-
-      .startup-skeleton {
-        position: relative;
-        overflow: hidden;
-        background: var(--startup-block);
-      }
-
-      .startup-skeleton::after {
+      .startup-bar::before {
         content: "";
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(90deg, transparent, var(--startup-highlight), transparent);
-        transform: translateX(-110%);
-        animation: startup-shimmer 1500ms ease-in-out infinite;
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--startup-accent), var(--startup-diamond));
+        animation: startup-slide 1200ms cubic-bezier(.4, 0, .2, 1) infinite;
       }
 
-      @keyframes startup-shimmer { 100% { transform: translateX(110%); } }
-
-      @media (max-width: 900px) {
-        #startup-loader { grid-template-columns: 60px minmax(0, 1fr); }
-        .startup-sidebar { padding-inline: 8px; }
-        .startup-brand { justify-content: center; padding-inline: 0; }
-        .startup-brand-name, .startup-profile-name, .startup-profile-meta,
-        .startup-section-label, .startup-nav-label { display: none; }
-        .startup-profile { display: flex; justify-content: center; padding-inline: 0; }
-        .startup-nav-row { justify-content: center; padding-inline: 0; }
-        .startup-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      @keyframes startup-pulse {
+        0%, 100% { transform: scale(.94); opacity: .82; }
+        50% { transform: scale(1); opacity: 1; }
       }
 
-      @media (max-width: 620px) {
-        .startup-content { padding: 18px; }
-        .startup-cards { grid-template-columns: 1fr; }
-        .startup-card:nth-child(n + 3) { display: none; }
+      @keyframes startup-slide {
+        0% { transform: translateX(-120%); }
+        100% { transform: translateX(260%); }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        #startup-loader { transition: none; }
-        .startup-skeleton::after { animation: none; display: none; }
+        #startup-loader,
+        .startup-logo-img,
+        .startup-bar::before {
+          animation: none;
+          transition: none;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="startup-loader" role="status" aria-live="polite" aria-label="Loading Refract launcher">
-      <aside class="startup-sidebar" aria-hidden="true">
-        <div class="startup-brand">
-          <img class="startup-logo" src="/src/assets/refract-logo.png" alt="" />
-          <span class="startup-brand-name startup-skeleton"></span>
+    <div id="startup-loader" role="status" aria-live="polite" aria-label="Loading Refract">
+      <div class="startup-mark">
+        <div class="startup-logo" aria-hidden="true">
+          <img class="startup-logo-img" src="/src/assets/refract-logo.png" alt="" />
         </div>
-        <div class="startup-profile">
-          <span class="startup-avatar startup-skeleton"></span>
-          <span class="startup-profile-name startup-skeleton"></span>
-          <span class="startup-profile-meta startup-skeleton"></span>
-        </div>
-        <span class="startup-section-label startup-skeleton"></span>
-        <nav class="startup-nav">
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-        </nav>
-        <div class="startup-sidebar-bottom">
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-          <div class="startup-nav-row"><span class="startup-nav-icon startup-skeleton"></span><span class="startup-nav-label startup-skeleton"></span></div>
-        </div>
-      </aside>
-      <div class="startup-titlebar" aria-hidden="true">
-        <span class="startup-title-control"></span><span class="startup-title-control"></span>
-        <span class="startup-title-control"></span><span class="startup-title-control"></span>
+        <h1 class="startup-title">Refract</h1>
+        <p class="startup-subtitle">Loading launcher</p>
+        <div class="startup-bar" aria-hidden="true"></div>
       </div>
-      <main class="startup-app" aria-hidden="true">
-        <div class="startup-content">
-          <div class="startup-heading">
-            <div class="startup-heading-copy">
-              <div class="startup-heading-title startup-skeleton"></div>
-              <div class="startup-heading-subtitle startup-skeleton"></div>
-            </div>
-            <div class="startup-heading-action startup-skeleton"></div>
-          </div>
-          <div class="startup-toolbar">
-            <span class="startup-search-icon startup-skeleton"></span>
-            <span class="startup-search-line startup-skeleton"></span>
-          </div>
-          <div class="startup-filters">
-            <span class="startup-filter startup-skeleton"></span>
-            <span class="startup-filter startup-skeleton"></span>
-            <span class="startup-filter startup-skeleton"></span>
-          </div>
-          <div class="startup-cards">
-            <div class="startup-card">
-              <span class="startup-card-icon startup-skeleton"></span><span class="startup-card-title startup-skeleton"></span>
-              <span class="startup-card-meta startup-skeleton"></span><span class="startup-card-copy startup-skeleton"></span>
-              <span class="startup-card-action startup-skeleton"></span>
-            </div>
-            <div class="startup-card">
-              <span class="startup-card-icon startup-skeleton"></span><span class="startup-card-title startup-skeleton"></span>
-              <span class="startup-card-meta startup-skeleton"></span><span class="startup-card-copy startup-skeleton"></span>
-              <span class="startup-card-action startup-skeleton"></span>
-            </div>
-            <div class="startup-card">
-              <span class="startup-card-icon startup-skeleton"></span><span class="startup-card-title startup-skeleton"></span>
-              <span class="startup-card-meta startup-skeleton"></span><span class="startup-card-copy startup-skeleton"></span>
-              <span class="startup-card-action startup-skeleton"></span>
-            </div>
-          </div>
-        </div>
-        <div class="startup-statusbar"></div>
-      </main>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
