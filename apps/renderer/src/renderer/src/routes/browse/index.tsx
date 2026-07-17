@@ -1,6 +1,7 @@
 ﻿import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type React from 'react'
+import { Link2 } from 'lucide-react'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { Button } from '@/components/ui/Button'
 import { CardGridSkeleton, TextSkeleton } from '@/components/ui/Skeleton'
@@ -9,6 +10,7 @@ import { htmlToText } from '@/lib/sanitize'
 import type { ModrinthProject, ModrinthVersion, ModrinthSortIndex, Instance, CFProject, CFFile, CFProjectDetail, ResolvedDep } from '@refract/core'
 import { useScrollLock } from '@/lib/use-scroll-lock'
 import { useT } from '@/i18n'
+import { consumeShareTarget, onShareTarget, openInstallFromLink, type ResolvedShareTarget } from '@/lib/share-link'
 
 export const Route = createFileRoute('/browse/')({
   component: Browse,
@@ -970,6 +972,31 @@ function Browse() {
   const [blockedTarget, setBlockedTarget] = useState<BlockedModError | null>(null)
 
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const applyTarget = (target: ResolvedShareTarget) => {
+      if (target.kind !== 'mod') return
+      setQuery(target.project.slug)
+      setOffset(0)
+      if (target.provider === 'modrinth') {
+        setSource('mr')
+        setResults([target.project])
+        setDetailTarget(target.project)
+      } else {
+        setSource('cf')
+        setCfAvailable(true)
+        setCfResults([target.project])
+        setCfModDetail(target.project)
+      }
+    }
+
+    const initial = consumeShareTarget('/browse')
+    if (initial) applyTarget(initial)
+    return onShareTarget((target) => {
+      if (target.kind !== 'mod') return
+      applyTarget(consumeShareTarget('/browse') ?? target)
+    })
+  }, [])
+
 
   // Feature 3: suggested instance for empty-query recommendations
   const suggested = useMemo(() => {
@@ -1267,6 +1294,9 @@ function Browse() {
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>{t.browse.title}</h1>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>{t.browse.subtitle}</p>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Button variant="outline" onClick={() => openInstallFromLink()} style={{ height: 32, gap: 7, padding: '0 10px', fontSize: 11 }}><Link2 size={14} />{t.sharing.open}<span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.08em', color: 'var(--accent)' }}>{t.sharing.beta}</span></Button>
+
         {/* Source toggle */}
         <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-md)', padding: 3, gap: 3, flexShrink: 0 }}>
           {(['mr', 'cf'] as const).map(src => (
@@ -1284,6 +1314,7 @@ function Browse() {
               {src === 'mr' ? t.browse.sourceMr : t.browse.sourceCf}
             </Button>
           ))}
+        </div>
         </div>
       </div>
 

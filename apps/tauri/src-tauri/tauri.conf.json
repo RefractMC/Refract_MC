@@ -32,6 +32,11 @@
     "updater": {
       "endpoints": ["https://github.com/RefractMC/Refract_MC/releases/latest/download/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZGMTAxQzkwRjU0N0JBMjQKUldRa3VrZjFrQndRLzg2aXZKRXY3NVNxalRZNjlhL3lnRjhIUGI5WlhOd1FvaStBMkwvZFk4NzUK"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["refract"]
+      }
     }
   },
   "bundle": {

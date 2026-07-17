@@ -1,6 +1,7 @@
 ﻿import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type React from 'react'
+import { Link2 } from 'lucide-react'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { Button } from '@/components/ui/Button'
 import { CardGridSkeleton, TextSkeleton } from '@/components/ui/Skeleton'
@@ -10,6 +11,7 @@ import type { ModrinthProject, ModrinthVersion, ModrinthSortIndex, ModrinthProje
 import { ftbIconUrl, ftbTargets } from '@refract/core'
 import { useScrollLock } from '@/lib/use-scroll-lock'
 import { useT } from '@/i18n'
+import { consumeShareTarget, onShareTarget, openInstallFromLink, type ResolvedShareTarget } from '@/lib/share-link'
 
 export const Route = createFileRoute('/modpacks/')({ component: ContentBrowser })
 
@@ -1212,6 +1214,33 @@ function ContentBrowser() {
   }
 
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const applyTarget = (target: ResolvedShareTarget) => {
+      if (target.kind === 'mod') return
+      setQuery(target.project.slug)
+      setOffset(0)
+      if (target.provider === 'modrinth') {
+        setTab(target.kind)
+        setCfSource('modrinth')
+        setResults([target.project])
+        setDetailTarget(target.project)
+      } else {
+        setTab('modpack')
+        setCfSource('curseforge')
+        setCfHasKey(true)
+        setCfResults([target.project])
+        setCfDetail(target.project)
+      }
+    }
+
+    const initial = consumeShareTarget('/modpacks')
+    if (initial) applyTarget(initial)
+    return onShareTarget((target) => {
+      if (target.kind === 'mod') return
+      applyTarget(consumeShareTarget('/modpacks') ?? target)
+    })
+  }, [])
+
   const tabInfo   = TABS.find(ti => ti.type === tab)!
   const installedModrinthInstances = new Map(
     instances
@@ -1397,6 +1426,7 @@ function ContentBrowser() {
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: '0 0 3px' }}>{t.content.title}</h1>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: 0 }}>{t.content.subtitle}</p>
         </div>
+        <Button variant="outline" onClick={() => openInstallFromLink()} style={{ height: 32, gap: 7, padding: '0 10px', fontSize: 11 }}><Link2 size={14} />{t.sharing.open}<span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.08em', color: 'var(--accent)' }}>{t.sharing.beta}</span></Button>
       </div>
 
       {/* Type tabs + source toggle */}

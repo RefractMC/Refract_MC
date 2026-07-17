@@ -5,6 +5,7 @@ import { Info, X } from 'lucide-react'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
+import { InstallFromLinkDialog } from '@/components/sharing/InstallFromLinkDialog'
 import { api, supportsWindowResizeDragging } from '@/lib/api'
 import { useT } from '@/i18n'
 
@@ -148,6 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       zIndex: 1,
     }}>
       {supportsWindowResizeDragging && <WindowResizeHandles />}
+      <InstallFromLinkDialog />
       <div
         aria-hidden="true"
         className="chrome-top-fill"

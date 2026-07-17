@@ -780,6 +780,20 @@
     "legendLink": "launches from the original folder, mods stay in sync automatically",
     "legendImport": "copies mods/saves/configs into Refract (independent)"
   },
+  "sharing": {
+    "title": "eLink",
+    "beta": "BETA",
+    "open": "Install from link",
+    "subtitle": "Paste a Modrinth or CurseForge project URL, project slug, or refract:// link.",
+    "inputLabel": "Project URL or slug",
+    "placeholder": "https://modrinth.com/modpack/...",
+    "resolve": "Find project",
+    "resolving": "Finding...",
+    "continue": "Open install",
+    "cancel": "Cancel",
+    "ready": "Ready to continue in Refract's existing install flow.",
+    "invalid": "Could not resolve this link."
+  },
   "migration": {
     "title": "Refract 1.2.0 update",
     "body": "Your launcher data is preserved after the Tauri upgrade. Microsoft accounts need a one-time sign-in again; offline accounts continue to work.",

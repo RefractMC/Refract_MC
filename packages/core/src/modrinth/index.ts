@@ -21,6 +21,23 @@ export interface ModrinthProject {
   date_modified?: string
 }
 
+export interface ModrinthProjectDetail {
+  id: string
+  slug: string
+  title: string
+  description: string
+  categories: string[]
+  downloads: number
+  followers: number
+  icon_url: string | null
+  versions: string[]
+  loaders: string[]
+  game_versions: string[]
+  project_type: ModrinthProjectType
+  published: string
+  updated: string
+}
+
 export interface ModrinthSearchOptions {
   query?: string
   projectType?: ModrinthProjectType
@@ -110,6 +127,13 @@ export async function searchContent(opts: ModrinthSearchOptions): Promise<Modrin
   const res = await fetch(`${BASE}/search?${params}`)
   if (!res.ok) throw new Error(`Modrinth search failed: ${res.status}`)
   return res.json() as Promise<ModrinthSearchResult>
+}
+
+/** Resolve a Modrinth project by either its public slug or project ID. */
+export async function getModrinthProject(projectIdOrSlug: string): Promise<ModrinthProjectDetail> {
+  const res = await fetch(`${BASE}/project/${encodeURIComponent(projectIdOrSlug)}`)
+  if (!res.ok) throw new Error(`Modrinth project not found: ${res.status}`)
+  return res.json() as Promise<ModrinthProjectDetail>
 }
 
 export async function getProjectVersions(
