@@ -154,7 +154,61 @@ body.modal-open .app-scroll { overflow: hidden !important; }
   to { transform: translateX(100%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sk::after { animation: none; }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+
+  .sk::after { animation: none !important; }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border-r: color-mix(in srgb, var(--ink) 42%, transparent);
+    --border-2: color-mix(in srgb, var(--ink) 62%, transparent);
+    --line: color-mix(in srgb, var(--ink) 34%, transparent);
+    --sb-line: color-mix(in srgb, var(--ink) 38%, transparent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-has-theme-bg="true"] .launcher-root::after {
+    opacity: 0 !important;
+    filter: none !important;
+  }
+
+  html[data-has-theme-bg="true"] :where(.launcher-panel, .detail-empty, .ni-dialog),
+  html[data-has-theme-bg="true"] :where(.titlebar, .statusbar),
+  html[data-has-theme-bg="true"] :where(.btn-secondary, .btn-outline, input, select, textarea) {
+    background: var(--surface) !important;
+  }
+
+  html[data-has-theme-bg="true"] .launcher-sidebar :where(a, button),
+  .theme-overlay {
+    backdrop-filter: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --accent: AccentColor;
+    --accent-hi: AccentColor;
+    --accent-lo: AccentColor;
+    --accent-fg: AccentColorText;
+    --accent-tint: transparent;
+    --border-r: ButtonBorder;
+    --border-2: ButtonText;
+    --line: ButtonBorder;
+  }
+
+  :where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
 }
 
 /* ── Legacy hover for un-migrated inline buttons ────────────────────────── */
