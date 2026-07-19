@@ -5,6 +5,8 @@ import type { ThemeDefinition, LayoutConfig } from '@/lib/theme-types'
 import darkTheme from '@/lib/themes/dark.json'
 import lightTheme from '@/lib/themes/light.json'
 
+export type ThemePreference = 'system' | 'dark' | 'light' | string
+
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16)
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
@@ -41,6 +43,7 @@ function resolveTheme(id: string, customThemes: ThemeDefinition[], fallback: The
 }
 
 interface ThemeStore {
+  themePreference: ThemePreference
   activeThemeId: string
   activeTheme: ThemeDefinition
   customThemes: ThemeDefinition[]
@@ -55,12 +58,38 @@ interface ThemeStore {
   setLayoutOverride: (override: Partial<LayoutConfig>) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setAccentColor: (color: string | null) => void
+  setThemePreference: (preference: ThemePreference) => void
   initialize: () => void
+}
+
+function systemThemeId(): 'dark' | 'light' {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'dark'
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function resolvedThemeId(preference: ThemePreference): string {
+  return preference === 'system' ? systemThemeId() : preference
+}
+
+let systemThemeListenerInstalled = false
+
+function installSystemThemeListener(): void {
+  if (
+    systemThemeListenerInstalled
+    || typeof window === 'undefined'
+    || typeof window.matchMedia !== 'function'
+  ) return
+  systemThemeListenerInstalled = true
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    const state = useThemeStore.getState()
+    if (state.themePreference === 'system') state.initialize()
+  })
 }
 
 export const useThemeStore = create<ThemeStore>()(
   persist(
     (set, get) => ({
+      themePreference: 'system',
       activeThemeId: 'dark',
       activeTheme: darkTheme as ThemeDefinition,
       customThemes: [],
@@ -70,7 +99,7 @@ export const useThemeStore = create<ThemeStore>()(
 
       applyTheme: (theme) => {
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
-        set({ activeThemeId: theme.id, activeTheme: theme })
+        set({ themePreference: theme.id, activeThemeId: theme.id, activeTheme: theme })
         if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
       },
 
@@ -107,9 +136,18 @@ export const useThemeStore = create<ThemeStore>()(
         applyAccentColor(color)
       },
 
+      setThemePreference: (preference) => {
+        const id = resolvedThemeId(preference)
+        const theme = resolveTheme(id, get().customThemes, darkTheme as ThemeDefinition)
+        set({ themePreference: preference, activeThemeId: theme.id, activeTheme: theme })
+        themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
+        if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
+      },
+
       initialize: () => {
-        const { activeThemeId, customThemes, layoutOverrides, activeTheme, accentColor } = get()
-        const theme = resolveTheme(activeThemeId, customThemes, activeTheme)
+        installSystemThemeListener()
+        const { themePreference, customThemes, layoutOverrides, activeTheme, accentColor } = get()
+        const theme = resolveTheme(resolvedThemeId(themePreference), customThemes, activeTheme)
         set({ activeThemeId: theme.id, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...layoutOverrides } })
         if (accentColor && isBuiltinTheme(theme.id)) applyAccentColor(accentColor)
@@ -117,8 +155,21 @@ export const useThemeStore = create<ThemeStore>()(
     }),
     {
       name: 'refract-theme',
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<ThemeStore>
+        if (version < 1) {
+          return {
+            ...state,
+            // A pre-existing stored theme was an explicit user choice. Fresh
+            // profiles have no persisted state and keep the new `system` default.
+            themePreference: state.activeThemeId ?? 'dark',
+          } as ThemeStore
+        }
+        return state as ThemeStore
+      },
       partialize: (s) => ({
-        activeThemeId: s.activeThemeId,
+        themePreference: s.themePreference,
         customThemes: s.customThemes,
         layoutOverrides: s.layoutOverrides,
         sidebarCollapsed: s.sidebarCollapsed,

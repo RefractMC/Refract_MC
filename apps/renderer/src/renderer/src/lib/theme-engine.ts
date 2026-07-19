@@ -9,9 +9,12 @@ class ThemeEngine {
   private customStyleTag: HTMLStyleElement | null = null
 
   apply(theme: ThemeDefinition): void {
-    document.documentElement.dataset.theme = theme.id
-    document.documentElement.dataset.hasThemeBg = theme.backgroundImage ? 'true' : 'false'
-    document.documentElement.dataset.themeGradients = theme.disableGradients ? 'off' : 'on'
+    const root = document.documentElement
+    root.dataset.theme = theme.id
+    root.dataset.hasThemeBg = theme.backgroundImage ? 'true' : 'false'
+    root.dataset.themeGradients = theme.disableGradients ? 'off' : 'on'
+    if (theme.id === 'dark' || theme.id === 'light') root.style.colorScheme = theme.id
+    else root.style.removeProperty('color-scheme')
     this.applyColors(theme.colors)
     this.applyBackground(theme)
     this.applyLayout({ ...DEFAULT_LAYOUT, ...theme.layout })

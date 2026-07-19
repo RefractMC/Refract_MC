@@ -88,18 +88,12 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   const [draftBackgroundDim, setDraftBackgroundDim] = useState(activeTheme.backgroundDim ?? 0.42)
   const [draftDisableGradients, setDraftDisableGradients] = useState(activeTheme.disableGradients ?? false)
 
-  async function persistActive(id: string) {
-    try { await api.config.set('activeThemeId', id) } catch { /* localStorage already holds it */ }
-  }
-
-  async function selectBuiltin(id: 'dark' | 'light') {
+  function selectBuiltin(id: 'dark' | 'light') {
     applyBuiltin(id)
-    await persistActive(id)
   }
 
-  async function selectCustom(theme: ThemeDefinition) {
+  function selectCustom(theme: ThemeDefinition) {
     applyTheme(theme)
-    await persistActive(theme.id)
   }
 
   function loadDraft(theme: ThemeDefinition, name = theme.name) {
@@ -161,7 +155,6 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
         : {}),
     }
     addCustomTheme(theme)        // also applies it
-    await persistActive(theme.id)
     setEditingThemeId(null)
     setCreating(false)
   }

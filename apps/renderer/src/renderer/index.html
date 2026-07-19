@@ -123,6 +123,24 @@
           transition: none;
         }
       }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --startup-bg: #f4f5f8;
+          --startup-panel: #ffffff;
+          --startup-line: rgba(17, 24, 39, .12);
+          --startup-text: #111827;
+          --startup-muted: #64748b;
+        }
+
+        #startup-loader {
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, .5), transparent 34%),
+            radial-gradient(circle at 50% 42%, rgba(79, 70, 229, .10), transparent 34%),
+            var(--startup-bg);
+        }
+      }
     </style>
   </head>
   <body>

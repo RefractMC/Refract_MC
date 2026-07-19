@@ -5,7 +5,7 @@ import type React from 'react'
 import { analyticsAvailable, api, type AppConfig, type SafeAccount } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { ThemesDialog } from '@/components/settings/ThemesDialog'
-import { useThemeStore } from '@/stores/theme'
+import { useThemeStore, type ThemePreference } from '@/stores/theme'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import type { JavaInstallation } from '@refract/core'
@@ -71,7 +71,8 @@ function Settings() {
   const lang = useLanguageStore((s) => s.lang)
   const setLang = useLanguageStore((s) => s.setLang)
   const activeThemeId = useThemeStore((state) => state.activeThemeId)
-  const applyBuiltin = useThemeStore((state) => state.applyBuiltin)
+  const themePreference = useThemeStore((state) => state.themePreference)
+  const setThemePreference = useThemeStore((state) => state.setThemePreference)
   const layoutOverrides = useThemeStore((state) => state.layoutOverrides)
   const setLayoutOverride = useThemeStore((state) => state.setLayoutOverride)
   const accentColor = useThemeStore((state) => state.accentColor)
@@ -258,19 +259,14 @@ function Settings() {
     window.setTimeout(() => setToast(null), 2600)
   }
 
-  async function chooseTheme(id: 'dark' | 'light') {
-    setBusy(`theme-${id}`)
-    setError(null)
-    try {
-      applyBuiltin(id)
-      await api.config.set('activeThemeId', id)
-      await refresh()
-      showToast(id === 'dark' ? t.settings.themeDark : t.settings.themeLight)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(null)
-    }
+  function chooseTheme(preference: ThemePreference) {
+    setThemePreference(preference)
+    const message = preference === 'system'
+      ? t.settings.themeSystem
+      : preference === 'dark'
+        ? t.settings.themeDark
+        : t.settings.themeLight
+    showToast(message)
   }
 
   function chooseSidebarWidth(width: string) {
@@ -371,10 +367,13 @@ function Settings() {
               <Field label={t.settings.theme} note={t.settings.themeNote}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <Segmented>
-                    <SegmentButton active={activeThemeId === 'dark'} disabled={!!busy} onClick={() => chooseTheme('dark')}>
+                    <SegmentButton active={themePreference === 'system'} disabled={!!busy} onClick={() => chooseTheme('system')}>
+                      {t.settings.system}
+                    </SegmentButton>
+                    <SegmentButton active={themePreference === 'dark'} disabled={!!busy} onClick={() => chooseTheme('dark')}>
                       {t.settings.dark}
                     </SegmentButton>
-                    <SegmentButton active={activeThemeId === 'light'} disabled={!!busy} onClick={() => chooseTheme('light')}>
+                    <SegmentButton active={themePreference === 'light'} disabled={!!busy} onClick={() => chooseTheme('light')}>
                       {t.settings.light}
                     </SegmentButton>
                   </Segmented>
