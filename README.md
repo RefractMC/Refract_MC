@@ -110,7 +110,9 @@ curl -fsSL https://refractmc.net/install.sh | sh
 | macOS — Intel         | [Download Intel `.dmg`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-macOS-x64.dmg)        |
 | Linux — AppImage      | [Download `.AppImage`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-x86_64.AppImage) |
 | Linux — Debian/Ubuntu | [Download `.deb`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-amd64.deb)            |
+| Linux — Fedora        | [Download `.rpm`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-x86_64.rpm)           |
 | Other packages        | [View the latest release](https://github.com/RefractMC/Refract_MC/releases/latest)                                     |
+
 
 > [!NOTE]
 > macOS builds are currently unsigned. On first launch, right-click Refract,
