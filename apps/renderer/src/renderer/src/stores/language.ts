@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { api } from '@/lib/api'
 
 export type Lang = 'en' | 'uk' | 'zh-CN'
 export type LanguagePreference = 'system' | Lang
@@ -13,11 +14,13 @@ interface LanguageStore {
 }
 
 function matchSupportedLanguage(tag: string): Lang | null {
-  const normalized = tag.trim().replace(/_/g, '-').toLowerCase()
+  const normalized = tag.trim().split(/[.@]/, 1)[0].replace(/_/g, '-').toLowerCase()
   if (normalized === 'uk' || normalized.startsWith('uk-')) return 'uk'
   if (
     normalized === 'zh-cn'
+    || normalized.startsWith('zh-cn-')
     || normalized === 'zh-sg'
+    || normalized.startsWith('zh-sg-')
     || normalized === 'zh-hans'
     || normalized.startsWith('zh-hans-')
   ) return 'zh-CN'
@@ -49,14 +52,31 @@ function applyDocumentLanguage(lang: Lang): void {
 }
 
 let languageListenerInstalled = false
+let systemLanguageRequest = 0
+
+function applyResolvedLanguage(lang: Lang): void {
+  applyDocumentLanguage(lang)
+  useLanguageStore.setState({ lang })
+}
+
+function refreshSystemLanguage(): void {
+  const request = ++systemLanguageRequest
+  void api.system.localeTags().then((languages) => {
+    const state = useLanguageStore.getState()
+    if (request !== systemLanguageRequest || state.languagePreference !== 'system') return
+    applyResolvedLanguage(detectSystemLanguage(languages.length ? languages : undefined))
+  }).catch(() => {})
+}
 
 function installLanguageListener(): void {
   if (languageListenerInstalled || typeof window === 'undefined') return
   languageListenerInstalled = true
-  window.addEventListener('languagechange', () => {
+  const refresh = () => {
     const state = useLanguageStore.getState()
-    if (state.languagePreference === 'system') state.initialize()
-  })
+    if (state.languagePreference === 'system') refreshSystemLanguage()
+  }
+  window.addEventListener('languagechange', refresh)
+  window.addEventListener('focus', refresh)
 }
 
 export const useLanguageStore = create<LanguageStore>()(
@@ -65,11 +85,14 @@ export const useLanguageStore = create<LanguageStore>()(
       languagePreference: 'system',
       lang: detectSystemLanguage(),
       setLanguagePreference: (preference) => {
+        systemLanguageRequest++
         const lang = resolveLanguage(preference)
         applyDocumentLanguage(lang)
         set({ languagePreference: preference, lang })
+        if (preference === 'system') refreshSystemLanguage()
       },
       setLang: (lang) => {
+        systemLanguageRequest++
         applyDocumentLanguage(lang)
         set({ languagePreference: lang, lang })
       },
@@ -80,6 +103,7 @@ export const useLanguageStore = create<LanguageStore>()(
           applyDocumentLanguage(lang)
           return { lang }
         })
+        if (useLanguageStore.getState().languagePreference === 'system') refreshSystemLanguage()
       },
     }),
     {

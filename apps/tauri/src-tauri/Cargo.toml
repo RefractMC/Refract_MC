@@ -44,6 +44,7 @@ flate2 = "1"
 tar = "0.4"
 base64 = "0.22"
 regex = "1"
+sys-locale = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 fastnbt = "2"
 

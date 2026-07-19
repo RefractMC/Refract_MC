@@ -131,6 +131,7 @@ function createBrowserApi(): RefractAPI {
     },
     system: {
       ramGb: async () => 16,
+      localeTags: async () => navigator.languages?.length ? [...navigator.languages] : [navigator.language],
       availableRamMb: async () => null,
       accentColor: async () => null,
       fontFamilies: async () => ['Segoe UI Variable', 'Segoe UI', 'SF Pro Text', 'Ubuntu', 'Cantarell', 'Noto Sans', 'Inter', 'Arial'],
@@ -678,6 +679,7 @@ function createTauriApi(): RefractAPI {
     system: {
       ...base.system,
       ramGb: (() => tinvoke('system_ram_gb')) as RefractAPI['system']['ramGb'],
+      localeTags: (() => tinvoke('system_locale_tags')) as RefractAPI['system']['localeTags'],
       availableRamMb: (() => tinvoke('system_available_ram_mb')) as RefractAPI['system']['availableRamMb'],
       accentColor: (() => tinvoke('system_accent_color')) as RefractAPI['system']['accentColor'],
       fontFamilies: (() => tinvoke('system_font_families')) as RefractAPI['system']['fontFamilies'],

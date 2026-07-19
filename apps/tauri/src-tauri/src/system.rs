@@ -54,6 +54,13 @@ pub fn system_ram_gb() -> u64 {
     ram_gb_value()
 }
 
+/// Preferred operating-system UI locales, ordered from most to least
+/// preferred and normalized to BCP-47 language tags.
+#[tauri::command]
+pub fn system_locale_tags() -> Vec<String> {
+    sys_locale::get_locales().collect()
+}
+
 /// Conservative default for a new Minecraft instance. Leave enough memory for
 /// the operating system, Refract, and other applications; heavier templates
 /// can still request more explicitly.

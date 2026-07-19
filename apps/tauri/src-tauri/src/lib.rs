@@ -96,6 +96,7 @@ pub fn run() {
             theme::theme_delete,
             theme::theme_browse_background_image,
             system::system_ram_gb,
+            system::system_locale_tags,
             system::system_available_ram_mb,
             system::system_accent_color,
             system::system_font_families,
