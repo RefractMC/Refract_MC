@@ -22,6 +22,23 @@ All launcher UI strings live here as JSON files, one per language.
 
 5. Open a **Pull Request** with the title `i18n: add [language name] translation`.
 
+## Translating the README
+
+1. **Copy** the root `README.md` to `docs/README.<lang>.md`, using the [BCP 47 language tag](https://en.wikipedia.org/wiki/IETF_language_tag) for your language (e.g. `docs/README.zh-CN.md`).
+2. **Translate** the content. Keep links, badges, code blocks, and brand names intact. Prefix repo-relative paths with `../` — the file lives one level deeper (e.g. `LICENSE` → `../LICENSE`). Absolute URLs are unchanged.
+3. **Add a language link** to the root `README.md`, right below the tagline. Use the language's [endonym](https://en.wikipedia.org/wiki/Endonym_and_exonym) (its name in that language) as the link text, prefixed with a `🌐` glyph — e.g. `简体中文` for Simplified Chinese:
+   ```html
+   <p align="center">
+     🌐 <a href="docs/README.zh-CN.md">简体中文</a>
+   </p>
+   ```
+4. **Add a link back** to the root `README.md` at the top of the translated file:
+   ```html
+   <p align="center">
+     🌐 <a href="../README.md">English</a>
+   </p>
+   ```
+
 ## String format
 
 ### Plain strings

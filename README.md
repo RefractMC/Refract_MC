@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  🌐 <a href="docs/README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   Organize instances, discover community content, manage Java, and launch Minecraft from one focused desktop app.
 </p>
 
@@ -171,6 +175,7 @@ project conventions, and pull request guidelines.
 * `packages/core` contains shared launcher logic.
 * `packages/plugin-api` contains the public plugin API.
 * `locales` contains translation files.
+* `docs` contains project documentation.
 
 </details>
 
