@@ -8,6 +8,8 @@
 * Added parallel downloads, post-install verification, and automatic resolution for blocked mod dependencies.
 * Improved the startup loader, install dialog selection, pagination behavior, theme corner radii, and button hover feedback.
 * Refined the Simplified Chinese translation for the latest content-management messages.
+* Added first-run personalization from safe system preferences, including theme, language, accent color, font, accessibility preferences, and a RAM-aware Minecraft memory recommendation.
+* Fixed Windows system accents using the native personalization color instead of WebView2's default blue.
 * Replaced the native font suggestion popup with Refract's searchable installed-font picker on Windows and Linux.
 
 ## 1.3.0
