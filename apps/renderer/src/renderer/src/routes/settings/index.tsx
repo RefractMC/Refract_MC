@@ -75,8 +75,10 @@ function Settings() {
   const setThemePreference = useThemeStore((state) => state.setThemePreference)
   const layoutOverrides = useThemeStore((state) => state.layoutOverrides)
   const setLayoutOverride = useThemeStore((state) => state.setLayoutOverride)
+  const accentPreference = useThemeStore((state) => state.accentPreference)
   const accentColor = useThemeStore((state) => state.accentColor)
   const setAccentColor = useThemeStore((state) => state.setAccentColor)
+  const setAccentPreference = useThemeStore((state) => state.setAccentPreference)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
@@ -326,6 +328,29 @@ function Settings() {
             <div style={{ display:'grid', gap:12 }}>
               <Field label={t.settings.accentColor} note={t.settings.accentColorNote}>
                 <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                  <Segmented>
+                    <SegmentButton
+                      active={accentPreference === 'refract'}
+                      disabled={false}
+                      onClick={() => setAccentPreference('refract')}
+                    >
+                      {t.settings.accentRefract}
+                    </SegmentButton>
+                    <SegmentButton
+                      active={accentPreference === 'system'}
+                      disabled={false}
+                      onClick={() => setAccentPreference('system')}
+                    >
+                      {t.settings.system}
+                    </SegmentButton>
+                    <SegmentButton
+                      active={accentPreference === 'custom'}
+                      disabled={false}
+                      onClick={() => setAccentColor(accentColor ?? '#5316D4')}
+                    >
+                      {t.settings.accentCustom}
+                    </SegmentButton>
+                  </Segmented>
                   {[
                     { hex:'#5b9c3a', label:'Default green' },
                     { hex:'#5316D4', label:'Refract purple' },
@@ -341,7 +366,7 @@ function Settings() {
                       onClick={() => { setAccentColor(hex); showToast(t.settings.accentColorApplied) }}
                       style={{
                         width:22, height:22, borderRadius:'50%', background:hex, border:'none', cursor:'pointer', flexShrink:0, padding:0,
-                        boxShadow: accentColor === hex ? `0 0 0 2px var(--surface), 0 0 0 4px ${hex}` : 'none',
+                        boxShadow: accentPreference === 'custom' && accentColor === hex ? `0 0 0 2px var(--surface), 0 0 0 4px ${hex}` : 'none',
                         transition:'box-shadow 120ms',
                       }}
                     />
@@ -353,14 +378,6 @@ function Settings() {
                     title={t.settings.customColour}
                     style={{ width:30, height:22, padding:0, border:'1px solid var(--border-r)', borderRadius:'var(--radius-sm)', cursor:'pointer', background:'none' }}
                   />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { if (accentColor) { setAccentColor(null); showToast(t.settings.accentColorReset) } }}
-                    disabled={!accentColor}
-                  >
-                    Reset
-                  </Button>
                 </div>
               </Field>
 

@@ -48,7 +48,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 fastnbt = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_SystemInformation"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 
 [profile.release]
 lto = true

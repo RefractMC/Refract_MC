@@ -3799,6 +3799,7 @@ dependencies = [
  "tokio",
  "uuid",
  "windows-sys 0.61.2",
+ "zbus",
  "zeroize",
  "zip 2.4.2",
 ]

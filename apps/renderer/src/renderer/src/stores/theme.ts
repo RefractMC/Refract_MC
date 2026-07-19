@@ -1,41 +1,39 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { themeEngine } from '@/lib/theme-engine'
+import { api } from '@/lib/api'
 import type { ThemeDefinition, LayoutConfig } from '@/lib/theme-types'
 import darkTheme from '@/lib/themes/dark.json'
 import lightTheme from '@/lib/themes/light.json'
 
 export type ThemePreference = 'system' | 'dark' | 'light' | string
+export type AccentPreference = 'refract' | 'system' | 'custom'
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16)
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
-function adj(hex: string, d: number): string {
-  const [r, g, b] = hexToRgb(hex)
-  const c = (v: number) => Math.max(0, Math.min(255, v + d))
-  return `rgb(${c(r)},${c(g)},${c(b)})`
+function foregroundForHex(hex: string): string {
+  const [r, g, b] = hexToRgb(hex).map((channel) => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.48 ? '#111827' : '#ffffff'
 }
-export function applyAccentColor(hex: string | null): void {
+
+export function applyAccentColor(color: string, foreground: string): void {
   const root = document.documentElement
-  if (!hex) {
-    ;['--accent','--accent-hi','--accent-lo','--accent-tint'].forEach(v => root.style.removeProperty(v))
-    return
-  }
-  const [r, g, b] = hexToRgb(hex)
-  root.style.setProperty('--accent',      hex)
-  root.style.setProperty('--accent-hi',   adj(hex, 30))
-  root.style.setProperty('--accent-lo',   adj(hex, -25))
-  root.style.setProperty('--accent-tint', `rgba(${r},${g},${b},.15)`)
+  root.style.setProperty('--accent', color)
+  root.style.setProperty('--accent-hi', `color-mix(in srgb, ${color} 76%, white)`)
+  root.style.setProperty('--accent-lo', `color-mix(in srgb, ${color} 78%, black)`)
+  root.style.setProperty('--accent-fg', foreground)
+  root.style.setProperty('--accent-tint', `color-mix(in srgb, ${color} 15%, transparent)`)
+  root.style.accentColor = color
 }
 
 const BUILTIN_THEMES: Record<string, ThemeDefinition> = {
   dark: darkTheme as ThemeDefinition,
   light: lightTheme as ThemeDefinition,
-}
-
-function isBuiltinTheme(id: string): boolean {
-  return Boolean(BUILTIN_THEMES[id])
 }
 
 function resolveTheme(id: string, customThemes: ThemeDefinition[], fallback: ThemeDefinition): ThemeDefinition {
@@ -49,6 +47,7 @@ interface ThemeStore {
   customThemes: ThemeDefinition[]
   layoutOverrides: Partial<LayoutConfig>
   sidebarCollapsed: boolean
+  accentPreference: AccentPreference
   accentColor: string | null
 
   applyTheme: (theme: ThemeDefinition) => void
@@ -58,6 +57,7 @@ interface ThemeStore {
   setLayoutOverride: (override: Partial<LayoutConfig>) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setAccentColor: (color: string | null) => void
+  setAccentPreference: (preference: AccentPreference) => void
   setThemePreference: (preference: ThemePreference) => void
   initialize: () => void
 }
@@ -72,6 +72,8 @@ function resolvedThemeId(preference: ThemePreference): string {
 }
 
 let systemThemeListenerInstalled = false
+let systemAccentListenerInstalled = false
+let systemAccentRequest = 0
 
 function installSystemThemeListener(): void {
   if (
@@ -86,6 +88,41 @@ function installSystemThemeListener(): void {
   })
 }
 
+function applyAccentPreference(preference: AccentPreference, customColor: string | null): void {
+  if (preference === 'system') {
+    const request = ++systemAccentRequest
+    // CSS system colors are only a fallback. WebView2 commonly reports its
+    // default blue instead of the Windows personalization accent.
+    applyAccentColor('AccentColor', 'AccentColorText')
+    void api.system.accentColor().then((color) => {
+      if (
+        request === systemAccentRequest
+        && useThemeStore.getState().accentPreference === 'system'
+        && color
+      ) {
+        applyAccentColor(color, foregroundForHex(color))
+      }
+    }).catch(() => {})
+  } else if (preference === 'custom' && customColor) {
+    systemAccentRequest++
+    applyAccentColor(customColor, foregroundForHex(customColor))
+  } else {
+    systemAccentRequest++
+  }
+}
+
+function installSystemAccentListener(): void {
+  if (systemAccentListenerInstalled || typeof window === 'undefined') return
+  systemAccentListenerInstalled = true
+  // Windows applies personalization changes while Refract is in the
+  // background. Refresh when the user returns from Settings.
+  window.addEventListener('focus', () => {
+    const state = useThemeStore.getState()
+    if (state.accentPreference === 'system') {
+      applyAccentPreference(state.accentPreference, state.accentColor)
+    }
+  })
+}
 export const useThemeStore = create<ThemeStore>()(
   persist(
     (set, get) => ({
@@ -95,12 +132,13 @@ export const useThemeStore = create<ThemeStore>()(
       customThemes: [],
       layoutOverrides: {},
       sidebarCollapsed: false,
+      accentPreference: 'refract',
       accentColor: null,
 
       applyTheme: (theme) => {
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
         set({ themePreference: theme.id, activeThemeId: theme.id, activeTheme: theme })
-        if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
+        applyAccentPreference(get().accentPreference, get().accentColor)
       },
 
       applyBuiltin: (id) => {
@@ -126,14 +164,20 @@ export const useThemeStore = create<ThemeStore>()(
         const theme = resolveTheme(get().activeThemeId, get().customThemes, get().activeTheme)
         set({ layoutOverrides: merged, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...merged } })
-        if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
+        applyAccentPreference(get().accentPreference, get().accentColor)
       },
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
       setAccentColor: (color) => {
-        set({ accentColor: color })
-        applyAccentColor(color)
+        const preference: AccentPreference = color ? 'custom' : 'refract'
+        set({ accentPreference: preference, accentColor: color })
+        get().initialize()
+      },
+
+      setAccentPreference: (preference) => {
+        set({ accentPreference: preference })
+        get().initialize()
       },
 
       setThemePreference: (preference) => {
@@ -141,30 +185,44 @@ export const useThemeStore = create<ThemeStore>()(
         const theme = resolveTheme(id, get().customThemes, darkTheme as ThemeDefinition)
         set({ themePreference: preference, activeThemeId: theme.id, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
-        if (isBuiltinTheme(theme.id)) applyAccentColor(get().accentColor)
+        applyAccentPreference(get().accentPreference, get().accentColor)
       },
 
       initialize: () => {
         installSystemThemeListener()
-        const { themePreference, customThemes, layoutOverrides, activeTheme, accentColor } = get()
+        installSystemAccentListener()
+        const {
+          themePreference,
+          customThemes,
+          layoutOverrides,
+          activeTheme,
+          accentPreference,
+          accentColor,
+        } = get()
         const theme = resolveTheme(resolvedThemeId(themePreference), customThemes, activeTheme)
         set({ activeThemeId: theme.id, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...layoutOverrides } })
-        if (accentColor && isBuiltinTheme(theme.id)) applyAccentColor(accentColor)
+        applyAccentPreference(accentPreference, accentColor)
       },
     }),
     {
       name: 'refract-theme',
-      version: 1,
+      version: 2,
       migrate: (persisted, version) => {
-        const state = persisted as Partial<ThemeStore>
+        let state = persisted as Partial<ThemeStore>
         if (version < 1) {
-          return {
+          state = {
             ...state,
             // A pre-existing stored theme was an explicit user choice. Fresh
             // profiles have no persisted state and keep the new `system` default.
             themePreference: state.activeThemeId ?? 'dark',
-          } as ThemeStore
+          }
+        }
+        if (version < 2) {
+          state = {
+            ...state,
+            accentPreference: state.accentColor ? 'custom' : 'refract',
+          }
         }
         return state as ThemeStore
       },
@@ -173,6 +231,7 @@ export const useThemeStore = create<ThemeStore>()(
         customThemes: s.customThemes,
         layoutOverrides: s.layoutOverrides,
         sidebarCollapsed: s.sidebarCollapsed,
+        accentPreference: s.accentPreference,
         accentColor: s.accentColor,
       }),
       onRehydrateStorage: () => (state) => {
