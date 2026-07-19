@@ -4,12 +4,14 @@ import { RouterProvider, createRouter, createHashHistory } from '@tanstack/react
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { routeTree } from './routeTree.gen'
 import { useThemeStore } from './stores/theme'
+import { useLanguageStore } from './stores/language'
 import { installRendererErrorLogging } from './lib/logger'
 import { api } from './lib/api'
 import './styles/globals.css'
 
 installRendererErrorLogging()
 useThemeStore.getState().initialize()
+useLanguageStore.getState().initialize()
 
 // Cache query results across navigations so switching pages serves instantly
 // from cache instead of refetching every mount (the default staleTime is 0).

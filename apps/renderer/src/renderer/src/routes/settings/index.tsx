@@ -68,8 +68,8 @@ function ConfirmActionModal({
 function Settings() {
   const t = useT()
   const analyticsDisabled = !analyticsAvailable
-  const lang = useLanguageStore((s) => s.lang)
-  const setLang = useLanguageStore((s) => s.setLang)
+  const languagePreference = useLanguageStore((s) => s.languagePreference)
+  const setLanguagePreference = useLanguageStore((s) => s.setLanguagePreference)
   const activeThemeId = useThemeStore((state) => state.activeThemeId)
   const themePreference = useThemeStore((state) => state.themePreference)
   const setThemePreference = useThemeStore((state) => state.setThemePreference)
@@ -413,13 +413,16 @@ function Settings() {
 
               <Field label={t.settings.language} note={t.settings.languageNote}>
                 <Segmented>
-                  <SegmentButton active={lang === 'en'} disabled={false} onClick={() => setLang('en')}>
+                  <SegmentButton active={languagePreference === 'system'} disabled={false} onClick={() => setLanguagePreference('system')}>
+                    {t.settings.system}
+                  </SegmentButton>
+                  <SegmentButton active={languagePreference === 'en'} disabled={false} onClick={() => setLanguagePreference('en')}>
                     {t.settings.langEn}
                   </SegmentButton>
-                  <SegmentButton active={lang === 'uk'} disabled={false} onClick={() => setLang('uk')}>
+                  <SegmentButton active={languagePreference === 'uk'} disabled={false} onClick={() => setLanguagePreference('uk')}>
                     {t.settings.langUk}
                   </SegmentButton>
-                  <SegmentButton active={lang === 'zh-CN'} disabled={false} onClick={() => setLang('zh-CN')}>
+                  <SegmentButton active={languagePreference === 'zh-CN'} disabled={false} onClick={() => setLanguagePreference('zh-CN')}>
                     {t.settings.langZhCN}
                   </SegmentButton>
                 </Segmented>
