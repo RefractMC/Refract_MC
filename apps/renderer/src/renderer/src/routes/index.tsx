@@ -19,6 +19,8 @@ import { analyticsAvailable, api, type AppConfig, type QuickPlayTarget } from '@
 import { logger } from '@/lib/logger'
 import { getFilePath } from '@/lib/file-path'
 import { registerNativeDropTarget } from '@/lib/native-drop'
+import { useThemeStore } from '@/stores/theme'
+import { useLanguageStore } from '@/stores/language'
 
 export const Route = createFileRoute('/')({
   component: Library,
@@ -634,8 +636,29 @@ function CrashReportModal({
   )
 }
 
-function OnboardingModal({ step, onNext, onClose, onAddAccount, onNewInstance }: { step: number; onNext: () => void; onClose: () => void; onAddAccount: () => void; onNewInstance: () => void }) {
+function OnboardingModal({
+  step,
+  config,
+  onNext,
+  onClose,
+  onAddAccount,
+  onNewInstance,
+}: {
+  step: number
+  config: AppConfig | null
+  onNext: () => void
+  onClose: () => void
+  onAddAccount: () => void
+  onNewInstance: () => void
+}) {
   const t = useT()
+  const themePreference = useThemeStore((state) => state.themePreference)
+  const activeThemeId = useThemeStore((state) => state.activeThemeId)
+  const accentPreference = useThemeStore((state) => state.accentPreference)
+  const fontPreference = useThemeStore((state) => state.fontPreference)
+  const fontFamily = useThemeStore((state) => state.fontFamily)
+  const languagePreference = useLanguageStore((state) => state.languagePreference)
+  const lang = useLanguageStore((state) => state.lang)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
@@ -679,6 +702,38 @@ function OnboardingModal({ step, onNext, onClose, onAddAccount, onNewInstance }:
   ]
   const current = steps[step]
   if (!current) return null
+  const languageName = lang === 'uk'
+    ? t.settings.langUk
+    : lang === 'zh-CN'
+      ? t.settings.langZhCN
+      : t.settings.langEn
+  const appearanceName = themePreference === 'system'
+    ? `${t.settings.system} (${activeThemeId === 'light' ? t.settings.light : t.settings.dark})`
+    : activeThemeId === 'light'
+      ? t.settings.light
+      : activeThemeId === 'dark'
+        ? t.settings.dark
+        : activeThemeId
+  const accentName = accentPreference === 'system'
+    ? t.settings.system
+    : accentPreference === 'custom'
+      ? t.settings.accentCustom
+      : t.settings.accentRefract
+  const fontName = fontPreference === 'custom' && fontFamily
+    ? fontFamily
+    : fontPreference === 'system'
+      ? t.settings.system
+      : t.settings.interfaceFontDefault
+  const personalizedSettings = [
+    [t.home.personalizedAppearance, appearanceName],
+    [
+      t.home.personalizedLanguage,
+      languagePreference === 'system' ? `${t.settings.system} (${languageName})` : languageName,
+    ],
+    [t.home.personalizedAccent, accentName],
+    [t.home.personalizedFont, fontName],
+    [t.home.personalizedMemory, t.createInst.ram(config?.defaultMemoryMb ?? 2048)],
+  ]
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 205, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: 460, background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -692,7 +747,25 @@ function OnboardingModal({ step, onNext, onClose, onAddAccount, onNewInstance }:
         </div>
         <div style={{ padding: '28px 24px' }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--accent)', letterSpacing: '.01em', marginBottom: 14 }}>{current.title}</div>
-          <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6, margin: '0 0 24px' }}>{current.body}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6, margin: step === 0 ? '0 0 16px' : '0 0 24px' }}>{current.body}</p>
+          {step === 0 && (
+            <div style={{ padding:12, marginBottom:20, border:'1px solid var(--border-r)', borderRadius:'var(--radius-md)', background:'var(--bg)' }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--ink)', marginBottom:8 }}>
+                {t.home.personalizedTitle}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:'6px 12px' }}>
+                {personalizedSettings.map(([label, value]) => (
+                  <div key={label} style={{ minWidth:0, fontSize:11, color:'var(--ink-3)' }}>
+                    <span style={{ color:'var(--ink-4)' }}>{label}: </span>
+                    <span style={{ color:'var(--ink-2)', overflowWrap:'anywhere' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop:8, fontSize:10.5, color:'var(--ink-4)', lineHeight:1.4 }}>
+                {t.home.personalizedNote}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{current.footer}</div>
         </div>
       </div>
@@ -2156,6 +2229,7 @@ function Library() {
       {onboardingStep !== null && (
         <OnboardingModal
           step={onboardingStep}
+          config={appConfig}
           onNext={() => setOnboardingStep(s => s !== null ? Math.min(s + 1, 3) : null)}
           onClose={dismissOnboarding}
           onAddAccount={dismissOnboarding}
