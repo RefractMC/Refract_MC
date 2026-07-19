@@ -11,6 +11,7 @@ import { compressImage } from '@/lib/image'
 import type { JavaInstallation } from '@refract/core'
 import { useT } from '@/i18n'
 import { useLanguageStore } from '@/stores/language'
+import { Check, ChevronDown } from 'lucide-react'
 
 export const Route = createFileRoute('/settings/')({
   component: Settings,
@@ -18,12 +19,178 @@ export const Route = createFileRoute('/settings/')({
 
 const SIDEBAR_WIDTHS_VALUES = ['60px', '232px', '268px'] as const
 const MEMORY_MIN_MB = 1024
+const COMMON_FONT_FAMILIES = ['Segoe UI Variable', 'Segoe UI', 'SF Pro Text', 'Ubuntu', 'Cantarell', 'Noto Sans', 'Inter', 'Arial']
 
 type ConfirmAction = {
   title: string
   body: string
   confirmLabel: string
   run: () => Promise<void>
+}
+
+function FontFamilyPicker({
+  value,
+  fonts,
+  loading,
+  placeholder,
+  loadingLabel,
+  emptyLabel,
+  onSelect,
+}: {
+  value: string | null
+  fonts: string[]
+  loading: boolean
+  placeholder: string
+  loadingLabel: string
+  emptyLabel: string
+  onSelect: (family: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(value ?? '')
+  const [activeIndex, setActiveIndex] = useState(0)
+
+  useEffect(() => setDraft(value ?? ''), [value])
+
+  const query = draft.trim() === (value ?? '').trim()
+    ? ''
+    : draft.trim().toLocaleLowerCase()
+  const matches = fonts
+    .filter((family) => !query || family.toLocaleLowerCase().includes(query))
+    .slice(0, 100)
+
+  function showDropdown() {
+    setOpen(true)
+  }
+
+  function choose(family: string) {
+    const cleaned = family.trim()
+    if (!cleaned) return
+    setDraft(cleaned)
+    onSelect(cleaned)
+    setOpen(false)
+  }
+
+  return (
+    <div
+      style={{ position:'relative', zIndex:open ? 100 : undefined }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          if (draft.trim() && draft.trim() !== (value ?? '').trim()) choose(draft)
+          else setOpen(false)
+        }
+      }}
+    >
+      <div style={{ position:'relative' }}>
+        <input
+          type="text"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-controls="refract-font-options"
+          aria-expanded={open}
+          aria-activedescendant={open ? `refract-font-option-${activeIndex}` : undefined}
+          value={draft}
+          onFocus={(event) => {
+            event.currentTarget.select()
+            setActiveIndex(0)
+            showDropdown()
+          }}
+          onClick={showDropdown}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setActiveIndex(0)
+            showDropdown()
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              showDropdown()
+              setActiveIndex((index) => Math.min(index + 1, Math.max(0, matches.length - 1)))
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              setActiveIndex((index) => Math.max(0, index - 1))
+            } else if (event.key === 'Enter') {
+              event.preventDefault()
+              choose(open && matches[activeIndex] ? matches[activeIndex] : draft)
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              setDraft(value ?? '')
+              setOpen(false)
+              event.currentTarget.blur()
+            }
+          }}
+          placeholder={placeholder}
+          maxLength={80}
+          style={{
+            width:'100%', height:34, padding:'0 36px 0 10px', boxSizing:'border-box',
+            background:'var(--bg)', border:`1px solid ${open ? 'var(--accent)' : 'var(--border-r)'}`,
+            borderRadius:'var(--radius-md)', color:'var(--ink)', fontSize:12, outline:'none',
+          }}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={placeholder}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => open ? setOpen(false) : showDropdown()}
+          style={{
+            position:'absolute', top:1, right:1, width:32, height:32, border:0,
+            borderLeft:'1px solid var(--line)', borderRadius:'0 var(--radius-md) var(--radius-md) 0',
+            background:'transparent', color:'var(--ink-3)', cursor:'pointer',
+          }}
+        >
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            style={{ transform:open ? 'rotate(180deg)' : undefined }}
+          />
+        </button>
+      </div>
+      {open && (
+        <div
+          id="refract-font-options"
+          role="listbox"
+          style={{
+            position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:100,
+            maxHeight:220, overflowY:'auto', padding:4, boxSizing:'border-box',
+            background:'var(--bg)', border:'1px solid var(--border-r)',
+            borderRadius:'var(--radius-md)', boxShadow:'var(--shadow-floating)',
+          }}
+        >
+            {loading ? (
+              <div style={{ padding:'9px 10px', color:'var(--ink-4)', fontSize:11 }}>{loadingLabel}</div>
+            ) : matches.length === 0 ? (
+              <div style={{ padding:'9px 10px', color:'var(--ink-4)', fontSize:11 }}>{emptyLabel}</div>
+            ) : matches.map((family, index) => {
+              const selected = family.toLocaleLowerCase() === value?.toLocaleLowerCase()
+              const active = index === activeIndex
+              return (
+                <button
+                  key={family}
+                  id={`refract-font-option-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => choose(family)}
+                  style={{
+                    display:'flex', width:'100%', alignItems:'center', justifyContent:'space-between',
+                    gap:12, minHeight:34, padding:'6px 9px', border:0,
+                    borderRadius:'var(--radius-sm)', cursor:'pointer', textAlign:'left',
+                    background:active ? 'var(--accent-tint)' : 'transparent',
+                    color:selected ? 'var(--accent)' : 'var(--ink-2)',
+                    fontFamily:`${JSON.stringify(family)}, var(--font-ui)`, fontSize:12,
+                  }}
+                >
+                  <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{family}</span>
+                  {selected && <Check size={14} strokeWidth={2.4} style={{ flexShrink:0 }} />}
+                </button>
+              )
+            })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function safeMemoryMaxMb(systemMaxMb: number): number {
@@ -79,6 +246,10 @@ function Settings() {
   const accentColor = useThemeStore((state) => state.accentColor)
   const setAccentColor = useThemeStore((state) => state.setAccentColor)
   const setAccentPreference = useThemeStore((state) => state.setAccentPreference)
+  const fontPreference = useThemeStore((state) => state.fontPreference)
+  const fontFamily = useThemeStore((state) => state.fontFamily)
+  const setFontFamily = useThemeStore((state) => state.setFontFamily)
+  const setFontPreference = useThemeStore((state) => state.setFontPreference)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
@@ -94,6 +265,8 @@ function Settings() {
   const [deleting, setDeleting] = useState(false)
   const [memoryMb, setMemoryMb] = useState<number>(2048)
   const [memoryMaxMb, setMemoryMaxMb] = useState<number>(16384)
+  const [installedFonts, setInstalledFonts] = useState<string[]>(COMMON_FONT_FAMILIES)
+  const [fontsLoading, setFontsLoading] = useState(true)
   const memorySaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [javas, setJavas] = useState<JavaInstallation[]>([])
   const [managedJavas, setManagedJavas] = useState<JavaInstallation[]>([])
@@ -150,6 +323,10 @@ function Settings() {
       setMemoryMaxMb(max)
       setMemoryMb(prev => clampMemoryMb(prev, max))
     }).catch(() => {})
+    api.system.fontFamilies()
+      .then((families) => setInstalledFonts(families.length ? families : COMMON_FONT_FAMILIES))
+      .catch(() => setInstalledFonts(COMMON_FONT_FAMILIES))
+      .finally(() => setFontsLoading(false))
   }, [])
 
   async function scanJava() {
@@ -443,6 +620,47 @@ function Settings() {
                     {t.settings.langZhCN}
                   </SegmentButton>
                 </Segmented>
+              </Field>
+
+              <Field label={t.settings.interfaceFont} note={t.settings.interfaceFontNote}>
+                <div style={{ display:'grid', gap:8 }}>
+                  <Segmented>
+                    <SegmentButton
+                      active={fontPreference === 'default'}
+                      disabled={false}
+                      onClick={() => setFontPreference('default')}
+                    >
+                      {t.settings.interfaceFontDefault}
+                    </SegmentButton>
+                    <SegmentButton
+                      active={fontPreference === 'system'}
+                      disabled={false}
+                      onClick={() => setFontPreference('system')}
+                    >
+                      {t.settings.system}
+                    </SegmentButton>
+                    <SegmentButton
+                      active={fontPreference === 'custom'}
+                      disabled={false}
+                      onClick={() => setFontPreference('custom')}
+                    >
+                      {t.settings.accentCustom}
+                    </SegmentButton>
+                  </Segmented>
+                  {fontPreference === 'custom' && (
+                    <>
+                      <FontFamilyPicker
+                        value={fontFamily}
+                        fonts={installedFonts}
+                        loading={fontsLoading}
+                        placeholder={t.settings.interfaceFontPlaceholder}
+                        loadingLabel={t.settings.interfaceFontLoading}
+                        emptyLabel={t.settings.interfaceFontEmpty}
+                        onSelect={setFontFamily}
+                      />
+                    </>
+                  )}
+                </div>
               </Field>
 
               <Field label={t.settings.curseforgeKey} note={t.settings.curseforgeKeyNote}>

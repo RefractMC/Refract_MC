@@ -236,12 +236,114 @@ pub async fn system_accent_color() -> Option<String> {
         .flatten()
 }
 
+fn sorted_unique_font_names(names: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut unique = std::collections::BTreeMap::new();
+    for name in names {
+        let name = name.trim().trim_start_matches('@').trim();
+        if !name.is_empty() && name.len() <= 120 {
+            unique
+                .entry(name.to_lowercase())
+                .or_insert_with(|| name.to_string());
+        }
+    }
+    unique.into_values().take(1000).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn system_font_families_value() -> Vec<String> {
+    use windows_sys::Win32::Foundation::LPARAM;
+    use windows_sys::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, DeleteDC, EnumFontFamiliesExW, DEFAULT_CHARSET, LOGFONTW, TEXTMETRICW,
+    };
+
+    unsafe extern "system" fn collect_family(
+        font: *const LOGFONTW,
+        _metric: *const TEXTMETRICW,
+        _font_type: u32,
+        names: LPARAM,
+    ) -> i32 {
+        let names = unsafe { &mut *(names as *mut Vec<String>) };
+        let face = unsafe { &(*font).lfFaceName };
+        let length = face
+            .iter()
+            .position(|character| *character == 0)
+            .unwrap_or(face.len());
+        names.push(String::from_utf16_lossy(&face[..length]));
+        1
+    }
+
+    let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+    if dc.is_null() {
+        return Vec::new();
+    }
+    let mut filter = LOGFONTW {
+        lfCharSet: DEFAULT_CHARSET,
+        ..Default::default()
+    };
+    let mut names = Vec::new();
+    unsafe {
+        EnumFontFamiliesExW(
+            dc,
+            &mut filter,
+            Some(collect_family),
+            (&mut names as *mut Vec<String>) as LPARAM,
+            0,
+        );
+        DeleteDC(dc);
+    }
+    sorted_unique_font_names(names)
+}
+
+#[cfg(target_os = "linux")]
+fn system_font_families_value() -> Vec<String> {
+    let output = std::process::Command::new("fc-list")
+        .arg("--format=%{family}\n")
+        .output();
+    let names = output
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .into_iter()
+        .flat_map(|output| {
+            output
+                .lines()
+                .flat_map(|line| line.split(','))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        });
+    sorted_unique_font_names(names)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn system_font_families_value() -> Vec<String> {
+    Vec::new()
+}
+
+/// Installed UI font families for Refract's own in-app picker. The command
+/// returns names only; it does not expose font files or their contents.
+#[tauri::command]
+pub async fn system_font_families() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(system_font_families_value)
+        .await
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn converts_windows_abgr_accent_to_css_hex() {
         assert_eq!(super::windows_abgr_to_hex(0xFF3834D1), "#D13438");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn discovers_windows_font_families() {
+        let fonts = super::system_font_families_value();
+        assert!(fonts.len() > 10);
+        assert!(fonts
+            .iter()
+            .any(|font| font.eq_ignore_ascii_case("Segoe UI")));
     }
 
     #[cfg(target_os = "linux")]
@@ -252,5 +354,18 @@ mod tests {
             Some("#3366CC".into())
         );
         assert_eq!(super::rgb_fractions_to_hex(-0.1, 0.4, 0.8), None);
+    }
+
+    #[test]
+    fn sorts_and_deduplicates_font_names() {
+        assert_eq!(
+            super::sorted_unique_font_names([
+                "  Noto Sans ".into(),
+                "Segoe UI".into(),
+                "noto sans".into(),
+                "".into(),
+            ]),
+            vec!["Noto Sans", "Segoe UI"]
+        );
     }
 }

@@ -8,6 +8,7 @@
 * Added parallel downloads, post-install verification, and automatic resolution for blocked mod dependencies.
 * Improved the startup loader, install dialog selection, pagination behavior, theme corner radii, and button hover feedback.
 * Refined the Simplified Chinese translation for the latest content-management messages.
+* Replaced the native font suggestion popup with Refract's searchable installed-font picker on Windows and Linux.
 
 ## 1.3.0
 ### Playing

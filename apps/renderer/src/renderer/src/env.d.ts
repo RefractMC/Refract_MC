@@ -31,6 +31,7 @@ declare global {
         ramGb: () => Promise<number>
         availableRamMb: () => Promise<number | null>
         accentColor: () => Promise<string | null>
+        fontFamilies: () => Promise<string[]>
       }
       config: {
         get: () => Promise<{

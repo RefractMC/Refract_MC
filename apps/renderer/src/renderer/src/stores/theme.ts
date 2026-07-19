@@ -8,6 +8,7 @@ import lightTheme from '@/lib/themes/light.json'
 
 export type ThemePreference = 'system' | 'dark' | 'light' | string
 export type AccentPreference = 'refract' | 'system' | 'custom'
+export type FontPreference = 'default' | 'system' | 'custom'
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16)
@@ -49,6 +50,8 @@ interface ThemeStore {
   sidebarCollapsed: boolean
   accentPreference: AccentPreference
   accentColor: string | null
+  fontPreference: FontPreference
+  fontFamily: string | null
 
   applyTheme: (theme: ThemeDefinition) => void
   applyBuiltin: (id: 'dark' | 'light') => void
@@ -58,6 +61,8 @@ interface ThemeStore {
   setSidebarCollapsed: (collapsed: boolean) => void
   setAccentColor: (color: string | null) => void
   setAccentPreference: (preference: AccentPreference) => void
+  setFontFamily: (family: string | null) => void
+  setFontPreference: (preference: FontPreference) => void
   setThemePreference: (preference: ThemePreference) => void
   initialize: () => void
 }
@@ -123,6 +128,22 @@ function installSystemAccentListener(): void {
     }
   })
 }
+
+function cleanFontFamily(family: string): string {
+  return family.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80)
+}
+
+function applyFontPreference(preference: FontPreference, customFamily: string | null): void {
+  const root = document.documentElement
+  if (preference === 'custom' && customFamily) {
+    root.style.setProperty('--font-ui', `${JSON.stringify(customFamily)}, system-ui, sans-serif`)
+  } else if (preference === 'system') {
+    root.style.setProperty('--font-ui', 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif')
+  } else {
+    root.style.removeProperty('--font-ui')
+  }
+}
+
 export const useThemeStore = create<ThemeStore>()(
   persist(
     (set, get) => ({
@@ -134,11 +155,14 @@ export const useThemeStore = create<ThemeStore>()(
       sidebarCollapsed: false,
       accentPreference: 'refract',
       accentColor: null,
+      fontPreference: 'system',
+      fontFamily: null,
 
       applyTheme: (theme) => {
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
         set({ themePreference: theme.id, activeThemeId: theme.id, activeTheme: theme })
         applyAccentPreference(get().accentPreference, get().accentColor)
+        applyFontPreference(get().fontPreference, get().fontFamily)
       },
 
       applyBuiltin: (id) => {
@@ -165,6 +189,7 @@ export const useThemeStore = create<ThemeStore>()(
         set({ layoutOverrides: merged, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...merged } })
         applyAccentPreference(get().accentPreference, get().accentColor)
+        applyFontPreference(get().fontPreference, get().fontFamily)
       },
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -180,12 +205,24 @@ export const useThemeStore = create<ThemeStore>()(
         get().initialize()
       },
 
+      setFontFamily: (family) => {
+        const cleaned = family ? cleanFontFamily(family) : ''
+        set({ fontPreference: 'custom', fontFamily: cleaned || null })
+        get().initialize()
+      },
+
+      setFontPreference: (preference) => {
+        set({ fontPreference: preference })
+        get().initialize()
+      },
+
       setThemePreference: (preference) => {
         const id = resolvedThemeId(preference)
         const theme = resolveTheme(id, get().customThemes, darkTheme as ThemeDefinition)
         set({ themePreference: preference, activeThemeId: theme.id, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...get().layoutOverrides } })
         applyAccentPreference(get().accentPreference, get().accentColor)
+        applyFontPreference(get().fontPreference, get().fontFamily)
       },
 
       initialize: () => {
@@ -198,16 +235,19 @@ export const useThemeStore = create<ThemeStore>()(
           activeTheme,
           accentPreference,
           accentColor,
+          fontPreference,
+          fontFamily,
         } = get()
         const theme = resolveTheme(resolvedThemeId(themePreference), customThemes, activeTheme)
         set({ activeThemeId: theme.id, activeTheme: theme })
         themeEngine.apply({ ...theme, layout: { ...theme.layout, ...layoutOverrides } })
         applyAccentPreference(accentPreference, accentColor)
+        applyFontPreference(fontPreference, fontFamily)
       },
     }),
     {
       name: 'refract-theme',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         let state = persisted as Partial<ThemeStore>
         if (version < 1) {
@@ -224,6 +264,13 @@ export const useThemeStore = create<ThemeStore>()(
             accentPreference: state.accentColor ? 'custom' : 'refract',
           }
         }
+        if (version < 3) {
+          state = {
+            ...state,
+            fontPreference: 'system',
+            fontFamily: null,
+          }
+        }
         return state as ThemeStore
       },
       partialize: (s) => ({
@@ -233,6 +280,8 @@ export const useThemeStore = create<ThemeStore>()(
         sidebarCollapsed: s.sidebarCollapsed,
         accentPreference: s.accentPreference,
         accentColor: s.accentColor,
+        fontPreference: s.fontPreference,
+        fontFamily: s.fontFamily,
       }),
       onRehydrateStorage: () => (state) => {
         state?.initialize()
