@@ -54,6 +54,19 @@ pub fn system_ram_gb() -> u64 {
     ram_gb_value()
 }
 
+/// Conservative default for a new Minecraft instance. Leave enough memory for
+/// the operating system, Refract, and other applications; heavier templates
+/// can still request more explicitly.
+pub fn recommended_memory_mb(total_ram_gb: u64) -> u64 {
+    match total_ram_gb {
+        0..=2 => 1024,
+        3..=4 => 2048,
+        5..=8 => 3072,
+        9..=16 => 4096,
+        _ => 6144,
+    }
+}
+
 // ── available (free) memory, for the pre-launch RAM warning ─────────────────
 
 #[cfg(target_os = "windows")]
@@ -330,6 +343,18 @@ pub async fn system_font_families() -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::recommended_memory_mb;
+
+    #[test]
+    fn recommends_conservative_memory_tiers() {
+        assert_eq!(recommended_memory_mb(2), 1024);
+        assert_eq!(recommended_memory_mb(4), 2048);
+        assert_eq!(recommended_memory_mb(8), 3072);
+        assert_eq!(recommended_memory_mb(16), 4096);
+        assert_eq!(recommended_memory_mb(32), 6144);
+        assert_eq!(recommended_memory_mb(128), 6144);
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn converts_windows_abgr_accent_to_css_hex() {

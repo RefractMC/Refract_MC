@@ -83,13 +83,20 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
   const [loaderVersionRecommended, setLoaderVersionRecommended] = useState<string | undefined>()
   const [loaderVersionsLoading, setLoaderVersionsLoading] = useState(false)
   const [memGB, setMemGB]             = useState(2)
+  const [defaultMemGB, setDefaultMemGB] = useState(2)
   const [groupId, setGroupId]         = useState('')
   const [loading, setLoading]         = useState(false)
   const [maxRamGb, setMaxRamGb]       = useState(16)
 
   useEffect(() => {
     api.config.get()
-      .then(cfg => { if (cfg.systemRamGb && cfg.systemRamGb > 4) setMaxRamGb(cfg.systemRamGb) })
+      .then(cfg => {
+        const max = cfg.systemRamGb && cfg.systemRamGb > 1 ? cfg.systemRamGb : 16
+        const configured = Math.max(1, Math.min(max, (cfg.defaultMemoryMb ?? 2048) / 1024))
+        setMaxRamGb(max)
+        setDefaultMemGB(configured)
+        setMemGB(configured)
+      })
       .catch(() => {})
   }, [])
 
@@ -127,7 +134,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
   function reset() {
     setName(t.createInst.defaultName); setMcVersion('1.21.1'); setSnap(false)
     setModLoader(''); setLoaderVersion(''); setLoaderVersions([]); setLoaderVersionRecommended(undefined)
-    setMemGB(2); setGroupId(''); setActiveTemplate(null)
+    setMemGB(defaultMemGB); setGroupId(''); setActiveTemplate(null)
   }
 
   function close() { if (!loading) { reset(); onOpenChange(false) } }
@@ -350,7 +357,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                 </div>
                 <input
                   className="ni-slider"
-                  type="range" min={1} max={maxRamGb} step={1}
+                  type="range" min={1} max={maxRamGb} step={0.5}
                   value={memGB}
                   style={{ '--fill': `${fillPct}%` } as React.CSSProperties}
                   onChange={e => setMemGB(Number(e.target.value))}

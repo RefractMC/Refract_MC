@@ -16,11 +16,12 @@ fn config_path() -> PathBuf {
 
 /// Defaults mirror DEFAULTS in the renderer preview API.
 fn defaults() -> Value {
+    let recommended_memory_mb = system::recommended_memory_mb(system::ram_gb_value());
     json!({
         "activeAccountId": Value::Null,
         "activeThemeId": "dark",
         "windowBounds": { "width": 1280, "height": 800 },
-        "defaultMemoryMb": 2048,
+        "defaultMemoryMb": recommended_memory_mb,
         "onboardingDone": false,
         "analyticsEnabled": true,
         "analyticsNoticeShown": false,
