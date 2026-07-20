@@ -10,6 +10,7 @@
     "dev": "tsc --watch"
   },
   "devDependencies": {
+    "@types/node": "^20.14.9",
     "typescript": "^7.0.2"
   }
 }
