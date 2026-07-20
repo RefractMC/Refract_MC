@@ -10,7 +10,6 @@ import discordIcon          from '@/assets/discord-icon.webp'
 import libraryIconRaw    from '@/assets/instance-library.svg?raw'
 import browseModsIconRaw from '@/assets/browse-mods.svg?raw'
 import modpacksIconRaw   from '@/assets/modpacks.svg?raw'
-import accountIconRaw    from '@/assets/account.svg?raw'
 import settingsIconRaw   from '@/assets/settings.svg?raw'
 import skinsIconRaw      from '@/assets/skins.svg?raw'
 
@@ -21,7 +20,6 @@ function svgDataUrl(raw: string) {
 const libraryIcon    = svgDataUrl(libraryIconRaw)
 const browseModsIcon = svgDataUrl(browseModsIconRaw)
 const modpacksIcon   = svgDataUrl(modpacksIconRaw)
-const accountIcon    = svgDataUrl(accountIconRaw)
 const settingsIcon   = svgDataUrl(settingsIconRaw)
 const skinsIcon      = svgDataUrl(skinsIconRaw)
 const newsIcon       = svgDataUrl(`
