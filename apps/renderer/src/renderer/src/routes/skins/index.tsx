@@ -283,7 +283,7 @@ function SkinListItem({ skin, selected, onSelect, onDelete, renaming, renameVal,
   onStartRename: () => void
   onRenameChange: (v: string) => void
   onRenameCommit: () => void
-  nameInputRef?: React.RefObject<HTMLInputElement>
+  nameInputRef?: React.RefObject<HTMLInputElement | null>
 }) {
   const t = useT()
   const [hover, setHover] = useState(false)
