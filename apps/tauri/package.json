@@ -13,7 +13,7 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.18",
     "@tauri-apps/cli": "^2.11.2",
     "@types/react": "^18.3.12",
