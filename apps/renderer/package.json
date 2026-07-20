@@ -27,7 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.400.0",
-    "react": "^18.3.1",
+    "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "skinview3d": "^3.4.2",
     "tailwind-merge": "^3.6.0",
@@ -36,7 +36,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",
     "@types/node": "^20.14.9",
-    "@types/react": "^18.3.3",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "autoprefixer": "^10.4.19",
