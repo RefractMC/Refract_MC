@@ -93,7 +93,7 @@ jobs:
         run: pnpm --filter @refract/tauri-poc build --verbose
 
       - name: Upload development artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.bundles }}
