@@ -214,15 +214,16 @@ function ConfirmActionModal({
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const t = useT()
   const modal = (
     <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,.72)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }} onClick={e => { if (e.target === e.currentTarget && !busy) onCancel() }}>
       <div style={{ width:380, maxWidth:'100%', background:'var(--surface)', borderRadius:'var(--radius)', padding:18, display:'grid', gap:12 }}>
         <div style={{ fontSize:15, fontWeight:700, color:'var(--lava)' }}>{action.title}</div>
         <div style={{ fontSize:13, lineHeight:1.5, color:'var(--ink-3)' }}>{action.body}</div>
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
-          <Button variant="secondary" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button variant="secondary" size="sm" onClick={onCancel} disabled={busy}>{t.settings.cancel}</Button>
           <Button variant="danger" size="sm" onClick={onConfirm} disabled={busy}>
-            {busy ? 'Working...' : action.confirmLabel}
+            {busy ? t.settings.working : action.confirmLabel}
           </Button>
         </div>
       </div>
@@ -291,7 +292,7 @@ function Settings() {
   async function clearLogs() {
     await api.log.clear().catch(() => {})
     setLogs([])
-    showToast('Logs cleared.')
+    showToast(t.settings.logsCleared)
   }
 
   async function refresh() {
@@ -342,7 +343,7 @@ function Settings() {
   async function deleteJava(major: number) {
     await api.java.delete(major)
     await scanJava()
-    showToast(`Java ${major} removed.`)
+    showToast(t.settings.javaManagedRemoved(major))
   }
 
   async function browseAndAddCustomJava() {
@@ -393,7 +394,7 @@ function Settings() {
 
   async function downloadJava(major: number) {
     if (javaDownloading.has(major)) return
-    setJavaDownloading(prev => new Map(prev).set(major, { step: 'Starting…', percent: 0 }))
+    setJavaDownloading(prev => new Map(prev).set(major, { step: t.settings.starting, percent: 0 }))
     try {
       await api.java.download(major)
       await scanJava()
@@ -529,13 +530,13 @@ function Settings() {
                     </SegmentButton>
                   </Segmented>
                   {[
-                    { hex:'#5b9c3a', label:'Default green' },
-                    { hex:'#5316D4', label:'Refract purple' },
-                    { hex:'#3b82f6', label:'Blue' },
-                    { hex:'#f97316', label:'Orange' },
-                    { hex:'#ef4444', label:'Red' },
-                    { hex:'#ec4899', label:'Pink' },
-                    { hex:'#14b8a6', label:'Teal' },
+                    { hex:'#5b9c3a', label: t.settings.colorDefaultGreen },
+                    { hex:'#5316D4', label: t.settings.colorRefractPurple },
+                    { hex:'#3b82f6', label: t.settings.colorBlue },
+                    { hex:'#f97316', label: t.settings.colorOrange },
+                    { hex:'#ef4444', label: t.settings.colorRed },
+                    { hex:'#ec4899', label: t.settings.colorPink },
+                    { hex:'#14b8a6', label: t.settings.colorTeal },
                   ].map(({ hex, label }) => (
                     <button
                       key={hex}
@@ -571,7 +572,7 @@ function Settings() {
                       {t.settings.light}
                     </SegmentButton>
                   </Segmented>
-                  <Button variant="outline" size="sm" onClick={() => setThemesOpen(true)}>Manage themes…</Button>
+                  <Button variant="outline" size="sm" onClick={() => setThemesOpen(true)}>{t.settings.manageThemes}</Button>
                 </div>
               </Field>
 
@@ -904,12 +905,12 @@ function Settings() {
                       <span style={{ fontSize:11, color:'var(--ink-4)' }}>{j.vendor}</span>
                       {isManaged && (
                         <span style={{ fontSize:10, color:'var(--accent)', background:'rgba(83,22,212,.15)', border:'1px solid rgba(83,22,212,.3)', borderRadius:'var(--radius-sm)', padding:'1px 5px' }}>
-                          managed
+                          {t.settings.javaManagedLabel}
                         </span>
                       )}
                       {isCustom && (
                         <span style={{ fontSize:10, color:'var(--gold)', background:'rgba(228,179,59,.12)', border:'1px solid rgba(228,179,59,.35)', borderRadius:'var(--radius-sm)', padding:'1px 5px' }}>
-                          custom
+                          {t.settings.javaCustomLabel}
                         </span>
                       )}
                       <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
@@ -924,15 +925,15 @@ function Settings() {
                             size="sm"
                             onClick={() => {
                               void confirmAndRun({
-                                title: `Remove Java ${j.version}?`,
-                                body: 'This removes the managed Java runtime from disk. The launcher can download it again later if needed.',
-                                confirmLabel: 'Remove Java',
+                                title: t.settings.javaManagedRemoveTitle(j.version),
+                                body: t.settings.javaManagedRemoveBody,
+                                confirmLabel: t.settings.javaManagedRemoveConfirm,
                                 run: () => deleteJava(j.version),
                               })
                             }}
                             style={{ fontSize:10, padding:'2px 7px' }}
                           >
-                            Remove
+                            {t.settings.remove}
                           </Button>
                         )}
                         {isCustom && (
@@ -941,15 +942,15 @@ function Settings() {
                             size="sm"
                             onClick={() => {
                               void confirmAndRun({
-                                title: 'Remove custom Java?',
-                                body: 'This only removes the custom Java entry from Refract. It does not delete the Java files from your computer.',
-                                confirmLabel: 'Remove entry',
+                                title: t.settings.javaCustomRemoveTitle,
+                                body: t.settings.javaCustomRemoveBody,
+                                confirmLabel: t.settings.javaCustomRemoveConfirm,
                                 run: () => removeCustomJava(j.path),
                               })
                             }}
                             style={{ fontSize:10, padding:'2px 7px' }}
                           >
-                            Remove
+                            {t.settings.remove}
                           </Button>
                         )}
                       </div>
@@ -964,16 +965,25 @@ function Settings() {
 
               {/* Custom Java path */}
               <div style={{ marginTop:4, padding:'12px', background:'var(--bg)', border:'1px solid var(--border-r)', borderRadius:'var(--radius-md)', display:'grid', gap:8 }}>
-                <div style={{ fontSize:12, fontWeight:600, color:'var(--ink-3)' }}>Add custom Java installation</div>
+                <div style={{ fontSize:12, fontWeight:600, color:'var(--ink-3)' }}>{t.settings.javaCustomAddTitle}</div>
                 <div style={{ fontSize:11, color:'var(--ink-4)', lineHeight:1.4 }}>
-                  Point to a <code style={{ fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', color:'var(--ink-3)' }}>java</code> or <code style={{ fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', color:'var(--ink-3)' }}>java.exe</code> executable on your system.
+                  {t.settings.javaCustomAddDesc
+                    .split(/(%JAVA%|%JAVAEXE%)/)
+                    .map((part, i) => {
+                      const codeStyle = { fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', color:'var(--ink-3)' }
+                      return part === '%JAVA%'
+                        ? <code key={i} style={codeStyle}>java</code>
+                        : part === '%JAVAEXE%'
+                          ? <code key={i} style={codeStyle}>java.exe</code>
+                          : part
+                    })}
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
                   <input
                     value={customPathInput}
                     onChange={e => { setCustomPathInput(e.target.value); setCustomError(null) }}
                     onKeyDown={e => { if (e.key === 'Enter') void addCustomJava() }}
-                    placeholder="/usr/lib/jvm/java-17/bin/java"
+                    placeholder={t.settings.javaCustomAddPlaceholder}
                     style={{
                       flex:1, height:32, padding:'0 10px', fontSize:12,
                       fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -987,7 +997,7 @@ function Settings() {
                     onClick={browseAndAddCustomJava}
                     style={{ whiteSpace:'nowrap' }}
                   >
-                    Browse…
+                    {t.settings.browse}
                   </Button>
                   <Button
                     variant="primary"
@@ -995,7 +1005,7 @@ function Settings() {
                     onClick={addCustomJava}
                     disabled={!customPathInput.trim() || addingCustom}
                   >
-                    {addingCustom ? 'Adding…' : 'Add'}
+                    {addingCustom ? t.settings.adding : t.settings.add}
                   </Button>
                 </div>
                 {customError && (
@@ -1036,9 +1046,9 @@ function Settings() {
               size="sm"
               onClick={() => {
                 void confirmAndRun({
-                  title: 'Clear app logs?',
-                  body: 'This deletes the stored launcher log history shown here. It does not affect instances or game files.',
-                  confirmLabel: 'Clear logs',
+                  title: t.settings.clearLogsTitle,
+                  body: t.settings.clearLogsBody,
+                  confirmLabel: t.settings.clearLogsConfirm,
                   run: clearLogs,
                 })
               }}
@@ -1139,13 +1149,13 @@ function Settings() {
         overflow: 'hidden',
       }}>
         <div style={{ padding: '13px 16px', borderBottom: '1px solid rgba(217,59,59,.25)', color: 'var(--lava)', fontWeight: 700, background: 'rgba(217,59,59,.07)' }}>
-          Danger Zone
+          {t.settings.dangerZone}
         </div>
         <div style={{ padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <div style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 13 }}>Delete all launcher data</div>
+            <div style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 13 }}>{t.settings.deleteAllData}</div>
             <div style={{ color: 'var(--ink-4)', fontSize: 12, marginTop: 3 }}>
-              Permanently deletes all instances, mods, saves, themes, Java installations and launcher settings. This cannot be undone.
+              {t.settings.deleteAllDataDesc}
             </div>
           </div>
           {!confirmDelete ? (
@@ -1154,11 +1164,11 @@ function Settings() {
               onClick={() => setConfirmDelete(true)}
               style={{ height: 34, flexShrink: 0 }}
             >
-              Delete All Data
+              {t.settings.deleteAllDataBtn}
             </Button>
           ) : (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Are you sure?</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{t.settings.deleteAllSure}</span>
               <Button
                 variant="danger"
                 onClick={async () => {
@@ -1168,7 +1178,7 @@ function Settings() {
                 disabled={deleting}
                 style={{ height: 34 }}
               >
-                {deleting ? 'Deleting…' : 'Yes, delete everything'}
+                {deleting ? t.settings.deleting : t.settings.deleteAllConfirm}
               </Button>
               <Button
                 variant="secondary"
@@ -1176,7 +1186,7 @@ function Settings() {
                 disabled={deleting}
                 style={{ height: 34 }}
               >
-                Cancel
+                {t.settings.cancel}
               </Button>
             </div>
           )}
@@ -1216,6 +1226,7 @@ function Settings() {
 
 function AvatarPicker({ avatar, initial, size, onClick, disabled }: { avatar?: string; initial: string; size: number; onClick: () => void; disabled?: boolean }) {
   const [hover, setHover] = useState(false)
+  const t = useT()
   return (
     <div
       onClick={disabled ? undefined : onClick}
@@ -1240,7 +1251,7 @@ function AvatarPicker({ avatar, initial, size, onClick, disabled }: { avatar?: s
           display:'flex', alignItems:'center', justifyContent:'center',
           fontWeight:700, fontSize:Math.max(9, size * 0.18), letterSpacing:'.10em', color:'#fff',
         }}>
-          {size >= 48 ? 'CHANGE' : '✎'}
+          {size >= 48 ? t.settings.avatarChange : '✎'}
         </div>
       )}
     </div>

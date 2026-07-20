@@ -130,6 +130,8 @@ function build(l: Locale) {
       recentEntries:   (n: number)              => i(l.settings.recentEntries, { n }),
       javaInstalled:   (n: number)              => i(l.settings.javaInstalled, { n }),
       javaFailed:      (n: number, e: string)   => i(l.settings.javaFailed, { n, e }),
+      javaManagedRemoved: (major: number)       => i(l.settings.javaManagedRemoved, { major }),
+      javaManagedRemoveTitle: (version: string | number) => i(l.settings.javaManagedRemoveTitle, { version }),
       javaVersionLabel:(v: number): string => {
         if (v >= 21) return l.settings.javaVersionLabel.v21plus
         if (v >= 17) return l.settings.javaVersionLabel.v17to20
