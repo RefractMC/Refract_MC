@@ -1552,7 +1552,7 @@ function Library() {
   const allVersions = [...new Set(instances.map(i => i.minecraftVersion).filter(Boolean))].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
 
   const tabInstances = (() => {
-    let base = applyFilters(instances)
+    const base = applyFilters(instances)
     if (carouselTab === 'pinned') return base.filter(i => i.pinned)
     if (carouselTab === 'recent') return [...base].sort((a, b) => {
       const at = a.lastPlayed ?? a.createdAt
