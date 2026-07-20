@@ -613,6 +613,7 @@ async function runUpdateCheck(): Promise<void> {
 function startUpdater(): void {
   if (updaterStarted) return
   updaterStarted = true
+  void registerQuitInstaller()
   void runUpdateCheck()
   setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)
 }
