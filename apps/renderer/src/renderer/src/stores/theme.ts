@@ -130,6 +130,8 @@ function installSystemAccentListener(): void {
 }
 
 function cleanFontFamily(family: string): string {
+  // Font names come from the OS; strip control characters before using them in CSS.
+  // eslint-disable-next-line no-control-regex
   return family.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80)
 }
 
