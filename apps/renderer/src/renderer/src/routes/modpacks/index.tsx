@@ -91,7 +91,7 @@ function stripMarkdown(text: string): string {
     .replace(/^\s*[-*+]\s+/gm, '• ')
     .replace(/[^\S\n]*\n[^\S\n]*/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/[​-‍﻿‎‏]/g, '')
+    .replace(/[\u200b-\u200d\u200e\u200f\ufeff]/g, '')
   return htmlToText(md).trim()
 }
 
@@ -365,9 +365,7 @@ function ContentCard({ project, tab, onInstall, onDetail, installing, installed,
   const t = useT()
   const [hovered, setHovered] = useState(false)
   const loaders = project.loaders ?? []
-  const isModpack = tab === 'modpack'
   const accent = tabColor(tab)
-  const tabInfo = TABS.find(t => t.type === tab)!
   const isInstalled = installed || status === 'installed'
   const hasUpdate = status === 'update'
 
@@ -470,12 +468,6 @@ function ContentDetailModal({ project, tab, onClose, onInstall, installed, statu
 }) {
   useScrollLock()
   const t = useT()
-  const tabLabelMap: Record<ContentTab, string> = {
-    modpack: t.content.tabModpack,
-    resourcepack: t.content.tabResourcepack,
-    shader: t.content.tabShader,
-    datapack: t.content.tabDatapack,
-  }
   const [detail, setDetail]         = useState<ModrinthProjectDetail | null>(null)
   const [loading, setLoading]       = useState(true)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
@@ -486,7 +478,6 @@ function ContentDetailModal({ project, tab, onClose, onInstall, installed, statu
 
   const isModpack = tab === 'modpack'
   const accent    = tabColor(tab)
-  const tabInfo   = TABS.find(ti => ti.type === tab)!
   const isInstalled = installed || status === 'installed'
   const hasUpdate = status === 'update'
 
@@ -934,7 +925,6 @@ function ContentInstallModal({ project, tab, instances, initialInstance, onClose
     ? selectedInst?.mods?.find(entry => entry.projectId === project.project_id && contentMatchesTab(entry.contentType, tab))
     : undefined
   const installAction = recorded && selectedVer && recorded.versionId !== selectedVer ? t.content.update : t.content.install
-  const tabInfo    = TABS.find(t => t.type === tab)!
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -1304,7 +1294,7 @@ function ContentBrowser() {
     const offProgress = api.modpack.onProgress(({ projectId, step, percent }) => {
       setProgress(prev => prev?.projectId === projectId ? { ...prev, step, percent } : prev)
     })
-    const offDone = api.modpack.onDone(({ projectId, instanceId, error, stats }) => {
+    const offDone = api.modpack.onDone(({ instanceId, error, stats }) => {
       setProgress(null)
       setInstallingId(null)
       if (error) {

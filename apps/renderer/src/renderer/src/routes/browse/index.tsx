@@ -64,7 +64,7 @@ function stripMarkdown(text: string): string {
     .replace(/^\s*[-*+]\s+/gm, '• ')
     .replace(/[^\S\n]*\n[^\S\n]*/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/[​-‍﻿‎‏]/g, '')
+    .replace(/[\u200b-\u200d\u200e\u200f\ufeff]/g, '')
   return htmlToText(md).trim()
 }
 
