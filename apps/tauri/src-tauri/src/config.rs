@@ -111,7 +111,15 @@ pub fn config_set(key: String, value: Value) -> Result<Value, String> {
         .as_object_mut()
         .ok_or_else(|| "config root is not an object".to_string())?;
     let _: &mut Map<String, Value> = map;
+    let should_clear_discord = key == "disableDiscordPresence" && value.as_bool() == Some(true);
+    let should_resume_discord = key == "disableDiscordPresence" && value.as_bool() == Some(false);
     map.insert(key, value);
     save(&cfg)?;
+    if should_clear_discord {
+        crate::discord::clear_all_activity();
+    }
+    if should_resume_discord {
+        crate::discord::resume_all_activity();
+    }
     Ok(cfg)
 }
