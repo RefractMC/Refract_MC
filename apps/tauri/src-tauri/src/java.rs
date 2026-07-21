@@ -357,7 +357,8 @@ fn required_for(mc_version: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::required_for;
+    use super::{required_for, resolve_symlink_target, strip_safe_top_component};
+    use std::path::Path;
 
     #[test]
     fn maps_current_release_versions_to_expected_java() {
@@ -372,6 +373,102 @@ mod tests {
     fn maps_modern_snapshot_names_to_java_25() {
         assert_eq!(required_for("26.1 Snapshot 1"), 25);
         assert_eq!(required_for("26.2 Snapshot 3"), 25);
+    }
+
+    #[test]
+    fn strips_only_a_safe_top_level_archive_directory() {
+        assert_eq!(
+            strip_safe_top_component(Path::new("jdk-21/legal/java.base/LICENSE")),
+            Ok(Some(Path::new("legal/java.base/LICENSE").to_path_buf()))
+        );
+        assert!(strip_safe_top_component(Path::new("../outside")).is_err());
+        assert!(strip_safe_top_component(Path::new("/absolute/path")).is_err());
+    }
+
+    #[test]
+    fn accepts_internal_symlink_targets_and_rejects_escaping_ones() {
+        assert_eq!(
+            resolve_symlink_target(
+                Path::new("legal/java.rmi/LICENSE"),
+                Path::new("../java.base/LICENSE")
+            ),
+            Ok(Path::new("legal/java.base/LICENSE").to_path_buf())
+        );
+        assert!(resolve_symlink_target(
+            Path::new("legal/java.rmi/LICENSE"),
+            Path::new("../../../outside")
+        )
+        .is_err());
+        assert!(
+            resolve_symlink_target(Path::new("legal/java.rmi/LICENSE"), Path::new("/outside"))
+                .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracts_adoptium_style_symlinks_and_executable_files() {
+        use super::untar_gz_to;
+        use flate2::{write::GzEncoder, Compression};
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tar::{Builder, EntryType, Header};
+        use uuid::Uuid;
+
+        let root = std::env::temp_dir().join(format!("refract-java-test-{}", Uuid::new_v4()));
+        let archive_path = root.join("runtime.tar.gz");
+        let dest = root.join("extracted");
+        fs::create_dir_all(&dest).unwrap();
+        let encoder = GzEncoder::new(
+            fs::File::create(&archive_path).unwrap(),
+            Compression::default(),
+        );
+        let mut archive = Builder::new(encoder);
+
+        let java = b"#!/bin/sh\n";
+        let mut header = Header::new_gnu();
+        header.set_path("jdk-21/bin/java").unwrap();
+        header.set_size(java.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive.append(&header, &java[..]).unwrap();
+
+        let license = b"Temurin license";
+        let mut header = Header::new_gnu();
+        header.set_path("jdk-21/legal/java.base/LICENSE").unwrap();
+        header.set_size(license.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive.append(&header, &license[..]).unwrap();
+
+        let mut header = Header::new_gnu();
+        header.set_entry_type(EntryType::Symlink);
+        header.set_path("jdk-21/legal/java.rmi/LICENSE").unwrap();
+        header.set_link_name("../java.base/LICENSE").unwrap();
+        header.set_size(0);
+        header.set_mode(0o777);
+        header.set_cksum();
+        archive.append(&header, std::io::empty()).unwrap();
+        archive.into_inner().unwrap().finish().unwrap();
+
+        untar_gz_to(&archive_path, &dest).unwrap();
+        assert_eq!(
+            fs::read_link(dest.join("legal/java.rmi/LICENSE")).unwrap(),
+            Path::new("../java.base/LICENSE")
+        );
+        assert_eq!(
+            fs::read(dest.join("legal/java.rmi/LICENSE")).unwrap(),
+            license
+        );
+        assert_ne!(
+            fs::metadata(dest.join("bin/java"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o111,
+            0
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
@@ -436,7 +533,11 @@ fn unzip_to(zip_path: &Path, dest: &Path) -> Result<(), String> {
 fn strip_safe_top_component(path: &Path) -> Result<Option<PathBuf>, String> {
     let mut out = PathBuf::new();
     let mut components = path.components();
-    let _ = components.next();
+    match components.next() {
+        Some(Component::Normal(_)) => {}
+        Some(_) => return Err(format!("Unsafe archive path: {}", path.display())),
+        None => return Ok(None),
+    }
     for component in components {
         match component {
             Component::Normal(part) => out.push(part),
@@ -453,17 +554,54 @@ fn strip_safe_top_component(path: &Path) -> Result<Option<PathBuf>, String> {
     }
 }
 
+fn resolve_symlink_target(link_path: &Path, target: &Path) -> Result<PathBuf, String> {
+    let mut resolved = link_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_path_buf();
+    for component in target.components() {
+        match component {
+            Component::Normal(part) => resolved.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !resolved.pop() {
+                    return Err(format!("Unsafe archive link target: {}", target.display()));
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(format!("Unsafe archive link target: {}", target.display()));
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+struct PendingLink {
+    path: PathBuf,
+    target: PathBuf,
+}
+
+fn ensure_link_path_available(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Err(format!(
+            "Archive link path already exists: {}",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn untar_gz_to(tar_path: &Path, dest: &Path) -> Result<(), String> {
     let file = File::open(tar_path).map_err(|e| e.to_string())?;
     let decoder = GzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
     let entries = archive.entries().map_err(|e| e.to_string())?;
+    let mut hard_links = Vec::new();
+    let mut symlinks = Vec::new();
     for entry in entries {
         let mut entry = entry.map_err(|e| e.to_string())?;
         let entry_type = entry.header().entry_type();
-        if entry_type.is_symlink() || entry_type.is_hard_link() {
-            return Err("Refusing archive with link entries".into());
-        }
         let rel = match strip_safe_top_component(&entry.path().map_err(|e| e.to_string())?)? {
             Some(path) => path,
             None => continue,
@@ -477,9 +615,69 @@ fn untar_gz_to(tar_path: &Path, dest: &Path) -> Result<(), String> {
             }
             let mut file = File::create(&out).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut file).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                let mode = entry.header().mode().map_err(|e| e.to_string())?;
+                fs::set_permissions(&out, fs::Permissions::from_mode(mode & 0o7777))
+                    .map_err(|e| e.to_string())?;
+            }
+        } else if entry_type.is_symlink() {
+            let target = entry
+                .link_name()
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Archive symlink has no target: {}", out.display()))?
+                .into_owned();
+            let rel = out.strip_prefix(dest).map_err(|e| e.to_string())?;
+            resolve_symlink_target(rel, &target)?;
+            symlinks.push(PendingLink { path: out, target });
+        } else if entry_type.is_hard_link() {
+            let target = entry
+                .link_name()
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Archive hard link has no target: {}", out.display()))?;
+            let target = strip_safe_top_component(&target)?.ok_or_else(|| {
+                format!(
+                    "Archive hard link has an invalid target: {}",
+                    target.display()
+                )
+            })?;
+            hard_links.push(PendingLink {
+                path: out,
+                target: dest.join(target),
+            });
         } else {
             return Err("Refusing archive with special entries".into());
         }
+    }
+
+    for link in hard_links {
+        ensure_link_path_available(&link.path)?;
+        let target_type = fs::symlink_metadata(&link.target)
+            .map_err(|e| format!("Invalid archive hard link target: {e}"))?
+            .file_type();
+        if !target_type.is_file() {
+            return Err(format!(
+                "Archive hard link target is not a regular file: {}",
+                link.target.display()
+            ));
+        }
+        if let Some(parent) = link.path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::hard_link(&link.target, &link.path).map_err(|e| e.to_string())?;
+    }
+
+    for link in symlinks {
+        ensure_link_path_available(&link.path)?;
+        if let Some(parent) = link.path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&link.target, &link.path).map_err(|e| e.to_string())?;
+        #[cfg(not(unix))]
+        return Err("Symlinks in Java runtime archives are not supported on this platform".into());
     }
     Ok(())
 }

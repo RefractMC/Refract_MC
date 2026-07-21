@@ -11,6 +11,7 @@
 * Added first-run personalization from safe system preferences, including theme, language, accent color, font, accessibility preferences, and a RAM-aware Minecraft memory recommendation.
 * Fixed Windows system accents using the native personalization color instead of WebView2's default blue.
 * Replaced the native font suggestion popup with Refract's searchable installed-font picker on Windows and Linux.
+* Fixed managed Java downloads on Linux by safely extracting internal runtime symlinks and executable permissions.
 
 ## 1.3.0
 ### Playing
