@@ -405,7 +405,7 @@ function ContentCard({ project, tab, onInstall, onDetail, installing, installed,
             {project.follows != null && <span>♥ {fmtNum(project.follows)}</span>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {loaders.slice(0, 4).map(loaderLabel).join(' · ') || 'universal'}
+            {loaders.slice(0, 4).map(loaderLabel).join(' · ') || t.content.universal}
           </div>
           {(project.game_versions ?? []).length > 0 && (
             <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, letterSpacing: '.04em', color: 'var(--diamond)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1390,7 +1390,7 @@ function ContentBrowser() {
     const title     = installTarget.title
     setTarget(null)
     setInstallingId(projectId)
-    setProgress({ projectId, title, step: 'Starting…', percent: 0 })
+    setProgress({ projectId, title, step: t.home.starting, percent: 0 })
     try {
       await api.modpack.install(name, projectId, versionId)
     } catch (e) {
@@ -1641,7 +1641,7 @@ function ContentBrowser() {
             const projectId = `cf:${cfInstallTarget.id}`
             setCfInstall(null)
             setInstallingId(projectId)
-            setProgress({ projectId, title: cfInstallTarget.name, step: 'Starting…', percent: 0 })
+            setProgress({ projectId, title: cfInstallTarget.name, step: t.home.starting, percent: 0 })
             api.curseforge.installModpack(name, cfInstallTarget.id, fileId).catch(e => {
               setProgress(null)
               setInstallingId(null)
@@ -1661,7 +1661,7 @@ function ContentBrowser() {
             const packId = ftbInstallTarget.id
             setFtbInstall(null)
             setInstallingId(projectId)
-            setProgress({ projectId, title: ftbInstallTarget.name, step: 'Starting…', percent: 0 })
+            setProgress({ projectId, title: ftbInstallTarget.name, step: t.home.starting, percent: 0 })
             api.ftb.installModpack(name, packId, versionId).catch(e => {
               setProgress(null)
               setInstallingId(null)

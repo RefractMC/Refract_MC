@@ -276,7 +276,7 @@ function FriendsPanel() {
     const name = input.trim()
     if (!name) return
     if (myUsername && name.toLowerCase() === myUsername.toLowerCase()) {
-      setError("That's you — you can't add yourself as a friend.")
+      setError(t.sidebar.selfAddError)
       return
     }
     setLoading(true)
@@ -406,7 +406,7 @@ function FriendsPanel() {
       {/* Friend list */}
       {listLoading ? (
         <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
-          Loading friends...
+          {t.sidebar.loadingFriends}
         </div>
       ) : friends.length === 0 && !adding ? (
         <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
