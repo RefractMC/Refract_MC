@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
+import { useT } from '@/i18n'
 
 export function StatusBar() {
+  const t = useT()
   const [online, setOnline] = useState(() => navigator.onLine)
   const [mem, setMem] = useState<number | null>(null)
   const [java, setJava] = useState<number | null>(null)
@@ -47,12 +49,12 @@ export function StatusBar() {
       flexShrink: 0,
     }}>
       <Dot color={online ? 'var(--grass)' : 'var(--ink-4)'} />
-      <span style={{ color: 'var(--ink-3)' }}>{online ? 'Online' : 'Offline'}</span>
+      <span style={{ color: 'var(--ink-3)' }}>{online ? t.statusbar.online : t.statusbar.offline}</span>
 
       {java != null && (
         <>
           <Dot color="var(--diamond)" />
-          <span style={{ color: 'var(--ink-3)' }}>Java {java}</span>
+          <span style={{ color: 'var(--ink-3)' }}>{t.statusbar.javaVersion(java)}</span>
         </>
       )}
 

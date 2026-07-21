@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type React from 'react'
 import type { MinecraftVersion } from '@refract/core'
 import { api } from '@/lib/api'
+import { useT } from '@/i18n'
 
 // Module-level cache — fetched once per app session
 let patchNotesCache: Record<string, string> | null = null
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function McVersionSelect({ value, onChange, selectStyle, selectClassName, showSnapshots: externalSnap, onShowSnapshotsChange, hideBuiltinCheckbox, showReleaseNote = true }: Props) {
+  const t = useT()
   const [versions, setVersions] = useState<MinecraftVersion[]>([])
   const [internalSnap, setInternalSnap] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -82,10 +84,10 @@ export function McVersionSelect({ value, onChange, selectStyle, selectClassName,
         className={selectClassName}
       >
         {loading ? (
-          <option value={value}>{value} (loading…)</option>
+          <option value={value}>{t.mcVersionSelect.loadingOption(value)}</option>
         ) : visible.map(v => (
           <option key={v.id} value={v.id}>
-            {v.id}{v.type === 'snapshot' ? ' (snapshot)' : ''}
+            {v.id}{v.type === 'snapshot' ? t.mcVersionSelect.snapshotSuffix : ''}
           </option>
         ))}
       </select>
@@ -103,7 +105,7 @@ export function McVersionSelect({ value, onChange, selectStyle, selectClassName,
             style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
           />
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.10em', color: 'var(--ink-4)' }}>
-            SHOW SNAPSHOTS
+            {t.mcVersionSelect.showSnapshots}
           </span>
         </label>
       )}

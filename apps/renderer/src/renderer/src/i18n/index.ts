@@ -218,6 +218,18 @@ function build(l: Locale) {
     sharing: { ...l.sharing },
     migration: { ...l.migration },
     privacy: { ...l.privacy },
+
+    statusbar: {
+      ...l.statusbar,
+      javaVersion: (v: number) => i(l.statusbar.javaVersion, { v }),
+    },
+
+    mcVersionSelect: {
+      ...l.mcVersionSelect,
+      loadingOption: (value: string) => i(l.mcVersionSelect.loadingOption, { value }),
+    },
+
+    cornerCat: { ...l.cornerCat },
   }
 }
 

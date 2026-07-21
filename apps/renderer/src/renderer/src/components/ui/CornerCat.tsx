@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useT } from '@/i18n'
+import { useT, type T } from '@/i18n'
 import { api } from '@/lib/api'
 
 type Rect = [number, number, number, number, string]
@@ -53,7 +53,7 @@ function seasonalHat(): Rect[] {
   return []
 }
 
-const MEOWS = ['meow~', 'mrrp!', 'purr…', 'mrow?', ':3']
+const MEOW_KEYS: Array<keyof T['cornerCat']> = ['meow', 'mrrp', 'purr', 'mrow', 'kittyFace']
 
 /// The Refract cat: an optional companion in the corner of the home screen
 /// (enable in Settings). Click it — it appreciates the attention.
@@ -70,7 +70,8 @@ export function CornerCat() {
   if (!show) return null
 
   function pet() {
-    setMeow(MEOWS[Math.floor(Math.random() * MEOWS.length)])
+    const key = MEOW_KEYS[Math.floor(Math.random() * MEOW_KEYS.length)]
+    setMeow(t.cornerCat[key])
     setWiggle(true)
     setTimeout(() => setWiggle(false), 600)
     setTimeout(() => setMeow(null), 1800)

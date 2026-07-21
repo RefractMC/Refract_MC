@@ -1,7 +1,32 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
-import { useT } from '@/i18n'
+import { useT, type T } from '@/i18n'
+
+const STEP_LABELS: Record<string, string> = {
+  'Fetching version data': 'stepFetchingVersionData',
+  'Downloading client': 'stepDownloadingClient',
+  'Extracting natives': 'stepExtractingNatives',
+  'Downloading assets': 'stepDownloadingAssets',
+  'Installing Fabric loader': 'stepInstallingFabric',
+  'Installing Quilt loader': 'stepInstallingQuilt',
+  'Installing loader libraries': 'stepInstallingLoaderLibs',
+  'Done': 'stepDone',
+  'Downloading Forge installer': 'stepDownloadingForgeInstaller',
+  'Extracting Forge installer': 'stepExtractingForgeInstaller',
+  'Downloading Forge libraries': 'stepDownloadingForgeLibs',
+  'Downloading Forge tools': 'stepDownloadingForgeTools',
+  'Preparing Java for Forge processors': 'stepPreparingJavaForge',
+  'Running Forge processors': 'stepRunningForgeProcessors',
+  'Forge installed': 'stepForgeInstalled',
+}
+
+function resolveStep(step: string, t: T): string {
+  const key = STEP_LABELS[step]
+  if (!key) return step
+  const val = (t.home as Record<string, unknown>)[key]
+  return typeof val === 'string' ? val : step
+}
 
 interface Props {
   instanceId: string
@@ -19,7 +44,7 @@ export function InstallProgress({ instanceId, instanceName, onDone, onError }: P
   useEffect(() => {
     const unsub = api.mc.onProgress((data) => {
       if (data.instanceId !== instanceId) return
-      setStep(data.step)
+      setStep(resolveStep(data.step, t))
       setPercent(data.percent)
       if (data.step === 'Done') onDone()
     })

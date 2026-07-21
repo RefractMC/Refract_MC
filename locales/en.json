@@ -253,7 +253,22 @@
     "finishingOperation": "Finishing current operation…",
     "installMayTake": "This may take a few minutes depending on your connection.",
     "cancelling": "Cancelling…",
-    "installingMinecraft": "Installing Minecraft"
+    "installingMinecraft": "Installing Minecraft",
+    "stepFetchingVersionData": "Fetching version data",
+    "stepDownloadingClient": "Downloading client",
+    "stepExtractingNatives": "Extracting natives",
+    "stepDownloadingAssets": "Downloading assets",
+    "stepInstallingFabric": "Installing Fabric loader",
+    "stepInstallingQuilt": "Installing Quilt loader",
+    "stepInstallingLoaderLibs": "Installing loader libraries",
+    "stepDone": "Done",
+    "stepDownloadingForgeInstaller": "Downloading Forge installer",
+    "stepExtractingForgeInstaller": "Extracting Forge installer",
+    "stepDownloadingForgeLibs": "Downloading Forge libraries",
+    "stepDownloadingForgeTools": "Downloading Forge tools",
+    "stepPreparingJavaForge": "Preparing Java for Forge processors",
+    "stepRunningForgeProcessors": "Running Forge processors",
+    "stepForgeInstalled": "Forge installed"
   },
   "browse": {
     "title": "Browse Mods",
@@ -994,5 +1009,22 @@
     "colorSuccess": "Success",
     "colorWarning": "Warning",
     "colorError": "Error"
+  },
+  "statusbar": {
+    "online": "Online",
+    "offline": "Offline",
+    "javaVersion": "Java {{v}}"
+  },
+  "mcVersionSelect": {
+    "loadingOption": "{{value}} (loading…)",
+    "snapshotSuffix": " (snapshot)",
+    "showSnapshots": "SHOW SNAPSHOTS"
+  },
+  "cornerCat": {
+    "meow": "meow~",
+    "mrrp": "mrrp!",
+    "purr": "purr…",
+    "mrow": "mrow?",
+    "kittyFace": ":3"
   }
 }

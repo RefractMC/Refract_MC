@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { useT } from '@/i18n'
 
 // Three.js (~1 MB) only loads when this component is first rendered.
 // Import this instead of SkinViewer3D everywhere to keep startup RAM low.
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function SkinViewer3DLazy(props: Props) {
+  const t = useT()
   return (
     <Suspense fallback={
       <div style={{
@@ -26,7 +28,7 @@ export function SkinViewer3DLazy(props: Props) {
         color: 'var(--ink-4)',
         fontSize: 11,
       }}>
-        Loading…
+        {t.home.loading}
       </div>
     }>
       <SkinViewer3D {...props} />
