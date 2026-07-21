@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+### Linux
+
+* Fixed managed Java downloads by safely extracting internal runtime symlinks and executable permissions.
+
 ## 1.3.1
 
 ### Updates

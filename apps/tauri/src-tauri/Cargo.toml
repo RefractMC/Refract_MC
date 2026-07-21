@@ -1,6 +1,6 @@
 [package]
 name = "refract-tauri"
-version = "1.3.1"
+version = "1.3.2"
 description = "Refract Minecraft Launcher (Tauri proof-of-concept)"
 edition = "2021"
 
