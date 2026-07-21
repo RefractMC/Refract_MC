@@ -2,9 +2,36 @@
 
 ## 1.3.2
 
-### Linux
+### Highlights
 
-* Fixed managed Java downloads by safely extracting internal runtime symlinks and executable permissions.
+* Added **eLink Beta** installs from Modrinth and CurseForge URLs or slugs, including `refract://install/...` desktop deep links for mods, modpacks, resource packs, shaders, and datapacks.
+* Added system-adaptive first-run defaults and appearance preferences for theme, language, accent color, interface font, reduced motion, contrast, transparency, and Minecraft memory based on installed RAM.
+* Added a Privacy setting to disable Discord Rich Presence and immediately clear or restore activity for running games.
+
+### Fixes
+
+* Fixed managed Java downloads on Linux by safely extracting Temurin's archive-internal license links while rejecting escaping targets and preserving Unix executable permissions.
+* Fixed Discord Rich Presence on affected Linux systems by reading the IPC READY response and draining incoming frames so the connection remains active.
+* Restored the intended 1.3.0 visual presentation across navigation, content pages, dialogs, buttons, and theme styling.
+* Hardened Minecraft News HTML entity decoding against invalid Unicode code points while preserving unknown entities.
+* Restored renderer lint and Rust formatting checks after the dependency upgrades.
+
+### Localization and Documentation
+
+* Localized the remaining visible English strings across Settings, instances, install progress, the title and status bars, friends, skins, modpacks, and launcher activity.
+* Synchronized Simplified Chinese with the complete English locale, added 148 missing keys, translated eLink, and corrected several labels and progress messages.
+* Added a Simplified Chinese README and expanded contributor guidance for README translations, architecture, verification, and release workflows.
+* Added Fedora RPM download instructions.
+
+### Distribution, Security, and Maintenance
+
+* Added the `refract-launcher-bin` AUR package and automated publishing after stable GitHub releases.
+* Removed the obsolete Electron update bridge, its release workflow, and other unused legacy files.
+* Added Dependabot configuration and upgraded GitHub Actions for checkout, Node, pnpm, artifact uploads, and Tauri releases.
+* Patched `js-yaml` and `brace-expansion` vulnerabilities.
+* Upgraded React DOM, TypeScript, React Hooks linting, Tailwind Merge, `futures-util`, SHA-2, zbus, serde, and serde_json.
+
+Full comparison: [v1.3.1...v1.3.2](https://github.com/RefractMC/Refract_MC/compare/v1.3.1...v1.3.2)
 
 ## 1.3.1
 
@@ -14,10 +41,6 @@
 * Added parallel downloads, post-install verification, and automatic resolution for blocked mod dependencies.
 * Improved the startup loader, install dialog selection, pagination behavior, theme corner radii, and button hover feedback.
 * Refined the Simplified Chinese translation for the latest content-management messages.
-* Added first-run personalization from safe system preferences, including theme, language, accent color, font, accessibility preferences, and a RAM-aware Minecraft memory recommendation.
-* Fixed Windows system accents using the native personalization color instead of WebView2's default blue.
-* Replaced the native font suggestion popup with Refract's searchable installed-font picker on Windows and Linux.
-* Fixed managed Java downloads on Linux by safely extracting internal runtime symlinks and executable permissions.
 
 ## 1.3.0
 ### Playing
