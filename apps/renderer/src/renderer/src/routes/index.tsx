@@ -201,8 +201,8 @@ function PlayButton({ onClick, disabled = false, label = 'PLAY' }: { onClick?: (
   )
 }
 
-function formatPlaytime(seconds: number): string {
-  if (seconds < 60) return '< 1 min'
+function formatPlaytime(seconds: number, t: T): string {
+  if (seconds < 60) return t.home.lessThanMinute
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   if (h === 0) return `${m}m`
@@ -363,7 +363,7 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
           color: 'var(--ink-2)',
           letterSpacing: '.06em',
         }}>
-          {instance.modLoader?.toUpperCase() ?? 'VANILLA'}
+          {instance.modLoader?.toUpperCase() ?? t.home.vanilla.toUpperCase()}
         </div>
       </div>
 
@@ -376,7 +376,7 @@ function InstanceCard({ instance, onLaunch, onEdit, onConsole, onMods, onOpenFol
           {instance.totalTimePlayed > 0 && (
             <div style={{ fontSize: 11, color: 'var(--ink-4)', display: 'flex', alignItems: 'center', gap: 3 }}>
               <span style={{ opacity: 0.5 }}>⏱</span>
-              {formatPlaytime(instance.totalTimePlayed)}
+              {formatPlaytime(instance.totalTimePlayed, t)}
             </div>
           )}
         </div>
@@ -1329,7 +1329,7 @@ function Library() {
 
     const ver = versionList.find(v => v.id === instance.minecraftVersion)
     if (!ver) {
-      setLaunchToast(`Minecraft version ${instance.minecraftVersion} not found in manifest.`)
+      setLaunchToast(t.home.mcVersionNotFound(instance.minecraftVersion))
       setTimeout(() => setLaunchToast(null), 3500)
       return
     }
@@ -1382,7 +1382,7 @@ function Library() {
     setConsoleOpen(instance.id)
     try {
       await api.mc.launch(instance.id, opts?.quickPlay, opts?.offline)
-      void recordActivity(`Launched "${instance.name}"`)
+      void recordActivity(t.home.activityLaunched(instance.name))
     } catch (e) {
       activeLaunchIds.delete(instance.id)
       setRunningIds(prev => { const n = new Set(prev); n.delete(instance.id); return n })
@@ -1445,7 +1445,7 @@ function Library() {
           const fallbackText = [
             error ? t.home.crashedWith(error) : t.home.exitedWith(code ?? t.home.unknownError),
             '',
-            lastLines.length > 0 ? lastLines.join('\n') : 'No recent game output was captured.',
+            lastLines.length > 0 ? lastLines.join('\n') : t.home.noRecentOutput,
           ].join('\n')
           setCrashReport({
             instanceId,
@@ -1657,7 +1657,7 @@ function Library() {
                 }}
               >
                 {selectionMode ? (
-                  'Cancel'
+                  t.home.cancel
                 ) : (
                   <>
                     <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/></svg>
@@ -1869,7 +1869,7 @@ function Library() {
                                       await api.mods.installLocal(inst.id, path)
                                       setJarToast(t.home.modInstalledTo(inst.name))
                                     } catch (e) {
-                                      setJarToast(`Install failed: ${e instanceof Error ? e.message : String(e)}`)
+                                      setJarToast(t.home.installFailedWith(e instanceof Error ? e.message : String(e)))
                                     }
                                     setTimeout(() => setJarToast(null), 3500)
                                   }}
@@ -1933,7 +1933,7 @@ function Library() {
                       await api.mods.installLocal(inst.id, path)
                       setJarToast(t.home.modInstalledTo(inst.name))
                     } catch (e) {
-                      setJarToast(`Install failed: ${e instanceof Error ? e.message : String(e)}`)
+                      setJarToast(t.home.installFailedWith(e instanceof Error ? e.message : String(e)))
                     }
                     setTimeout(() => setJarToast(null), 3500)
                   }}

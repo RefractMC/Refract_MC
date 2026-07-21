@@ -460,9 +460,9 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             <div className="detail-meta" style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, border: '1px solid var(--border-r)', borderRadius: 'var(--radius-sm)', padding: '3px 8px', background: 'color-mix(in srgb, var(--bg) 76%, transparent)' }}>MC {instance.minecraftVersion}</span>
               <span style={{ color: 'var(--border-r)' }}>·</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-hi)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', borderRadius: 'var(--radius-sm)', padding: '3px 8px', background: 'var(--accent-tint)' }}>{instance.modLoader?.toUpperCase() ?? 'VANILLA'}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-hi)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', borderRadius: 'var(--radius-sm)', padding: '3px 8px', background: 'var(--accent-tint)' }}>{instance.modLoader?.toUpperCase() ?? t.home.vanilla.toUpperCase()}</span>
               <span style={{ color: 'var(--border-r)' }}>·</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, border: '1px solid var(--border-r)', borderRadius: 'var(--radius-sm)', padding: '3px 8px', background: 'color-mix(in srgb, var(--bg) 76%, transparent)' }}>{items.length} mod{items.length !== 1 ? 's' : ''}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, border: '1px solid var(--border-r)', borderRadius: 'var(--radius-sm)', padding: '3px 8px', background: 'color-mix(in srgb, var(--bg) 76%, transparent)' }}>{t.home.modCount(items.length)}</span>
             </div>
             {instance.playtimeLog && Object.keys(instance.playtimeLog).length > 0 && (
               <PlaytimeChart log={instance.playtimeLog} />
@@ -489,7 +489,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 onClick={() => { onEdit(); onOpenChange(false) }}
                 style={{ height: 36, padding: '0 12px', fontSize: 12 }}
               >
-                Edit
+                {td.edit}
               </Button>
             )}
             <Button

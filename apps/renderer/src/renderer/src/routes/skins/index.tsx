@@ -265,7 +265,7 @@ function SkinsPage_() {
           </div>
         ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
-            Add a skin to get started
+            {t.skins.selectHint}
           </div>
         )}
       </div>
