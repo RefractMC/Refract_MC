@@ -26,6 +26,7 @@ fn defaults() -> Value {
         "analyticsEnabled": true,
         "analyticsNoticeShown": false,
         "migrationNotice120Shown": false,
+        "disableDiscordPresence": false,
         "accounts": []
     })
 }

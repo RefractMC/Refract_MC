@@ -49,6 +49,7 @@ declare global {
           analyticsEnabled?: boolean
           analyticsNoticeShown?: boolean
           migrationNotice120Shown?: boolean
+          disableDiscordPresence?: boolean
           systemRamGb?: number
           curseforgeApiKey?: string
           curseforgeApiKeyConfigured?: boolean

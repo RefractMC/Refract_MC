@@ -48,6 +48,7 @@ const DEFAULT_CONFIG: AppConfig = {
   defaultMemoryMb: 2048,
   onboardingDone: false,
   migrationNotice120Shown: false,
+  disableDiscordPresence: false,
   accounts: [],
 }
 

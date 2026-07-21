@@ -949,6 +949,10 @@
     "analyticsUnavailable": "在 Tauri 构建中，分析功能已禁用，直至遥测密钥注入功能完成移植。此构建不会发送任何分析事件。",
     "analyticsOn": "分析已启用",
     "analyticsOff": "分析已禁用",
+    "disableDiscordPresence": "Discord 游戏状态",
+    "disableDiscordPresenceNote": "启动游戏时在 Discord 上显示正在游玩的内容。",
+    "disableDiscordPresenceOn": "Discord 游戏状态已启用",
+    "disableDiscordPresenceOff": "Discord 游戏状态已禁用",
     "noticeText": "Refract 收集匿名使用分析数据以帮助改进应用。不收集个人数据 — 你可以随时在设置 → 隐私中关闭。",
     "noticeDismiss": "知道了",
     "noticeOpenSettings": "隐私设置"

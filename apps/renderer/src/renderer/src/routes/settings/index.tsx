@@ -735,6 +735,12 @@ function Settings() {
                   <SegmentButton active={analyticsDisabled || config?.analyticsEnabled === false} disabled={analyticsDisabled} onClick={() => { if (analyticsDisabled) return; api.config.set('analyticsEnabled', false).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: false } : c); showToast(t.privacy.analyticsOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
+              <Field label={t.privacy.disableDiscordPresence} note={t.privacy.disableDiscordPresenceNote}>
+                <Segmented>
+                  <SegmentButton active={config?.disableDiscordPresence !== true} disabled={false} onClick={() => { api.config.set('disableDiscordPresence', false).catch(() => {}); setConfig(c => c ? { ...c, disableDiscordPresence: false } : c); showToast(t.privacy.disableDiscordPresenceOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={config?.disableDiscordPresence === true} disabled={false} onClick={() => { api.config.set('disableDiscordPresence', true).catch(() => {}); setConfig(c => c ? { ...c, disableDiscordPresence: true } : c); showToast(t.privacy.disableDiscordPresenceOff) }}>{t.settings.off}</SegmentButton>
+                </Segmented>
+              </Field>
             </div>
           </Panel>
 

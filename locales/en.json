@@ -964,6 +964,10 @@
     "analyticsUnavailable": "Analytics is disabled in the Tauri build until telemetry secret injection is ported. No analytics events are sent from this build.",
     "analyticsOn": "Analytics enabled",
     "analyticsOff": "Analytics disabled",
+    "disableDiscordPresence": "Discord Rich Presence",
+    "disableDiscordPresenceNote": "Show what you're playing on Discord when a game is launched.",
+    "disableDiscordPresenceOn": "Discord Rich Presence enabled",
+    "disableDiscordPresenceOff": "Discord Rich Presence disabled",
     "noticeText": "Refract collects anonymous usage analytics to help improve the app. No personal data is collected — you can turn this off any time in Settings → Privacy.",
     "noticeDismiss": "Got it",
     "noticeOpenSettings": "Privacy settings"

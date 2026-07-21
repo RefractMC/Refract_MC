@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{Mutex, OnceLock};
@@ -111,7 +111,7 @@ fn connect_ipc() -> Option<DiscordIpc> {
     for dir in dirs {
         for index in 0..10 {
             let path = format!("{dir}/discord-ipc-{index}");
-            if let Ok(stream) = std::os::unix::net::UnixStream::connect(path) {
+            if let Ok(stream) = std::os::unix::net::UnixStream::connect(&path) {
                 return Some(DiscordIpc::Unix(stream));
             }
         }
@@ -143,6 +143,14 @@ pub fn set_game_activity(
     mc_version: &str,
     mod_loader: Option<&str>,
 ) {
+    if crate::config::read()
+        .get("disableDiscordPresence")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return;
+    }
+
     let Ok(mut state) = state().lock() else {
         return;
     };
