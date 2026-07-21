@@ -1606,7 +1606,7 @@ function Library() {
               style={{ color: filterLoader ? 'var(--ink)' : 'var(--ink-4)' }}
             >
               <option value="">{t.home.allLoaders}</option>
-              <option value="vanilla">Vanilla</option>
+              <option value="vanilla">{t.home.vanilla}</option>
               <option value="fabric">Fabric</option>
               <option value="forge">Forge</option>
               <option value="neoforge">NeoForge</option>

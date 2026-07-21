@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
 import { useT } from '@/i18n'
 
-const LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
-  { value: '',         label: 'Vanilla'  },
-  { value: 'fabric',   label: 'Fabric'   },
-  { value: 'forge',    label: 'Forge'    },
-  { value: 'quilt',    label: 'Quilt'    },
-  { value: 'neoforge', label: 'NeoForge' },
+const LOADERS: Array<{ value: ModLoader | ''; label: (t: T) => string }> = [
+  { value: '',         label: t => t.createInst.vanilla },
+  { value: 'fabric',   label: () => 'Fabric'   },
+  { value: 'forge',    label: () => 'Forge'    },
+  { value: 'quilt',    label: () => 'Quilt'    },
+  { value: 'neoforge', label: () => 'NeoForge' },
 ]
 
 const ALL_PRESETS = [1, 2, 4, 8, 16, 32, 64]
@@ -36,7 +36,7 @@ interface TemplateDef extends Omit<Template, 'label' | 'desc'> {
 }
 
 const TEMPLATE_DEFS: TemplateDef[] = [
-  { id: 'vanilla',    label: () => 'Vanilla',                  mark: '#55d88a', desc: t => t.createInst.tplVanillaDesc,     loader: '',         memGB: 2, javaArgs: '' },
+  { id: 'vanilla',    label: t => t.createInst.vanilla,         mark: '#55d88a', desc: t => t.createInst.tplVanillaDesc,     loader: '',         memGB: 2, javaArgs: '' },
   { id: 'fabric',     label: () => 'Fabric',                   mark: '#62c9ff', desc: t => t.createInst.tplFabricDesc,      loader: 'fabric',   memGB: 4, javaArgs: '' },
   { id: 'neoforge',   label: () => 'NeoForge',                 mark: '#b79cff', desc: t => t.createInst.tplNeoforgeDesc,    loader: 'neoforge', memGB: 4, javaArgs: '' },
   { id: 'perf',       label: t => t.createInst.tplPerformance, mark: '#f4bf4d', desc: t => t.createInst.tplPerformanceDesc, loader: 'fabric',   memGB: 6, javaArgs: '-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:+DisableExplicitGC' },
@@ -152,7 +152,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
   const fillPct = ((memGB - 1) / (maxRamGb - 1)) * 100
   const memPresets = ALL_PRESETS.filter(g => g <= maxRamGb)
   const displayName = name.trim() || t.createInst.defaultName
-  const loaderLabel = LOADERS.find(l => l.value === modLoader)?.label ?? 'Vanilla'
+  const loaderLabel = LOADERS.find(l => l.value === modLoader)?.label(t) ?? t.createInst.vanilla
 
   const IrisLogo = () => (
     <svg viewBox="-110 -110 220 220" xmlns="http://www.w3.org/2000/svg" style={{ width: 34, height: 34, flexShrink: 0, filter: 'drop-shadow(0 2px 6px var(--ni-p-glow, var(--accent-tint)))' }}>
@@ -316,7 +316,7 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
                       onClick={() => setModLoader(l.value)}
                     >
                       <span className="ni-glyph" />
-                      {l.label}
+                      {l.label(t)}
                     </button>
                   ))}
                 </div>

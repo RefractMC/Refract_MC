@@ -8,12 +8,14 @@ import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
 import { useT } from '@/i18n'
 
-const MOD_LOADERS: Array<{ value: ModLoader | ''; label: string }> = [
-  { value: '',         label: 'Vanilla'  },
-  { value: 'fabric',   label: 'Fabric'   },
-  { value: 'forge',    label: 'Forge'    },
-  { value: 'quilt',    label: 'Quilt'    },
-  { value: 'neoforge', label: 'NeoForge' },
+type T = ReturnType<typeof useT>
+
+const MOD_LOADERS: Array<{ value: ModLoader | ''; label: (t: T) => string }> = [
+  { value: '',         label: t => t.editInst.vanilla },
+  { value: 'fabric',   label: () => 'Fabric'   },
+  { value: 'forge',    label: () => 'Forge'    },
+  { value: 'quilt',    label: () => 'Quilt'    },
+  { value: 'neoforge', label: () => 'NeoForge' },
 ]
 
 const ALL_PRESETS = [1, 2, 4, 8, 16, 32, 64]
@@ -187,7 +189,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
     }
   }
 
-  const loaderLabel = MOD_LOADERS.find(l => l.value === modLoader)?.label ?? 'Vanilla'
+  const loaderLabel = MOD_LOADERS.find(l => l.value === modLoader)?.label(t) ?? t.editInst.vanilla
   const displayName = name.trim() || t.editInst.instanceFallback
 
   return (
@@ -346,7 +348,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                       onClick={() => setModLoader(l.value)}
                     >
                       <span className="ni-glyph" />
-                      {l.label}
+                      {l.label(t)}
                     </button>
                   ))}
                 </div>
