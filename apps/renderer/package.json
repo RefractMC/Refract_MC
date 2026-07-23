@@ -42,6 +42,6 @@
     "autoprefixer": "^10.4.19",
     "tailwindcss": "^4.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.0.16"
+    "vite": "^8.1.5"
   }
 }
