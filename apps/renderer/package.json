@@ -19,7 +19,7 @@
     "@refract/plugin-api": "workspace:*",
     "@tanstack/react-query": "^5.51.1",
     "@tanstack/react-router": "^1.170.15",
-    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-process": "^2.3.1",
