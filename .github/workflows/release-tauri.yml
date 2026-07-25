@@ -41,6 +41,10 @@ jobs:
             args: ""
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Manual recovery runs must build the requested release tag, even
+          # when the workflow itself is dispatched from a repair branch.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -181,7 +185,24 @@ jobs:
 
               cp "$BUNDLE/dmg/Refract_${VERSION}_x64.dmg" \
                  "Refract-macOS-x64.dmg" 2>/dev/null || true
-              gh release upload "$TAG" Refract-macOS-*.dmg --clobber
+
+              updater_files=("$BUNDLE"/macos/*.app.tar.gz)
+              if [[ ${#updater_files[@]} -ne 1 || ! -f "${updater_files[0]}" ]]; then
+                echo "Expected exactly one macOS updater archive, found ${#updater_files[@]}" >&2
+                exit 1
+              fi
+
+              case "${{ runner.arch }}" in
+                ARM64) updater_alias="Refract-macOS-arm64.app.tar.gz" ;;
+                X64) updater_alias="Refract-macOS-x64.app.tar.gz" ;;
+                *)
+                  echo "Unsupported macOS runner architecture: ${{ runner.arch }}" >&2
+                  exit 1
+                  ;;
+              esac
+
+              cp "${updater_files[0]}" "$updater_alias"
+              gh release upload "$TAG" Refract-macOS-*.dmg "$updater_alias" --clobber
               ;;
 
             Linux)
@@ -230,6 +251,10 @@ jobs:
             del(.platforms["windows-x86_64-msi"])
             | if .platforms["windows-x86_64"]        then .platforms["windows-x86_64"].url        = $base + "/Refract-Windows-x64.exe"       else . end
             | if .platforms["windows-x86_64-nsis"]   then .platforms["windows-x86_64-nsis"].url   = $base + "/Refract-Windows-x64.exe"       else . end
+            | if .platforms["darwin-aarch64"]        then .platforms["darwin-aarch64"].url        = $base + "/Refract-macOS-arm64.app.tar.gz" else . end
+            | if .platforms["darwin-aarch64-app"]    then .platforms["darwin-aarch64-app"].url    = $base + "/Refract-macOS-arm64.app.tar.gz" else . end
+            | if .platforms["darwin-x86_64"]         then .platforms["darwin-x86_64"].url         = $base + "/Refract-macOS-x64.app.tar.gz"   else . end
+            | if .platforms["darwin-x86_64-app"]     then .platforms["darwin-x86_64-app"].url     = $base + "/Refract-macOS-x64.app.tar.gz"   else . end
             | if .platforms["linux-x86_64"]          then .platforms["linux-x86_64"].url          = $base + "/Refract-Linux-x86_64.AppImage" else . end
             | if .platforms["linux-x86_64-appimage"] then .platforms["linux-x86_64-appimage"].url = $base + "/Refract-Linux-x86_64.AppImage" else . end
             | if .platforms["linux-x86_64-deb"]      then .platforms["linux-x86_64-deb"].url      = $base + "/Refract-Linux-amd64.deb"       else . end
@@ -244,7 +269,7 @@ jobs:
           set -euo pipefail
           VERSION="${TAG#v}"
           # Every versioned asset name contains the version string; the stable
-          # copies, app.tar.gz updater archives and latest.json never do.
+          # installer/updater aliases and latest.json never do.
           gh release view "$TAG" --json assets -q '.assets[].name' \
             | { grep -F "$VERSION" || true; } \
             | while read -r name; do

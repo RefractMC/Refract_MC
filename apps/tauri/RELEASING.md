@@ -118,9 +118,12 @@ Output (under `src-tauri/target/release/bundle/`, depending on OS):
 - macOS: `dmg/*.dmg`, `macos/*.app.tar.gz`, plus `.sig` files
 - Linux: `appimage/*.AppImage`, `deb/*.deb`, `rpm/*.rpm`, plus `.sig` files
 
-Release assets also include stable, version-independent download names. The RPM
-alias is always `Refract-Linux-x86_64.rpm`, so website and package download
-links continue to work across future releases.
+Release assets also include stable, version-independent download names. macOS
+updater archives use `Refract-macOS-arm64.app.tar.gz` and
+`Refract-macOS-x64.app.tar.gz`; `latest.json` must point to these archives, not
+temporary GitHub asset-ID URLs. The RPM alias is always
+`Refract-Linux-x86_64.rpm`, so website and package download links continue to
+work across future releases.
 
 ## 4. Publish to GitHub Releases
 
@@ -128,7 +131,9 @@ The `Release (Tauri)` workflow uploads platform installers and the generated
 `latest.json` updater manifest to the draft release. Review the assets, then
 publish the draft and mark it as the latest release.
 
-The generated manifest should contain every supported updater platform:
+The generated manifest should contain every supported updater platform. Before
+publishing, verify every URL returns HTTP 200, including both stable macOS
+`.app.tar.gz` updater archives:
 
 ```json
 {
@@ -142,11 +147,11 @@ The generated manifest should contain every supported updater platform:
     },
     "darwin-aarch64": {
       "signature": "<paste the FULL contents of the .sig file>",
-      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract_1.2.0_macos_aarch64.app.tar.gz"
+      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract-macOS-arm64.app.tar.gz"
     },
     "darwin-x86_64": {
       "signature": "<paste the FULL contents of the .sig file>",
-      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract_1.2.0_macos_x64.app.tar.gz"
+      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract-macOS-x64.app.tar.gz"
     },
     "linux-x86_64": {
       "signature": "<paste the FULL contents of the .sig file>",
