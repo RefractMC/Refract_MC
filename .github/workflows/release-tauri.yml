@@ -262,6 +262,65 @@ jobs:
           ' latest.json > latest.fixed.json
           mv latest.fixed.json latest.json
 
+      - name: Validate updater manifest URLs
+        run: |
+          set -euo pipefail
+
+          release_assets="$(gh release view "$TAG" --json assets)"
+          declare -A checked_urls=()
+          platform_count=0
+
+          while IFS=$'\t' read -r platform url; do
+            if [[ -z "$platform" || -z "$url" ]]; then
+              echo "::error title=Invalid updater manifest::Platform '$platform' has no download URL"
+              exit 1
+            fi
+
+            mapfile -t matching_assets < <(
+              jq -r --arg url "$url" '.assets[] | select(.url == $url) | .apiUrl' \
+                <<<"$release_assets"
+            )
+            if [[ ${#matching_assets[@]} -ne 1 ]]; then
+              echo "::error title=Missing updater asset::$platform URL does not match exactly one release asset: $url"
+              exit 1
+            fi
+
+            if [[ -z "${checked_urls[$url]+present}" ]]; then
+              if ! http_code="$(
+                curl --head --location --silent --show-error \
+                  --retry 3 --retry-all-errors --retry-delay 2 \
+                  --output /dev/null --write-out '%{http_code}' \
+                  --header 'Accept: application/octet-stream' \
+                  --header "Authorization: Bearer ${GH_TOKEN}" \
+                  --header 'X-GitHub-Api-Version: 2022-11-28' \
+                  "${matching_assets[0]}"
+              )"; then
+                echo "::error title=Updater asset unavailable::$platform URL could not be downloaded: $url"
+                exit 1
+              fi
+
+              if [[ "$http_code" != "200" ]]; then
+                echo "::error title=Updater asset unavailable::$platform URL returned HTTP $http_code: $url"
+                exit 1
+              fi
+              checked_urls["$url"]=1
+            fi
+
+            echo "Validated $platform: HTTP 200 - $url"
+            ((platform_count += 1))
+          done < <(
+            jq -r '.platforms | to_entries[] | [.key, (.value.url // "")] | @tsv' \
+              latest.json
+          )
+
+          if (( platform_count == 0 )); then
+            echo "::error title=Invalid updater manifest::No platform URLs found"
+            exit 1
+          fi
+
+      - name: Upload validated updater manifest
+        run: |
+          set -euo pipefail
           gh release upload "$TAG" latest.json --clobber
 
       - name: Delete versioned duplicate assets
