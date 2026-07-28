@@ -426,7 +426,7 @@ There is no dedicated JavaScript test suite in package scripts. Rust has embedde
 5. Review the draft release and its `latest.json`, signatures, stable filenames, and installers before publishing.
 6. Publishing triggers the Discord announcement and stable AUR package workflow.
 
-The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`, then removes versioned duplicates while keeping stable updater aliases and `latest.json`.
+The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`. It then matches every manifest URL to one release asset and requires an authenticated HTTP 200 HEAD response before uploading `latest.json` or removing versioned duplicates.
 
 ### Release secrets
 

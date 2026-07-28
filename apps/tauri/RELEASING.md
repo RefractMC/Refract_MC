@@ -135,6 +135,12 @@ The generated manifest should contain every supported updater platform. Before
 publishing, verify every URL returns HTTP 200, including both stable macOS
 `.app.tar.gz` updater archives:
 
+The release finalizer enforces this before replacing `latest.json` or deleting
+versioned assets. Because the release is still a draft, it maps each manifest
+browser URL to exactly one release asset and sends an authenticated HEAD request
+through the GitHub API. Every final response must be HTTP 200 or finalization
+stops with the existing assets intact.
+
 ```json
 {
   "version": "1.2.0",
