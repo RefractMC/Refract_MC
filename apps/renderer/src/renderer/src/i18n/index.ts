@@ -37,6 +37,13 @@ function build(l: Locale) {
       addedDaysAgo: (n: number) => i(l.sidebar.addedDaysAgo, { n }),
     },
 
+    social: {
+      ...l.social,
+      noCompatible:   (version: string) => i(l.social.noCompatible, { version }),
+      shareWorldTitle:(name: string)    => i(l.social.shareWorldTitle, { name }),
+      worldName:      (name: string)    => i(l.social.worldName, { name }),
+    },
+
     titleBar: {
       ...l.titleBar,
       minutesAgo:        (n: number)       => i(l.titleBar.minutesAgo, { n }),

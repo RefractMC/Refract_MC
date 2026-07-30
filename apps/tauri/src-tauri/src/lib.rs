@@ -204,6 +204,9 @@ pub fn run() {
             gamedata::mc_open_screenshot,
             gamedata::mc_screenshot_full,
             servers::mc_servers,
+            servers::linked_servers,
+            servers::link_server,
+            servers::unlink_server,
             servers::ping_server,
         ])
         .run(tauri::generate_context!())

@@ -48,6 +48,7 @@ interface Props {
   onInstanceUpdated?: () => void
   onLaunch?: (quickPlay?: QuickPlayTarget) => void
   isRunning?: boolean
+  onShareWorld?: () => void
   onEdit?: () => void
 }
 
@@ -68,7 +69,7 @@ function formatSize(kb: number): string {
   return `${kb} KB`
 }
 
-export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateApplied, onInstanceUpdated, onLaunch, isRunning, onEdit }: Props) {
+export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateApplied, onInstanceUpdated, onLaunch, onShareWorld, isRunning, onEdit }: Props) {
   const t = useT()
   const td = t.instanceDetail
 
@@ -471,6 +472,16 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
 
           {/* Actions */}
           <div className="detail-actions" style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {onShareWorld && (
+              <Button
+                variant="secondary"
+                disabled={isRunning || !instance.isInstalled}
+                onClick={() => { onShareWorld(); onOpenChange(false) }}
+                title={isRunning ? t.social.restartToShare : t.social.shareWorldHint}
+              >
+                {t.social.shareWorld}
+              </Button>
+            )}
             {onLaunch && (
               <Button
                 variant={isRunning ? 'danger' : 'primary'}

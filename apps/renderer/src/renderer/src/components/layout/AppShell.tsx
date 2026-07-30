@@ -7,6 +7,7 @@ import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { InstallFromLinkDialog } from '@/components/sharing/InstallFromLinkDialog'
 import { api, supportsWindowResizeDragging } from '@/lib/api'
+import { SocialInviteDialog } from '@/components/sharing/SocialInviteDialog'
 import { useT } from '@/i18n'
 
 type ResizeDirection = Parameters<typeof api.window.startResizeDragging>[0]
@@ -150,6 +151,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }}>
       {supportsWindowResizeDragging && <WindowResizeHandles />}
       <InstallFromLinkDialog />
+      <SocialInviteDialog />
       <div
         aria-hidden="true"
         className="chrome-top-fill"

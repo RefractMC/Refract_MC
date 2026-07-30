@@ -14,6 +14,7 @@ export type AppConfig = Awaited<ReturnType<RefractAPI['config']['get']>>
 
 const CONFIG_KEY = 'refract.dev.config'
 const INSTANCES_KEY = 'refract.dev.instances'
+const LINKED_SERVERS_KEY = 'refract.dev.linked-servers'
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'www.minecraft.net',
   'minecraft.net',
@@ -68,6 +69,36 @@ function writeJson<T>(key: string, value: T): void {
   } catch (error) {
     logger.error(`browserApi:${key}:write`, error)
   }
+}
+
+type LinkedServerRecord = Awaited<ReturnType<RefractAPI['mc']['linkedServers']>>[number]
+
+function readLinkedServers(): Record<string, LinkedServerRecord[]> {
+  return readJson<Record<string, LinkedServerRecord[]>>(LINKED_SERVERS_KEY, {})
+}
+
+function devLinkServer(
+  instanceId: string,
+  input: { id?: string; name: string; ip: string; minecraftVersion?: string },
+): LinkedServerRecord {
+  const store = readLinkedServers()
+  const server: LinkedServerRecord = {
+    ...input,
+    id: input.id ?? crypto.randomUUID(),
+    updatedAt: Date.now(),
+  }
+  store[instanceId] = (store[instanceId] ?? []).filter(
+    (existing) => existing.id !== server.id && existing.ip !== server.ip,
+  )
+  store[instanceId].push(server)
+  writeJson(LINKED_SERVERS_KEY, store)
+  return server
+}
+
+function devUnlinkServer(instanceId: string, id: string): void {
+  const store = readLinkedServers()
+  store[instanceId] = (store[instanceId] ?? []).filter((server) => server.id !== id)
+  writeJson(LINKED_SERVERS_KEY, store)
 }
 
 function validateExternalUrl(value: string): string {
@@ -401,7 +432,13 @@ function createBrowserApi(): RefractAPI {
       screenshots: async () => [],
       openScreenshot:  async () => undefined,
       screenshotFull:  async () => null,
-      servers:     async () => [],
+      servers: async (instanceId: string) => (readLinkedServers()[instanceId] ?? []).map(
+        (server) => ({ ...server, linked: true, linkId: server.id }),
+      ),
+      linkedServers: async (instanceId: string) => readLinkedServers()[instanceId] ?? [],
+      linkServer: async (instanceId, server) => devLinkServer(instanceId, server),
+      unlinkServer: async (instanceId, id) => { devUnlinkServer(instanceId, id) },
+
       pingServer:  async () => null,
       backupWorld: async () => null,
       onProgress: () => () => undefined,
@@ -1026,6 +1063,11 @@ function createTauriApi(): RefractAPI {
       openScreenshot: ((instanceId: string, filename: string) => tinvoke('mc_open_screenshot', { instanceId, filename })) as RefractAPI['mc']['openScreenshot'],
       screenshotFull: ((instanceId: string, filename: string) => tinvoke('mc_screenshot_full', { instanceId, filename })) as RefractAPI['mc']['screenshotFull'],
       servers: ((instanceId: string) => tinvoke('mc_servers', { instanceId })) as RefractAPI['mc']['servers'],
+      linkedServers: ((instanceId: string) => tinvoke('linked_servers', { instanceId })) as RefractAPI['mc']['linkedServers'],
+      linkServer: ((instanceId: string, server: { id?: string; name: string; ip: string; minecraftVersion?: string }) =>
+        tinvoke('link_server', { instanceId, ...server })) as RefractAPI['mc']['linkServer'],
+      unlinkServer: ((instanceId: string, id: string) =>
+        tinvoke('unlink_server', { instanceId, id })) as RefractAPI['mc']['unlinkServer'],
       pingServer: ((ip: string) => tinvoke('ping_server', { ip })) as RefractAPI['mc']['pingServer'],
       // Renderer expects a synchronous unsubscribe; listen() resolves async, so
       // each wrapper detaches once its listener is actually attached.

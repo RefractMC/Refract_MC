@@ -170,7 +170,12 @@ pub fn launcher_delete_all() -> Result<(), String> {
             let _ = fs::remove_dir_all(&p);
         }
     }
-    for f in ["config.json", "instance-registry.json", "running.json"] {
+    for f in [
+        "config.json",
+        "instance-registry.json",
+        "linked-servers.json",
+        "running.json",
+    ] {
         let p = data.join(f);
         if p.exists() {
             let _ = fs::remove_file(&p);

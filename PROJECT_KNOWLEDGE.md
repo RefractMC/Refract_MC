@@ -9,7 +9,7 @@ tags:
   - architecture
 status: living
 created: 2026-07-19
-updated: 2026-07-21
+updated: 2026-07-30
 project_version: 1.3.2
 repository: https://github.com/RefractMC/Refract_MC
 ---
@@ -134,6 +134,10 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | `/settings/` | Settings | Memory, Java, themes/layout/accent, language, launch behavior, CurseForge key, privacy, logs, links, and destructive data reset. |
 
 The sidebar also owns the friends panel, account summary, Discord link, and compact/expanded state.
+World sharing is initiated from instance details. Refract resolves and installs the exact e4mc build plus required Modrinth dependencies for an existing Fabric, Forge, NeoForge, or Quilt instance, launches it, then detects the temporary `e4mc.link` address from `mc://log`. World and saved-server invites use validated `refract://join/server` deep links. Accepting an invite requires confirmation and a compatible installed instance before Quick Play launch.
+
+Server invites can be kept as linked records. Linked records live outside Minecraft's `servers.dat`, are merged into server reads, and retain a stable link ID for a future account-backed synchronization relay. The current implementation shares links out of band and does not provide remote friend delivery or live relay updates.
+
 
 ## Renderer architecture
 
@@ -200,7 +204,7 @@ The sidebar also owns the friends panel, account summary, Discord link, and comp
 | `paths.rs` | Stable data directory and shared assets/libraries/versions paths. |
 | `procutil.rs` | Platform process helpers such as hiding Windows console windows. |
 | `secrets.rs` | Stronghold vault protected by a random master key stored in the OS keyring. |
-| `servers.rs` | `servers.dat` NBT parsing and Minecraft server-list ping. |
+| `servers.rs` | `servers.dat` NBT parsing, linked-server persistence/validation, and Minecraft server-list ping. |
 | `shortcuts.rs` | Desktop Quick Play shortcuts and command-line parsing. |
 | `skins.rs` | Local skin library plus Minecraft skin/cape APIs. |
 | `system.rs` | Total and available physical memory. |
@@ -253,6 +257,7 @@ Refract/
   analytics.json
   activity.json
   friends.json
+  linked-servers.json
   instance-registry.json
   refract.stronghold
   instances/

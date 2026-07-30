@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+* Added one-click world invites with managed e4mc installation and live tunnel detection.
+* Added shareable server invites, compatible-instance Quick Play joins, and persistent linked servers.
+
 ## 1.3.2
 
 ### Highlights

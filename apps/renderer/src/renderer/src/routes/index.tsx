@@ -10,8 +10,9 @@ import { EmptyLibrary, InstanceCard, requiredJava } from '@/components/library/I
 import { CreateInstanceDialog } from '@/components/instances/CreateInstanceDialog'
 import { EditInstanceDialog } from '@/components/instances/EditInstanceDialog'
 import { InstanceModsDialog } from '@/components/instances/InstanceModsDialog'
-import { ServersDialog } from '@/components/instances/ServersDialog'
+import { SocialServersDialog } from '@/components/instances/SocialServersDialog'
 import { InstallProgress } from '@/components/minecraft/InstallProgress'
+import { WorldShareDialog, type WorldShareStage } from '@/components/sharing/WorldShareDialog'
 import { Button } from '@/components/ui/Button'
 import { CornerCat } from '@/components/ui/CornerCat'
 import { useInstances, useCreateInstance, useUpdateInstance, useDeleteInstance } from '@/hooks/use-instances'
@@ -19,6 +20,8 @@ import { analyticsAvailable, api, type AppConfig, type QuickPlayTarget } from '@
 import { logger } from '@/lib/logger'
 import { useThemeStore } from '@/stores/theme'
 import { useLanguageStore } from '@/stores/language'
+import { consumeSocialJoin, createSocialInvite, createSocialInviteLink, findE4mcAddress, onSocialJoin, prepareE4mc, type SocialJoinTarget } from '@/lib/social-invites'
+
 
 export const Route = createFileRoute('/')({
   component: Library,
@@ -770,6 +773,7 @@ function Library() {
   const [consoleLogs, setConsoleLogs] = useState<Map<string, string[]>>(() => new Map(consoleLogCache))
   const consoleLogsRef = useRef(consoleLogs)
   const [consoleOpen, setConsoleOpen] = useState<string | null>(null)
+  const [worldShare, setWorldShare] = useState<{ instance: Instance; stage: WorldShareStage; address?: string; inviteLink?: string; error?: string } | null>(null)
   const [modsTarget, setModsTarget] = useState<Instance | null>(null)
   const [serversTarget, setServersTarget] = useState<Instance | null>(null)
   const [updateCounts, setUpdateCounts] = useState<Map<string, number>>(new Map())
@@ -1035,26 +1039,29 @@ function Library() {
     }
   }
 
-  async function handleLaunch(instance: Instance, opts?: { skipRamCheck?: boolean; quickPlay?: QuickPlayTarget; offline?: boolean }) {
+  async function handleLaunch(
+    instance: Instance,
+    opts?: { skipRamCheck?: boolean; quickPlay?: QuickPlayTarget; offline?: boolean },
+  ): Promise<boolean> {
     if (!hasProfile) {
       setLaunchToast(t.home.signInFirst)
       setTimeout(() => setLaunchToast(null), 3600)
-      return
+      return false
     }
     if (!canPlayMinecraft) {
       setNoLicenseTarget(instance)
-      return
+      return false
     }
     if (!instance.isInstalled) {
       await handleInstallMc(instance)
-      return
+      return false
     }
-    if (launchingIds.has(instance.id) || activeLaunchIds.has(instance.id)) return
+    if (launchingIds.has(instance.id) || activeLaunchIds.has(instance.id)) return false
     if (runningIds.has(instance.id)) {
       activeLaunchIds.delete(instance.id)
       api.mc.stop(instance.id)
       setRunningIds(prev => { const n = new Set(prev); n.delete(instance.id); return n })
-      return
+      return false
     }
     // Warn when the instance wants more RAM than is currently free — the game
     // would swap or die at JVM startup. "Launch anyway" re-enters with the skip.
@@ -1062,7 +1069,7 @@ function Library() {
       const availableMb = await api.system.availableRamMb().catch(() => null)
       if (availableMb !== null && instance.memoryMb > availableMb) {
         setRamWarning({ instance, availableMb, quickPlay: opts?.quickPlay })
-        return
+        return false
       }
     }
     // Surface the one-time Java download (if the required runtime is missing)
@@ -1075,6 +1082,7 @@ function Library() {
     try {
       await api.mc.launch(instance.id, opts?.quickPlay, opts?.offline)
       void recordActivity(t.home.activityLaunched(instance.name))
+      return true
     } catch (e) {
       activeLaunchIds.delete(instance.id)
       setRunningIds(prev => { const n = new Set(prev); n.delete(instance.id); return n })
@@ -1088,16 +1096,17 @@ function Library() {
         setLaunchToast(t.home.sessionExpired)
         setTimeout(() => setLaunchToast(null), 4000)
         navigate({ to: '/account' })
-        return
+        return false
       }
       // Auth failed for connectivity reasons (not a rejected refresh token):
       // offer to start the game without signing in.
       if (!opts?.offline && /request|network|connect|timed out|dns|resolve/i.test(msg)) {
         setOfflineOffer({ instance, quickPlay: opts?.quickPlay })
-        return
+        return false
       }
       setLaunchToast(t.home.launchFailed(msg))
       setTimeout(() => setLaunchToast(null), 10000)
+      return false
     } finally {
       launchingRef.current = false
       activeLaunchIds.delete(instance.id)
@@ -1106,6 +1115,51 @@ function Library() {
     }
   }
 
+
+  async function handleShareWorld(instance: Instance) {
+    setWorldShare({ instance, stage: 'preparing' })
+    if (!instance.isInstalled) {
+      setWorldShare({ instance, stage: 'error', error: t.social.installBeforeSharing })
+      return
+    }
+    if (runningIds.has(instance.id)) {
+      setWorldShare({ instance, stage: 'error', error: t.social.restartToShare })
+      return
+    }
+    try {
+      await prepareE4mc(instance)
+      void queryClient.invalidateQueries({ queryKey: ['instances'] })
+      setWorldShare({ instance, stage: 'waiting' })
+      const launched = await handleLaunch(instance)
+      if (!launched) {
+        setWorldShare({ instance, stage: 'error', error: t.social.shareFailed })
+      }
+    } catch (cause) {
+      setWorldShare({
+        instance,
+        stage: 'error',
+        error: cause instanceof Error ? cause.message : t.social.shareFailed,
+      })
+    }
+  }
+
+  useEffect(() => {
+    const join = (target: SocialJoinTarget) => {
+      const instance = instances.find((candidate) => candidate.id === target.instanceId)
+      if (!instance) {
+        setLaunchToast(t.social.instanceMissing)
+        window.setTimeout(() => setLaunchToast(null), 4000)
+        return
+      }
+      void handleLaunch(instance, {
+        quickPlay: { kind: 'server', address: target.invite.address },
+      })
+    }
+    const unsubscribe = onSocialJoin(join)
+    const pending = consumeSocialJoin()
+    if (pending) join(pending)
+    return unsubscribe
+  }, [instances])
   // Show Java auto-download progress, but only while a launch is in flight
   // (the same channel also fires for manual downloads in Settings).
   useEffect(() => {
@@ -1125,6 +1179,13 @@ function Library() {
       activeLaunchIds.delete(instanceId)
       setLaunchingIds(prev => { const n = new Set(prev); n.delete(instanceId); return n })
       setRunningIds(prev => { const n = new Set(prev); n.delete(instanceId); return n })
+      setWorldShare((current) => current?.instance.id === instanceId && current.stage !== 'error'
+        ? {
+            ...current,
+            stage: 'error',
+            error: t.social.hostStopped,
+          }
+        : current)
       // The exit watcher records the session's playtime before emitting, so
       // refetch to refresh playtime totals and the daily streak.
       void queryClient.invalidateQueries({ queryKey: ['instances'] })
@@ -1167,6 +1228,19 @@ function Library() {
   useEffect(() => {
     const unsub = api.mc.onLog(({ instanceId, line }) => {
       const lines = line.split(/\r?\n/).filter(l => l.length > 0)
+      const e4mcAddress = findE4mcAddress(line)
+      if (e4mcAddress) {
+        setWorldShare((current) => {
+          if (!current || current.instance.id !== instanceId || current.stage !== 'waiting') return current
+          const invite = createSocialInvite({
+            kind: 'world',
+            address: e4mcAddress,
+            name: t.social.worldName(current.instance.name),
+            minecraftVersion: current.instance.minecraftVersion,
+          })
+          return { ...current, stage: 'ready', address: e4mcAddress, inviteLink: createSocialInviteLink(invite) }
+        })
+      }
       setConsoleLogs(prev => {
         const next = new Map(prev)
         const existing = next.get(instanceId) ?? []
@@ -1853,11 +1927,22 @@ function Library() {
         }}
         onInstanceUpdated={() => queryClient.invalidateQueries({ queryKey: ['instances'] })}
         onLaunch={modsTarget ? (quickPlay?: QuickPlayTarget) => handleLaunch(modsTarget, { quickPlay }) : undefined}
+        onShareWorld={modsTarget ? () => { void handleShareWorld(modsTarget) } : undefined}
         isRunning={modsTarget ? runningIds.has(modsTarget.id) : false}
         onEdit={modsTarget ? () => setEditTarget(modsTarget) : undefined}
       />
 
-      <ServersDialog
+      {worldShare && (
+        <WorldShareDialog
+          instance={worldShare.instance}
+          stage={worldShare.stage}
+          address={worldShare.address}
+          inviteLink={worldShare.inviteLink}
+          error={worldShare.error}
+          onClose={() => setWorldShare(null)}
+        />
+      )}
+      <SocialServersDialog
         instance={serversTarget}
         open={serversTarget !== null}
         onOpenChange={(v) => { if (!v) setServersTarget(null) }}

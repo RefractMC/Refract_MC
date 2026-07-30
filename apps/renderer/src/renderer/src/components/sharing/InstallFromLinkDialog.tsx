@@ -52,7 +52,7 @@ export function InstallFromLinkDialog() {
     let cancelled = false
 
     const handleUrls = (urls: string[]) => {
-      const url = urls.find(candidate => candidate.startsWith('refract://'))
+      const url = urls.find(candidate => candidate.startsWith('refract://install/'))
       if (!url || handledDeepLinks.has(url)) return
       handledDeepLinks.add(url)
       receive(url)
