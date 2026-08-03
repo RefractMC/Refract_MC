@@ -4,6 +4,7 @@ mod auth;
 mod cf;
 mod config;
 mod content;
+mod creator;
 mod discord;
 mod downloader;
 mod external;
@@ -165,6 +166,10 @@ pub fn run() {
             cf::curseforge_install_blocked,
             cf::curseforge_blocked_cancel,
             mods::export_mrpack,
+            creator::creator_status,
+            creator::creator_connect_from_file,
+            creator::creator_disconnect,
+            creator::creator_publish,
             mods::check_mod_updates,
             mods::apply_mod_updates,
             mods::uninstall_mod,

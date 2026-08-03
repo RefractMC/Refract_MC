@@ -231,6 +231,13 @@ declare global {
       external: {
         open: (url: string) => Promise<void>
       }
+      creator: {
+        status: () => Promise<import('@/lib/api').CreatorStatus>
+        connectFromFile: () => Promise<import('@/lib/api').CreatorConnection | null>
+        disconnect: () => Promise<void>
+        publish: (input: import('@/lib/api').CreatorPublishInput) => Promise<import('@/lib/api').CreatorPublishResult>
+        onProgress: (cb: (data: { step: string; percent: number }) => void) => () => void
+      }
       modrinth: {
         search: (query: string, gameVersion?: string, loader?: string, category?: string, limit?: number, offset?: number) => Promise<import('@refract/core').ModrinthSearchResult>
         searchContent: (opts: import('@refract/core').ModrinthSearchOptions) => Promise<import('@refract/core').ModrinthSearchResult>

@@ -129,6 +129,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | `/browse/` | Browse Mods | Modrinth and CurseForge mod search, filters, details, dependency planning, install, blocked-file flow, and update checks. |
 | `/news/` | Minecraft News | Official Minecraft news fetched and sanitized by Rust. |
 | `/modpacks/` | Content | Modpacks plus resource packs, shaders, and datapacks; sources include Modrinth, CurseForge, and FTB. |
+| `/creator/` | Creator Mode | Secure Modrinth connection, per-instance listing drafts, `.mrpack` generation, project/version publishing, and moderation submission. |
 | `/skins/` | Skins | Local skin library, 3D preview, classic/slim variants, and applying to Microsoft accounts. |
 | `/account/` | Accounts | Microsoft device-code auth, offline accounts, Yggdrasil, active-account selection, session validation, skins, and capes. |
 | `/settings/` | Settings | Memory, Java, themes/layout/accent, language, launch behavior, CurseForge key, privacy, logs, links, and destructive data reset. |
@@ -150,6 +151,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
   - `refract-language`: `en`, `uk`, or `zh-CN`.
   - `refract-avatars`: local offline-account avatar data URLs.
 - Some page-specific selections and filters also use localStorage.
+- Creator Mode stores non-secret per-instance publishing drafts in localStorage. Modrinth tokens never enter renderer storage.
 
 ### API facade modes
 
@@ -185,6 +187,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 | `cf.rs` | CurseForge file metadata/downloads and manual blocked-file resolution. |
 | `config.rs` | Defaults, forward-compatible config merge, and generic config get/set. |
 | `content.rs` | FTB and CurseForge API proxy plus Fabric/Quilt version lookup. |
+| `creator.rs` | Secure Modrinth account connection and project/version publishing for generated `.mrpack` archives. |
 | `discord.rs` | Discord Rich Presence lifecycle for running games. |
 | `downloader.rs` | Shared verified parallel download engine and install statistics. |
 | `external.rs` | Prism, MultiMC, Modrinth App, ATLauncher, CurseForge, and GDLauncher discovery/link/import. |
@@ -224,6 +227,7 @@ The full TypeScript contract is in `env.d.ts`; this table is the working index.
 | `auth` | Account CRUD, Microsoft begin/complete, validate, Yggdrasil, skins/capes. |
 | `instance` | CRUD, folders, duplicate, import/export, external discovery/link/import. |
 | `modrinth`, `curseforge`, `ftb`, `modpack`, `mods` | Browse, resolve, install, update, verify, profiles, and export. |
+| `creator` | Import a Modrinth token into Stronghold, report safe connection state, publish projects/versions, and stream progress. |
 | `mc` | Versions, loaders, Java scan, install/repair, launch/stop, worlds, logs, screenshots, servers, shortcuts. |
 | `java` | Managed runtimes, requirements, ensure/download/delete, and custom runtime paths. |
 | `window`, `updater` | Frameless window controls and application update lifecycle. |
@@ -240,6 +244,7 @@ Important native event channels:
 | `modpack://done` | Installed instance ID, error, and measured statistics. |
 | `cf://blocked` | Manual CurseForge blocked-file wait/cancel status. |
 | `instance://export-progress` | ZIP or `.mrpack` export progress. |
+| `creator://progress` | Creator archive, project creation, upload, and moderation-submission progress. |
 
 ## Persistent data
 
@@ -309,8 +314,10 @@ Additional optional settings used by the UI include minimize/start behavior, reo
 
 - `config.json` contains safe account metadata only.
 - Microsoft/Yggdrasil access and refresh tokens never cross into the WebView.
+- Modrinth Creator tokens are imported from a user-selected text file directly in Rust, validated, stored in Stronghold, and removed from the source file after a successful import. Token bytes never cross into the WebView.
 - Tokens live in `refract.stronghold`.
 - A random 32-byte vault master key is stored in Windows Credential Manager, macOS Keychain, or Linux Secret Service under service `com.refract` and user `stronghold-master-key`.
+- The native process lazily opens and serializes one Stronghold handle. Potentially expensive first access runs on a blocking worker instead of the Tauri UI thread. Snapshots use work factor 0 because their OS-keyring master key is 256 bits of cryptographic randomness rather than a human password; older high-work-factor snapshots are rewritten after their one-time unlock.
 - Deleting ordinary config data is not the same as clearing the OS keyring entry. Treat account migration and reset work carefully.
 
 ## Security and privacy invariants
@@ -339,7 +346,7 @@ The exact active ignores live in `.github/workflows/security-audit.yml`; revisit
 | --- | --- |
 | Microsoft OAuth, Xbox Live, XSTS, Minecraft Services | Microsoft login, license/profile, token refresh, skins, and capes. |
 | Mojang metadata/CDNs | Minecraft versions, libraries, assets, profiles, and username/UUID lookup. |
-| Modrinth API/CDN | Search, content metadata, dependencies, downloads, and updates. |
+| Modrinth API/CDN | Search, content metadata, dependencies, downloads, updates, and authenticated Creator publishing. |
 | CurseForge API/CDN/site | Search, metadata, mod/modpack files, and manual restricted-download flow. |
 | FTB `api.modpacks.ch` | FTB pack search, metadata, and files. |
 | Adoptium | Managed Temurin JRE downloads. |

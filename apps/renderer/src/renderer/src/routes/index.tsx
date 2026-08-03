@@ -481,10 +481,18 @@ const secondaryBtnStyle: React.CSSProperties = {
   fontSize: 14, fontWeight: 600,
 }
 
+const MAX_VISIBLE_CONSOLE_LINES = 400
+
 function ConsoleModal({ instanceId, instanceName, lines, onClose }: { instanceId: string; instanceName: string; lines: string[]; onClose: () => void }) {
   const t = useT()
-  const bottomRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [lines])
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const followTailRef = useRef(true)
+  const visibleLines = lines.slice(-MAX_VISIBLE_CONSOLE_LINES)
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (scroller && followTailRef.current) scroller.scrollTop = scroller.scrollHeight
+  }, [lines])
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
@@ -519,17 +527,24 @@ function ConsoleModal({ instanceId, instanceName, lines, onClose }: { instanceId
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
+        <div
+          ref={scrollerRef}
+          onScroll={(event) => {
+            const scroller = event.currentTarget
+            const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+            followTailRef.current = distanceFromBottom < 48
+          }}
+          style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}
+        >
           {lines.length === 0
             ? <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--ink-4)' }}>{t.home.consoleWaiting}</span>
-            : lines.map((line, i) => (
+            : visibleLines.map((line, i) => (
               <div key={i} style={{
                 fontFamily: 'monospace', fontSize: 11, color: line.includes('ERROR') || line.includes('Exception') ? '#ff6b6b' : line.includes('WARN') ? '#ffd93d' : '#b0c4b1',
                 lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
               }}>{line}</div>
             ))
           }
-          <div ref={bottomRef} />
         </div>
       </div>
     </div>
@@ -772,6 +787,8 @@ function Library() {
   const [mcVersions, setMcVersions] = useState<MinecraftVersion[]>([])
   const [consoleLogs, setConsoleLogs] = useState<Map<string, string[]>>(() => new Map(consoleLogCache))
   const consoleLogsRef = useRef(consoleLogs)
+  const pendingConsoleLinesRef = useRef<Map<string, string[]>>(new Map())
+  const consoleFlushTimerRef = useRef<number | null>(null)
   const [consoleOpen, setConsoleOpen] = useState<string | null>(null)
   const [worldShare, setWorldShare] = useState<{ instance: Instance; stage: WorldShareStage; address?: string; inviteLink?: string; error?: string } | null>(null)
   const [modsTarget, setModsTarget] = useState<Instance | null>(null)
@@ -1226,6 +1243,24 @@ function Library() {
 
   // Accumulate MC log lines per instance
   useEffect(() => {
+    const flushPendingLines = () => {
+      consoleFlushTimerRef.current = null
+      const pending = pendingConsoleLinesRef.current
+      pendingConsoleLinesRef.current = new Map()
+      if (pending.size === 0) return
+
+      setConsoleLogs(prev => {
+        const next = new Map(prev)
+        for (const [instanceId, lines] of pending) {
+          const existing = next.get(instanceId) ?? []
+          const updated = [...existing, ...lines].slice(-2000)
+          next.set(instanceId, updated)
+          consoleLogCache.set(instanceId, updated)
+        }
+        return next
+      })
+    }
+
     const unsub = api.mc.onLog(({ instanceId, line }) => {
       const lines = line.split(/\r?\n/).filter(l => l.length > 0)
       const e4mcAddress = findE4mcAddress(line)
@@ -1241,16 +1276,22 @@ function Library() {
           return { ...current, stage: 'ready', address: e4mcAddress, inviteLink: createSocialInviteLink(invite) }
         })
       }
-      setConsoleLogs(prev => {
-        const next = new Map(prev)
-        const existing = next.get(instanceId) ?? []
-        const updated = [...existing, ...lines].slice(-2000)
-        next.set(instanceId, updated)
-        consoleLogCache.set(instanceId, updated)
-        return next
-      })
+      if (lines.length === 0) return
+
+      const pending = pendingConsoleLinesRef.current
+      pending.set(instanceId, [...(pending.get(instanceId) ?? []), ...lines])
+      if (consoleFlushTimerRef.current === null) {
+        consoleFlushTimerRef.current = window.setTimeout(flushPendingLines, 100)
+      }
     })
-    return () => { if (typeof unsub === 'function') unsub() }
+    return () => {
+      if (typeof unsub === 'function') unsub()
+      if (consoleFlushTimerRef.current !== null) {
+        window.clearTimeout(consoleFlushTimerRef.current)
+        consoleFlushTimerRef.current = null
+      }
+      pendingConsoleLinesRef.current.clear()
+    }
   }, [])
 
   const allGroupNames = [...new Set([...(instances.map(i => i.groupId).filter(Boolean) as string[]), ...customGroups])]

@@ -11,6 +11,45 @@ export type QuickPlayTarget = { kind: 'server'; address: string } | { kind: 'wor
 export type SafeAccount = Awaited<ReturnType<RefractAPI['auth']['accounts']>>[number]
 export type DeviceLogin = Awaited<ReturnType<RefractAPI['auth']['microsoftBegin']>>
 export type AppConfig = Awaited<ReturnType<RefractAPI['config']['get']>>
+export interface CreatorStatus {
+  connected: boolean
+  username?: string
+  avatarUrl?: string
+}
+export interface CreatorConnection {
+  status: CreatorStatus
+  sourceDeleted: boolean
+}
+export interface CreatorPublishInput {
+  instanceId: string
+  projectId?: string
+  project?: {
+    slug: string
+    title: string
+    summary: string
+    description: string
+    categories: string[]
+    clientSide: 'required' | 'optional' | 'unsupported' | 'unknown'
+    serverSide: 'required' | 'optional' | 'unsupported' | 'unknown'
+    licenseId: string
+  }
+  version: {
+    name: string
+    versionNumber: string
+    changelog: string
+    versionType: 'release' | 'beta' | 'alpha'
+    featured: boolean
+  }
+  submitForReview: boolean
+}
+export interface CreatorPublishResult {
+  projectId: string
+  versionId: string
+  projectUrl: string
+  projectCreated: boolean
+  submittedForReview: boolean
+  reviewSubmissionError?: string
+}
 
 const CONFIG_KEY = 'refract.dev.config'
 const INSTANCES_KEY = 'refract.dev.instances'
@@ -327,6 +366,17 @@ function createBrowserApi(): RefractAPI {
       open: async (url: string) => {
         openBrowserExternal(url)
       },
+    },
+    creator: {
+      status: async () => ({ connected: false }),
+      connectFromFile: async () => {
+        throw new Error('Modrinth publishing requires the desktop app.')
+      },
+      disconnect: async () => undefined,
+      publish: async () => {
+        throw new Error('Modrinth publishing requires the desktop app.')
+      },
+      onProgress: () => () => undefined,
     },
     modrinth: {
       search: async (query: string, gameVersion?: string, loader?: string, category?: string, limit = 20, offset = 0) => {
@@ -702,6 +752,27 @@ function createTauriApi(): RefractAPI {
     },
     external: {
       open: ((url: string) => tinvoke('open_external_link', { url })) as RefractAPI['external']['open'],
+    },
+    creator: {
+      status: (() => tinvoke('creator_status')) as RefractAPI['creator']['status'],
+      connectFromFile: (async () => {
+        const path = await dialogOpen({
+          multiple: false,
+          filters: [{ name: 'Modrinth token', extensions: ['txt', 'token'] }],
+        })
+        if (!path) return null
+        return tinvoke('creator_connect_from_file', { path })
+      }) as RefractAPI['creator']['connectFromFile'],
+      disconnect: (() => tinvoke('creator_disconnect')) as RefractAPI['creator']['disconnect'],
+      publish: ((input: CreatorPublishInput) =>
+        tinvoke('creator_publish', { input })) as RefractAPI['creator']['publish'],
+      onProgress: ((cb: (data: { step: string; percent: number }) => void) => {
+        let off: (() => void) | undefined
+        void listen<{ step: string; percent: number }>('creator://progress', event => {
+          cb(event.payload)
+        }).then(unlisten => { off = unlisten })
+        return () => off?.()
+      }) as RefractAPI['creator']['onProgress'],
     },
     config: {
       ...base.config,

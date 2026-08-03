@@ -1071,6 +1071,24 @@ pub async fn export_mrpack(
     instance_id: String,
     dest_path: String,
 ) -> Result<String, String> {
+    export_mrpack_inner(app, instance_id, dest_path, "1.0.0".into()).await
+}
+
+pub(crate) async fn export_mrpack_for_creator(
+    app: tauri::AppHandle,
+    instance_id: String,
+    dest_path: String,
+    version_id: String,
+) -> Result<String, String> {
+    export_mrpack_inner(app, instance_id, dest_path, version_id).await
+}
+
+async fn export_mrpack_inner(
+    app: tauri::AppHandle,
+    instance_id: String,
+    dest_path: String,
+    version_id: String,
+) -> Result<String, String> {
     let instance =
         instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
     let game_root = game_dir(&instance_id);
@@ -1216,7 +1234,7 @@ pub async fn export_mrpack(
     let index = json!({
         "formatVersion": 1,
         "game": "minecraft",
-        "versionId": "1.0.0",
+        "versionId": version_id,
         "name": name,
         "files": index_files,
         "dependencies": dependencies,

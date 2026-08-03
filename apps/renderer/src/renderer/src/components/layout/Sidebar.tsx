@@ -663,6 +663,7 @@ export function Sidebar() {
     { to: '/browse/',   label: t.nav.browse,     iconSrc: browseModsIcon, exact: false },
     { to: '/news/',     label: t.nav.news,       iconSrc: newsIcon,       exact: false },
     { to: '/modpacks/', label: t.nav.content,    iconSrc: modpacksIcon,   exact: false },
+    { to: '/creator/',  label: t.nav.creator,    iconSrc: modpacksIcon,   exact: false },
     { to: '/skins',     label: t.skins.navLabel, iconSrc: skinsIcon,      exact: false },
   ]
 

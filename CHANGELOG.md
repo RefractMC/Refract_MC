@@ -4,8 +4,15 @@
 
 ### Added
 
+* Added Creator Mode for securely publishing instance-based `.mrpack` releases to new or existing Modrinth projects.
 * Added one-click world invites with managed e4mc installation and live tunnel detection.
 * Added shareable server invites, compatible-instance Quick Play joins, and persistent linked servers.
+
+### Fixes
+
+* Improved Creator Mode readability with one solid workspace panel and stronger muted-text contrast.
+* Fixed Creator Mode status checks freezing the launcher and consuming roughly 550 MB by moving vault unlocks off the UI thread, reusing the unlocked vault, and migrating snapshots to the low-memory work factor appropriate for their random OS-keyring key.
+* Fixed live Minecraft consoles freezing the launcher by batching log updates, limiting rendered rows, and avoiding queued smooth-scroll animations.
 
 ## 1.3.2
 

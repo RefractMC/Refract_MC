@@ -131,6 +131,8 @@ function build(l: Locale) {
       cfUnavailable:      (error: string)   => i(l.content.cfUnavailable, { error }),
     },
 
+    creator: { ...l.creator },
+
     themes: {
       ...l.themes,
       imageOpacity:  (p: number)  => i(l.themes.imageOpacity, { p }),
