@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.3
 
 ### Added
 
@@ -13,6 +13,8 @@
 * Improved Creator Mode readability with one solid workspace panel and stronger muted-text contrast.
 * Fixed Creator Mode status checks freezing the launcher and consuming roughly 550 MB by moving vault unlocks off the UI thread, reusing the unlocked vault, and migrating snapshots to the low-memory work factor appropriate for their random OS-keyring key.
 * Fixed live Minecraft consoles freezing the launcher by batching log updates, limiting rendered rows, and avoiding queued smooth-scroll animations.
+
+Full comparison: [v1.3.2...v1.3.3](https://github.com/RefractMC/Refract_MC/compare/v1.3.2...v1.3.3)
 
 ## 1.3.2
 
