@@ -150,6 +150,10 @@ function build(l: Locale) {
       javaFailed:      (n: number, e: string)   => i(l.settings.javaFailed, { n, e }),
       javaManagedRemoved: (major: number)       => i(l.settings.javaManagedRemoved, { major }),
       javaManagedRemoveTitle: (version: string | number) => i(l.settings.javaManagedRemoveTitle, { version }),
+      installedAppVersion: (version: string) => i(l.settings.installedAppVersion, { version }),
+      appUpdateAvailable: (version: string) => i(l.settings.appUpdateAvailable, { version }),
+      downloadingAppUpdate: (percent: number) => i(l.settings.downloadingAppUpdate, { percent }),
+      appUpdateFailed: (error: string) => i(l.settings.appUpdateFailed, { error }),
       javaVersionLabel:(v: number): string => {
         if (v >= 21) return l.settings.javaVersionLabel.v21plus
         if (v >= 17) return l.settings.javaVersionLabel.v17to20

@@ -38,7 +38,13 @@ function WinBtn({ onClick, danger, children }: { onClick: () => void; danger?: b
 
 type ActivityEntry = { id: string; label: string; ts: number }
 
-type UpdateState = { version: string; phase: 'pending' | 'downloading' | 'ready'; percent: number }
+type UpdateState = {
+  version: string
+  phase: 'pending' | 'downloading' | 'ready' | 'installing' | 'error'
+  percent: number
+  failedAction?: 'download' | 'install'
+  error?: string
+}
 
 export function TitleBar() {
   const t = useT()
@@ -56,7 +62,9 @@ export function TitleBar() {
   }, [])
 
   useEffect(() => {
-    const unA = api.updater.onAvailable(({ version }) => setUpdate({ version, phase: 'pending', percent: 0 }))
+    const unA = api.updater.onAvailable(({ version }) => {
+      setUpdate({ version, phase: 'pending', percent: 0 })
+    })
     const unP = api.updater.onProgress(({ percent }) => setUpdate(u => u ? { ...u, phase: 'downloading', percent } : null))
     const unD = api.updater.onDownloaded(() => setUpdate(u => u ? { ...u, phase: 'ready', percent: 100 } : null))
     return () => { unA(); unP(); unD() }
@@ -91,6 +99,34 @@ export function TitleBar() {
     api.window.startDragging()
   }
 
+  async function downloadUpdate() {
+    setUpdate(current => current ? { ...current, phase: 'downloading', percent: 0 } : null)
+    try {
+      await api.updater.download()
+    } catch (error) {
+      setUpdate(current => current ? {
+        ...current,
+        phase: 'error',
+        failedAction: 'download',
+        error: error instanceof Error ? error.message : String(error),
+      } : null)
+    }
+  }
+
+  async function installUpdate() {
+    setUpdate(current => current ? { ...current, phase: 'installing' } : null)
+    try {
+      await api.updater.install()
+    } catch (error) {
+      setUpdate(current => current ? {
+        ...current,
+        phase: 'error',
+        failedAction: 'install',
+        error: error instanceof Error ? error.message : String(error),
+      } : null)
+    }
+  }
+
   return (
     <div
       className="drag-region launcher-titlebar"
@@ -120,13 +156,17 @@ export function TitleBar() {
           {update.phase === 'ready' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--grass)', fontWeight: 600 }}>{t.titleBar.versionDownloaded(update.version)}</span>
-              <button onClick={() => api.updater.install()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
+              <button onClick={() => void installUpdate()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
                 {t.titleBar.restartNow}
               </button>
               <button onClick={() => setUpdate(null)} title={t.titleBar.restartLater} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'transparent', color: 'var(--ink-4)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
                 {t.titleBar.later}
               </button>
             </>
+          ) : update.phase === 'installing' ? (
+            <span style={{ fontSize: 10, color: 'var(--grass)', fontWeight: 600 }}>
+              {t.titleBar.installing}
+            </span>
           ) : update.phase === 'downloading' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>v{update.version}</span>
@@ -135,10 +175,25 @@ export function TitleBar() {
               </div>
               <span style={{ fontSize: 10, color: 'var(--ink-4)', minWidth: 26, textAlign: 'right' }}>{update.percent}%</span>
             </>
+          ) : update.phase === 'error' ? (
+            <>
+              <span
+                title={update.error}
+                style={{ fontSize: 10, color: 'var(--lava)', fontWeight: 600 }}
+              >
+                {t.titleBar.updateFailed}
+              </span>
+              <button
+                onClick={() => void (update.failedAction === 'install' ? installUpdate() : downloadUpdate())}
+                style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}
+              >
+                {t.titleBar.retry}
+              </button>
+            </>
           ) : (
             <>
               <span style={{ fontSize: 10, color: 'var(--ink-3)', fontWeight: 600 }}>{t.titleBar.versionAvailable(update.version)}</span>
-              <button onClick={() => api.updater.download()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
+              <button onClick={() => void downloadUpdate()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
                 {t.titleBar.update}
               </button>
               <button onClick={() => setUpdate(null)} title={t.titleBar.stayCurrent} style={{ height: 16, width: 16, fontSize: 12, background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

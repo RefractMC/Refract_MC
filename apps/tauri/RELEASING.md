@@ -135,6 +135,12 @@ The generated manifest should contain every supported updater platform. Before
 publishing, verify every URL returns HTTP 200, including both stable macOS
 `.app.tar.gz` updater archives:
 
+`latest.json` must be UTF-8 without a byte-order mark. The release finalizer
+rejects BOM-prefixed files, malformed updater objects, and versions that do not
+match the release tag. If repairing a published manifest manually, rewrite it
+with `jq` before uploading it; do not use Windows PowerShell 5.1
+`Set-Content -Encoding utf8`, which adds a BOM.
+
 The release finalizer enforces this before replacing `latest.json` or deleting
 versioned assets. Because the release is still a draft, it maps each manifest
 browser URL to exactly one release asset and sends an authenticated HEAD request

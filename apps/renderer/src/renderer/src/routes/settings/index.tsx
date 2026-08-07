@@ -28,6 +28,14 @@ type ConfirmAction = {
   run: () => Promise<void>
 }
 
+type AppUpdateState = {
+  phase: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
+  version?: string
+  percent?: number
+  retry?: 'check' | 'download' | 'install'
+  error?: string
+}
+
 function FontFamilyPicker({
   value,
   fonts,
@@ -279,6 +287,7 @@ function Settings() {
   const [logs, setLogs] = useState<Array<{ time: string; level: 'info' | 'warn' | 'error'; source: string; message: string }>>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateState>({ phase: 'idle' })
   const avatars = useAvatarStore((s) => s.avatars)
   const setAvatarStore = useAvatarStore((s) => s.setAvatar)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
@@ -413,6 +422,27 @@ function Settings() {
     return () => unsub()
   }, [])
 
+  useEffect(() => {
+    const unAvailable = api.updater.onAvailable(({ version }) => {
+      setAppUpdate({ phase: 'available', version })
+    })
+    const unProgress = api.updater.onProgress(({ percent }) => {
+      setAppUpdate(current => ({
+        phase: 'downloading',
+        version: current.version,
+        percent,
+      }))
+    })
+    const unDownloaded = api.updater.onDownloaded(() => {
+      setAppUpdate(current => ({ phase: 'ready', version: current.version }))
+    })
+    return () => {
+      unAvailable()
+      unProgress()
+      unDownloaded()
+    }
+  }, [])
+
   // Defer Java scan by 3 s so settings page renders instantly
   useEffect(() => { const id = window.setTimeout(() => void scanJava(), 3000); return () => window.clearTimeout(id) }, [])
   useEffect(() => { void loadLogs() }, [])
@@ -437,6 +467,91 @@ function Settings() {
   function showToast(message: string) {
     setToast(message)
     window.setTimeout(() => setToast(null), 2600)
+  }
+
+  async function checkForAppUpdate() {
+    setAppUpdate({ phase: 'checking' })
+    try {
+      const result = await api.updater.check()
+      setAppUpdate(result.available && result.version
+        ? { phase: 'available', version: result.version }
+        : { phase: 'current' })
+    } catch (error) {
+      setAppUpdate({
+        phase: 'error',
+        retry: 'check',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  async function downloadAppUpdate() {
+    const version = appUpdate.version
+    if (!version) return
+    setAppUpdate({ phase: 'downloading', version, percent: 0 })
+    try {
+      await api.updater.download()
+      setAppUpdate({ phase: 'ready', version })
+    } catch (error) {
+      setAppUpdate({
+        phase: 'error',
+        version,
+        retry: 'download',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  async function installAppUpdate() {
+    const version = appUpdate.version
+    if (!version) return
+    setAppUpdate({ phase: 'installing', version })
+    try {
+      await api.updater.install()
+    } catch (error) {
+      setAppUpdate({
+        phase: 'error',
+        version,
+        retry: 'install',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  function runAppUpdateAction() {
+    if (appUpdate.phase === 'ready' || appUpdate.retry === 'install') {
+      void installAppUpdate()
+    } else if (appUpdate.phase === 'available' || appUpdate.retry === 'download') {
+      void downloadAppUpdate()
+    } else {
+      void checkForAppUpdate()
+    }
+  }
+
+  function appUpdateStatusText(): string {
+    switch (appUpdate.phase) {
+      case 'checking': return t.settings.checkingForUpdates
+      case 'current': return t.settings.appUpToDate
+      case 'available': return t.settings.appUpdateAvailable(appUpdate.version ?? '')
+      case 'downloading': return t.settings.downloadingAppUpdate(appUpdate.percent ?? 0)
+      case 'ready': return t.settings.appUpdateReady
+      case 'installing': return t.settings.restartingForUpdate
+      case 'error': return t.settings.appUpdateFailed(appUpdate.error ?? t.settings.unknownError)
+      default: return t.settings.appUpdatesNote
+    }
+  }
+
+  function appUpdateButtonLabel(): string {
+    if (appUpdate.phase === 'checking') return t.settings.checking
+    if (appUpdate.phase === 'downloading') return t.settings.downloading
+    if (appUpdate.phase === 'installing') return t.settings.restarting
+    if (appUpdate.phase === 'ready' || appUpdate.retry === 'install') {
+      return t.settings.restartAndUpdate
+    }
+    if (appUpdate.phase === 'available' || appUpdate.retry === 'download') {
+      return t.settings.downloadAppUpdate
+    }
+    return t.settings.checkForUpdates
   }
 
   function chooseTheme(preference: ThemePreference) {
@@ -1036,6 +1151,43 @@ function Settings() {
           </Panel>
         </aside>
       </div>
+
+      <Panel title={t.settings.appUpdates}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ color:'var(--ink)', fontWeight:700, fontSize:13 }}>
+              {t.settings.installedAppVersion(__APP_VERSION__)}
+            </div>
+            <div
+              style={{
+                color: appUpdate.phase === 'error'
+                  ? 'var(--lava)'
+                  : appUpdate.phase === 'current' || appUpdate.phase === 'ready'
+                    ? 'var(--grass)'
+                    : 'var(--ink-4)',
+                fontSize:12,
+                lineHeight:1.4,
+                marginTop:3,
+                wordBreak:'break-word',
+              }}
+            >
+              {appUpdateStatusText()}
+            </div>
+          </div>
+          <Button
+            variant={appUpdate.phase === 'ready' ? 'primary' : 'secondary'}
+            onClick={runAppUpdateAction}
+            disabled={
+              appUpdate.phase === 'checking'
+              || appUpdate.phase === 'downloading'
+              || appUpdate.phase === 'installing'
+            }
+            style={{ flexShrink:0 }}
+          >
+            {appUpdateButtonLabel()}
+          </Button>
+        </div>
+      </Panel>
 
       {/* Log Viewer */}
       <Panel title={t.settings.appLogs}>

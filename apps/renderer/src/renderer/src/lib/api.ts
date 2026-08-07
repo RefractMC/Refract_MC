@@ -293,11 +293,16 @@ function createBrowserApi(): RefractAPI {
       browseBackgroundImage: async () => null,
     },
     updater: {
+      check: async () => ({ available: false }),
       onAvailable:  () => () => undefined,
       onProgress:   () => () => undefined,
       onDownloaded: () => () => undefined,
-      install:  () => undefined,
-      download: () => undefined,
+      install: async () => {
+        throw new Error('App updates require the desktop app.')
+      },
+      download: async () => {
+        throw new Error('App updates require the desktop app.')
+      },
     },
     launcher: {
       deleteAll: async () => { throw new Error('Delete all requires the desktop app.') },
@@ -666,7 +671,16 @@ async function planCurseforgeDeps(file: { dependencies?: Array<Record<string, un
 // The renderer expects an event-style API (onAvailable → download → onProgress →
 // onDownloaded → install). Map it onto tauri-plugin-updater: check once when the
 // first listener attaches, then download()/install() drive the rest.
-type UpdateHandle = { version: string; download: (cb: (e: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => void) => Promise<void>; install: () => Promise<void> }
+type UpdateHandle = {
+  version: string
+  download: (cb: (e: {
+    event: string
+    data?: { contentLength?: number; chunkLength?: number }
+  }) => void) => Promise<void>
+  install: () => Promise<void>
+  close?: () => Promise<void>
+}
+type UpdateCheckResult = { available: boolean; version?: string }
 const updAvailable: Array<(v: { version: string }) => void> = []
 const updProgress: Array<(v: { percent: number }) => void> = []
 const updDownloaded: Array<() => void> = []
@@ -675,24 +689,50 @@ let updaterStarted = false
 let lastNotified: string | null = null   // avoid re-banners for the same version
 let updateDownloaded = false              // set once a manual Download completes
 let installingOnQuit = false
+let updateCheckPromise: Promise<UpdateCheckResult> | null = null
+let updateDownloadPromise: Promise<void> | null = null
 
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60_000 // re-check every 30 min while open
 
-async function runUpdateCheck(): Promise<void> {
-  if (updateDownloaded || installingOnQuit) return // already have one / quitting
-  try {
-    const { check } = await import('@tauri-apps/plugin-updater')
-    const update = (await check()) as unknown as (UpdateHandle & { available?: boolean }) | null
-    if (update && update.available !== false) {
+async function runUpdateCheck(notifyExisting = false): Promise<UpdateCheckResult> {
+  if (updateDownloaded || updateDownloadPromise || installingOnQuit) {
+    return pendingUpdate
+      ? { available: true, version: pendingUpdate.version }
+      : { available: false }
+  }
+  if (updateCheckPromise) return updateCheckPromise
+
+  updateCheckPromise = (async () => {
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater')
+      const update = (await check({ timeout: 20_000 })) as unknown as UpdateHandle | null
+      if (!update) {
+        const previous = pendingUpdate
+        pendingUpdate = null
+        lastNotified = null
+        if (previous?.close) await previous.close().catch(() => {})
+        return { available: false }
+      }
+
+      const previous = pendingUpdate
       pendingUpdate = update
-      if (lastNotified !== update.version) {
+      if (previous && previous !== update && previous.close) {
+        await previous.close().catch(() => {})
+      }
+      if (notifyExisting || lastNotified !== update.version) {
         lastNotified = update.version
         updAvailable.forEach(cb => cb({ version: update.version }))
       }
+      return { available: true, version: update.version }
+    } catch (e) {
+      logger.warn('updater:check', String(e))
+      throw e instanceof Error ? e : new Error(String(e))
+    } finally {
+      updateCheckPromise = null
     }
-  } catch (e) {
-    logger.warn('updater:check', String(e))
-  }
+  })()
+
+  return updateCheckPromise
 }
 
 // Start the updater once a listener is attached: register the quit-installer,
@@ -702,8 +742,8 @@ function startUpdater(): void {
   if (updaterStarted) return
   updaterStarted = true
   void registerQuitInstaller()
-  void runUpdateCheck()
-  setInterval(() => void runUpdateCheck(), UPDATE_CHECK_INTERVAL_MS)
+  void runUpdateCheck().catch(() => {})
+  setInterval(() => void runUpdateCheck().catch(() => {}), UPDATE_CHECK_INTERVAL_MS)
 }
 
 // "Auto-install on quit": if the user downloaded an update but didn't click
@@ -1203,8 +1243,10 @@ function createTauriApi(): RefractAPI {
     },
     updater: {
       ...base.updater,
+      check: (() => runUpdateCheck(true)) as RefractAPI['updater']['check'],
       onAvailable: ((cb: (v: { version: string }) => void) => {
         updAvailable.push(cb)
+        if (pendingUpdate) cb({ version: pendingUpdate.version })
         startUpdater() // check now + start the periodic re-check (once)
         return () => { const i = updAvailable.indexOf(cb); if (i >= 0) updAvailable.splice(i, 1) }
       }) as RefractAPI['updater']['onAvailable'],
@@ -1216,10 +1258,16 @@ function createTauriApi(): RefractAPI {
         updDownloaded.push(cb)
         return () => { const i = updDownloaded.indexOf(cb); if (i >= 0) updDownloaded.splice(i, 1) }
       }) as RefractAPI['updater']['onDownloaded'],
-      download: (() => {
-        if (!pendingUpdate) return
+      download: (async () => {
+        if (updateDownloaded) {
+          updDownloaded.forEach(cb => cb())
+          return
+        }
+        if (updateDownloadPromise) return updateDownloadPromise
+        if (!pendingUpdate) throw new Error('No app update is available to download.')
+
         const upd = pendingUpdate
-        void (async () => {
+        updateDownloadPromise = (async () => {
           try {
             let total = 0
             let got = 0
@@ -1227,26 +1275,34 @@ function createTauriApi(): RefractAPI {
               if (e.event === 'Started') total = e.data?.contentLength ?? 0
               else if (e.event === 'Progress') {
                 got += e.data?.chunkLength ?? 0
-                if (total > 0) updProgress.forEach(cb => cb({ percent: Math.round((got / total) * 100) }))
+                if (total > 0) {
+                  const percent = Math.min(100, Math.round((got / total) * 100))
+                  updProgress.forEach(cb => cb({ percent }))
+                }
               }
             })
             updateDownloaded = true
             updDownloaded.forEach(cb => cb())
           } catch (e) {
             logger.error('updater:download', e)
+            throw e instanceof Error ? e : new Error(String(e))
+          } finally {
+            updateDownloadPromise = null
           }
         })()
+        return updateDownloadPromise
       }) as RefractAPI['updater']['download'],
-      install: (() => {
-        void (async () => {
-          try {
-            if (pendingUpdate) await pendingUpdate.install()
-            const { relaunch } = await import('@tauri-apps/plugin-process')
-            await relaunch()
-          } catch (e) {
-            logger.error('updater:install', e)
-          }
-        })()
+      install: (async () => {
+        if (!pendingUpdate) throw new Error('No app update is available to install.')
+        if (!updateDownloaded) throw new Error('Download the app update before installing it.')
+        try {
+          await pendingUpdate.install()
+          const { relaunch } = await import('@tauri-apps/plugin-process')
+          await relaunch()
+        } catch (e) {
+          logger.error('updater:install', e)
+          throw e instanceof Error ? e : new Error(String(e))
+        }
       }) as RefractAPI['updater']['install'],
     },
   }

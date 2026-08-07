@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+* Added a manual application update check in Settings with download progress and restart controls.
+
+### Fixes
+
+* Fixed updater actions silently failing by returning errors to the UI and offering retries.
+* Reject updater manifests with a UTF-8 BOM, invalid structure, or a version that does not match the release tag.
+
 ## 1.3.3
 
 ### Added

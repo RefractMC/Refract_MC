@@ -181,11 +181,12 @@ declare global {
         browseBackgroundImage: () => Promise<string | null>
       }
       updater: {
+        check:        () => Promise<{ available: boolean; version?: string }>
         onAvailable:  (cb: (v: { version: string }) => void) => () => void
         onProgress:   (cb: (v: { percent: number }) => void) => () => void
         onDownloaded: (cb: () => void) => () => void
-        install:  () => void
-        download: () => void
+        install:      () => Promise<void>
+        download:     () => Promise<void>
       }
       launcher: {
         deleteAll: () => Promise<void>

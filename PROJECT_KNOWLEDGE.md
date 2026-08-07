@@ -100,7 +100,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 5. Analytics initializes, but sends nothing if the build has no `GA_API_SECRET` or the user opted out.
 6. Quick Play command-line arguments can immediately launch an instance.
 7. React initializes error logging and the persisted theme, then mounts a hash router and Query client.
-8. The renderer updater checks GitHub Releases and rechecks every 30 minutes while the app stays open.
+8. The renderer updater checks GitHub Releases, rechecks every 30 minutes while the app stays open, and exposes a manual check in Settings. Download and install failures are returned to the UI for retry instead of being log-only.
 
 ### Create, install, and launch
 
@@ -438,7 +438,7 @@ There is no dedicated JavaScript test suite in package scripts. Rust has embedde
 5. Review the draft release and its `latest.json`, signatures, stable filenames, and installers before publishing.
 6. Publishing triggers the Discord announcement and stable AUR package workflow.
 
-The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`. It then matches every manifest URL to one release asset and requires an authenticated HTTP 200 HEAD response before uploading `latest.json` or removing versioned duplicates.
+The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`. It rejects a UTF-8 BOM, invalid manifest structure, or a manifest version that differs from the release tag. It then matches every manifest URL to one release asset and requires an authenticated HTTP 200 HEAD response before uploading `latest.json` or removing versioned duplicates.
 
 ### Release secrets
 
@@ -483,6 +483,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 - The root `package.json` version (`1.0.1`) is stale relative to the desktop packages (`1.3.3`). Use Tauri/Cargo/renderer versions and the release tag when determining app version.
 - Large route files (`routes/index.tsx`, `browse/index.tsx`, and `modpacks/index.tsx`) contain substantial page logic. Refactors should preserve query invalidation, event cleanup, modal scroll locking, localization, and install state.
 - Browser preview fallbacks can hide native integration defects. Always test meaningful native work in Tauri.
+- `latest.json` must be UTF-8 without a byte-order mark. A BOM prevents installed Tauri clients from parsing the updater response.
 - Destructive Settings reset removes most Refract data folders and config/registry files. It is intentionally broad; any extension to persisted data should decide whether reset must include it.
 
 ## Where to make a change

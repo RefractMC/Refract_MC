@@ -266,6 +266,33 @@ jobs:
         run: |
           set -euo pipefail
 
+          manifest_prefix="$(
+            od -An -tx1 -N3 latest.json | tr -d '[:space:]'
+          )"
+          if [[ "$manifest_prefix" == "efbbbf" ]]; then
+            echo "::error title=Invalid updater manifest::latest.json must be UTF-8 without a BOM"
+            exit 1
+          fi
+
+          if ! jq -e '
+            type == "object"
+            and ((.version | type) == "string")
+            and ((.version | length) > 0)
+            and ((.platforms | type) == "object")
+            and ((.platforms | length) > 0)
+            and all(.platforms[]; ((.url | type) == "string") and ((.url | length) > 0))
+            and all(.platforms[]; ((.signature | type) == "string") and ((.signature | length) > 0))
+          ' latest.json >/dev/null; then
+            echo "::error title=Invalid updater manifest::latest.json has an invalid structure"
+            exit 1
+          fi
+
+          manifest_version="$(jq -r '.version' latest.json)"
+          if [[ "v${manifest_version}" != "$TAG" ]]; then
+            echo "::error title=Invalid updater manifest::Manifest version '$manifest_version' does not match tag '$TAG'"
+            exit 1
+          fi
+
           release_assets="$(gh release view "$TAG" --json assets)"
           declare -A checked_urls=()
           platform_count=0
