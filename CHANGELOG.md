@@ -17,7 +17,7 @@
 
 ### Security
 
-* Patched the js-yaml dependency security advisory.
+* Patched the js-yaml and nanoid dependency security advisories.
 
 Full comparison: [v1.3.3...v1.3.4](https://github.com/RefractMC/Refract_MC/compare/v1.3.3...v1.3.4)
 
