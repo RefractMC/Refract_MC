@@ -85,6 +85,31 @@ fn xml_versions(xml: &str) -> Vec<String> {
     out
 }
 
+fn neoforge_version_prefix(mc: &str) -> String {
+    // NeoForge used the Minecraft minor/patch pair for 1.x releases
+    // (1.21.1 -> 21.1), but follows the full version for the newer year-based
+    // scheme (26.1.2 -> 26.1.2). Missing patch components map to zero.
+    let (base, minimum_components) = match mc.strip_prefix("1.") {
+        Some(legacy) => (legacy, 2),
+        None => (mc, 3),
+    };
+    let mut components: Vec<&str> = base.split('.').collect();
+    while components.len() < minimum_components {
+        components.push("0");
+    }
+    format!("{}.", components.join("."))
+}
+
+fn neoforge_versions_from_xml(mc: &str, xml: &str) -> Vec<String> {
+    let prefix = neoforge_version_prefix(mc);
+    let mut versions: Vec<String> = xml_versions(xml)
+        .into_iter()
+        .filter(|v| v.starts_with(&prefix))
+        .collect();
+    versions.reverse();
+    versions
+}
+
 fn forge_maven_id(mc: &str, forge_version: &str) -> String {
     let prefix = format!("{mc}-");
     if forge_version.starts_with(&prefix) {
@@ -128,23 +153,16 @@ async fn resolve_forge_maven_id(mc: &str, forge_version: &str) -> String {
 /// Newest Forge/NeoForge version string for an MC version (recommended if known).
 pub async fn fetch_latest(mc: &str, is_neo: bool) -> Result<String, String> {
     if is_neo {
-        // NeoForge versions are <minor>.<patch>.<build>.
-        let parts: Vec<&str> = mc.split('.').collect();
-        let minor = parts.get(1).copied().unwrap_or("0");
-        let patch = parts.get(2).copied().unwrap_or("0");
-        let prefix = format!("{minor}.{patch}.");
         let xml = get_text(
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml",
         )
         .await?;
-        let mut versions: Vec<String> = xml_versions(&xml)
+        neoforge_versions_from_xml(mc, &xml)
             .into_iter()
-            .filter(|v| v.starts_with(&prefix))
-            .collect();
-        versions.reverse();
-        versions.into_iter().next().ok_or(format!(
-            "No NeoForge version found for Minecraft {mc}. It may not be supported yet."
-        ))
+            .next()
+            .ok_or(format!(
+                "No NeoForge version found for Minecraft {mc}. It may not be supported yet."
+            ))
     } else {
         // Prefer the promoted "recommended", else newest matching the MC prefix.
         if let Ok(promos) = get_text(
@@ -206,19 +224,10 @@ pub async fn mc_forge_versions(mc_version: String) -> Result<serde_json::Value, 
 /// All NeoForge versions for an MC version (newest first).
 #[tauri::command]
 pub async fn mc_neoforge_versions(mc_version: String) -> Result<Vec<String>, String> {
-    let parts: Vec<&str> = mc_version.split('.').collect();
-    let minor = parts.get(1).copied().unwrap_or("0");
-    let patch = parts.get(2).copied().unwrap_or("0");
-    let prefix = format!("{minor}.{patch}.");
     let xml =
         get_text("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml")
             .await?;
-    let mut versions: Vec<String> = xml_versions(&xml)
-        .into_iter()
-        .filter(|v| v.starts_with(&prefix))
-        .collect();
-    versions.reverse();
-    Ok(versions)
+    Ok(neoforge_versions_from_xml(&mc_version, &xml))
 }
 
 fn loader_json_path(mc: &str, loader: &str, ver: &str) -> PathBuf {
@@ -642,6 +651,39 @@ async fn install_forge_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const NEOFORGE_METADATA: &str = r#"
+        <metadata><versioning><versions>
+          <version>21.1.209</version>
+          <version>26.1.2.93</version>
+          <version>26.1.2.94</version>
+          <version>26.2.0.42-beta</version>
+        </versions></versioning></metadata>
+    "#;
+
+    #[test]
+    fn resolves_neoforge_versions_for_legacy_minecraft_versions() {
+        assert_eq!(neoforge_version_prefix("1.21.1"), "21.1.");
+        assert_eq!(neoforge_version_prefix("1.21"), "21.0.");
+        assert_eq!(
+            neoforge_versions_from_xml("1.21.1", NEOFORGE_METADATA),
+            vec!["21.1.209"]
+        );
+    }
+
+    #[test]
+    fn resolves_neoforge_versions_for_year_based_minecraft_versions() {
+        assert_eq!(neoforge_version_prefix("26.1.2"), "26.1.2.");
+        assert_eq!(neoforge_version_prefix("26.2"), "26.2.0.");
+        assert_eq!(
+            neoforge_versions_from_xml("26.1.2", NEOFORGE_METADATA),
+            vec!["26.1.2.94", "26.1.2.93"]
+        );
+        assert_eq!(
+            neoforge_versions_from_xml("26.2", NEOFORGE_METADATA),
+            vec!["26.2.0.42-beta"]
+        );
+    }
 
     #[test]
     fn resolves_legacy_forge_version_with_trailing_mc_suffix() {

@@ -2,14 +2,23 @@
 
 ## Unreleased
 
+## 1.3.4
+
 ### Added
 
 * Added a manual application update check in Settings with download progress and restart controls.
 
 ### Fixes
 
+* Fixed NeoForge version detection and installation for Minecraft 26.x releases, including Minecraft 26.1.2, while preserving compatibility with older Minecraft versions.
 * Fixed updater actions silently failing by returning errors to the UI and offering retries.
 * Reject updater manifests with a UTF-8 BOM, invalid structure, or a version that does not match the release tag.
+
+### Security
+
+* Patched the js-yaml dependency security advisory.
+
+Full comparison: [v1.3.3...v1.3.4](https://github.com/RefractMC/Refract_MC/compare/v1.3.3...v1.3.4)
 
 ## 1.3.3
 
