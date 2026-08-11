@@ -143,7 +143,7 @@ with `jq` before uploading it; do not use Windows PowerShell 5.1
 
 The release finalizer enforces this before replacing `latest.json` or deleting
 versioned assets. Because the release is still a draft, it maps each manifest
-browser URL to exactly one release asset and sends an authenticated HEAD request
+URL filename to exactly one release asset and sends an authenticated HEAD request
 through the GitHub API. Every final response must be HTTP 200 or finalization
 stops with the existing assets intact.
 

@@ -11,6 +11,7 @@
 ### Fixes
 
 * Fixed NeoForge version detection and installation for Minecraft 26.x releases, including Minecraft 26.1.2, while preserving compatibility with older Minecraft versions.
+* Fixed draft updater validation by matching stable manifest filenames to release assets before checking downloads.
 * Fixed updater actions silently failing by returning errors to the UI and offering retries.
 * Reject updater manifests with a UTF-8 BOM, invalid structure, or a version that does not match the release tag.
 

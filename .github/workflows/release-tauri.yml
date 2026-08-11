@@ -303,12 +303,13 @@ jobs:
               exit 1
             fi
 
+            asset_name="${url##*/}"
             mapfile -t matching_assets < <(
-              jq -r --arg url "$url" '.assets[] | select(.url == $url) | .apiUrl' \
+              jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .apiUrl' \
                 <<<"$release_assets"
             )
             if [[ ${#matching_assets[@]} -ne 1 ]]; then
-              echo "::error title=Missing updater asset::$platform URL does not match exactly one release asset: $url"
+              echo "::error title=Missing updater asset::$platform URL filename does not match exactly one release asset: $asset_name"
               exit 1
             fi
 
