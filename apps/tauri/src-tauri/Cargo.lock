@@ -1454,9 +1454,9 @@ dependencies = [
 
 [[package]]
 name = "fastnbt"
-version = "2.6.1"
+version = "2.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2c4573fc9ea51f5ad19c47a16b78427b127f1c00b62808c6ab392beeb5f72c9"
+checksum = "f9dcc36fee27b17c9c183294d6e739cf218b01ce0fc545c31d8be3913d961731"
 dependencies = [
  "byteorder",
  "cesu8",
