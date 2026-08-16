@@ -27,6 +27,10 @@ cd Refract_MC
 pnpm install
 ```
 
+On NixOS, `nix develop` provides Node, pnpm, Rust, Tauri, the supported Java
+runtimes, and the native libraries needed by Refract and Minecraft. Run
+`pnpm install` after entering the shell.
+
 ## Run the app
 
 ```bash
@@ -71,6 +75,8 @@ For packaging changes:
 
 ```bash
 pnpm --filter @refract/tauri-poc build
+nix flake check
+nix build
 ```
 
 ## Pull request rules

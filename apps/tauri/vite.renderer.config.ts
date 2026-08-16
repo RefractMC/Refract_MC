@@ -11,6 +11,7 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 const rendererRoot = here('../renderer/src/renderer')
 const appVersion: string = JSON.parse(readFileSync(here('../renderer/package.json'), 'utf8')).version
+const appUpdaterEnabled = process.env.REFRACT_UPDATER_ENABLED !== 'false'
 
 export default defineConfig({
   root: rendererRoot,
@@ -27,6 +28,7 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_UPDATER_ENABLED__: JSON.stringify(appUpdaterEnabled),
   },
   clearScreen: false,
   server: {

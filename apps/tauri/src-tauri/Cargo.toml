@@ -1,7 +1,7 @@
 [package]
 name = "refract-tauri"
 version = "1.3.4"
-description = "Refract Minecraft Launcher (Tauri proof-of-concept)"
+description = "Refract Minecraft Launcher"
 edition = "2021"
 
 # The library Tauri runs; main.rs is a thin launcher around it (Tauri v2 layout).

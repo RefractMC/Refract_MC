@@ -70,3 +70,10 @@ cd apps/tauri/src-tauri
 cargo fmt
 cargo check
 ```
+
+## NixOS
+
+From the repository root, run the packaged application with `nix run` or enter
+the development environment with `nix develop`. The package supplies Java 8,
+17, 21, and 25 plus the native libraries Minecraft needs on NixOS. Self-updates
+are disabled in this immutable build; update Refract through Nix instead.

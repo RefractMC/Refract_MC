@@ -16,3 +16,7 @@ out
 # Rust / Tauri build output
 target
 apps/tauri/src-tauri/gen
+
+# Nix build output
+result
+result-*

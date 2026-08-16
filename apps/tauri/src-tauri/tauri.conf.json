@@ -41,6 +41,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "Game",
     "createUpdaterArtifacts": true,
     "targets": "all",
     "macOS": {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+* Added a Nix flake with native NixOS packaging, a Tauri development shell, bundled Java runtimes, and Minecraft runtime libraries.
+
+### Changed
+
+* Nix builds now defer application updates to Nix instead of offering an incompatible self-update.
+
 ## 1.3.4
 
 ### Added

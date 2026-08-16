@@ -562,6 +562,7 @@
     "appLogs": "Application Logs",
     "appUpdates": "Application Updates",
     "appUpdatesNote": "Check GitHub Releases for a newer signed version of Refract.",
+    "appUpdatesManaged": "Updates are managed by your system package manager.",
     "installedAppVersion": "Installed version: {{version}}",
     "checkForUpdates": "Check for updates",
     "checkingForUpdates": "Checking for updates...",
