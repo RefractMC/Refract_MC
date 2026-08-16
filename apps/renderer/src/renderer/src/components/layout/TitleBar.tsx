@@ -62,6 +62,7 @@ export function TitleBar() {
   }, [])
 
   useEffect(() => {
+    if (!__APP_UPDATER_ENABLED__) return
     const unA = api.updater.onAvailable(({ version }) => {
       setUpdate({ version, phase: 'pending', percent: 0 })
     })

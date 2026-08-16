@@ -116,7 +116,8 @@ curl -fsSL https://refractmc.net/install.sh | sh
 | Linux — Debian/Ubuntu | [Download `.deb`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-amd64.deb)            |
 | Linux — Fedora        | [Download `.rpm`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-x86_64.rpm)           |
 | Linux — Arch/AUR      | [`yay -S refract-launcher-bin`](https://aur.archlinux.org/packages/refract-launcher-bin)                               |
-| Other packages        | [View the latest release](https://github.com/RefractMC/Refract_MC/releases/latest)                                     |
+| Linux - NixOS          | `nix run github:RefractMC/Refract_MC`                                                                                  |
+| Other packages         | [View the latest release](https://github.com/RefractMC/Refract_MC/releases/latest)                                     |
 
 
 > [!NOTE]
@@ -162,6 +163,17 @@ Create a local unsigned build with:
 ```bash
 pnpm build
 ```
+
+On NixOS, the repository flake provides the native app and all required Java
+runtimes:
+
+```sh
+nix run github:RefractMC/Refract_MC
+```
+
+Contributors can enter the Tauri development environment with `nix develop`,
+then run `pnpm install` and the usual project commands. A Secret Service
+provider, such as GNOME Keyring or KWallet, is required for signed-in accounts.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for verification commands, signed builds,
 project conventions, and pull request guidelines.

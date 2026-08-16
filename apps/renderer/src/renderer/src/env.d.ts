@@ -15,6 +15,7 @@ export interface ExternalInstance {
 
 declare global {
   const __APP_VERSION__: string
+  const __APP_UPDATER_ENABLED__: boolean
   interface Window {
     api: {
       skins: {

@@ -69,6 +69,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | `locales` | Translation JSON | English is the schema/fallback; Ukrainian and Simplified Chinese are registered. |
 | `logo` | Brand and README assets | Includes icons and the current screenshot. |
 | `packaging/aur` | Arch User Repository package | Binary package consumes the stable RPM release asset. |
+| `flake.nix`, `nix/package.nix` | NixOS package and development shell | Builds the native app from source and supplies Java and Minecraft runtime libraries. |
 | `.github/workflows` | Build, audit, release, AUR, and Discord automation | CI uses Node 24 and pnpm 11. |
 | `README.md` | Product overview and public setup | Start here for users. |
 | `CONTRIBUTING.md` | Contributor rules and checks | Keep changes focused and report verification. |
@@ -402,6 +403,19 @@ pnpm format
 pnpm audit --prod
 ```
 
+NixOS package and development environment:
+
+```sh
+nix build
+nix develop
+```
+
+The Nix package builds Refract from source, exposes Java 8, 17, 21, and 25 to
+the launcher, and supplies the native libraries used by Minecraft. It disables
+the application self-updater because the Nix store is immutable; updates are
+performed through Nix. A desktop Secret Service provider remains required for
+authenticated accounts.
+
 `pnpm build` uses `tauri.local.conf.json`, disables updater artifact creation, and creates an unsigned local installer. `build:signed` uses production updater configuration and needs the Tauri signing secrets.
 
 ### Verification by change type
@@ -475,7 +489,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 > [!warning] Do not confuse historical code with the production runtime
 > Comments saying "Rust port of" refer to the Electron-to-Tauri migration. The current production native backend is Rust. Some TypeScript core files still contain Node process/filesystem logic and `packages/core/src/auth/index.ts` still throws `Not implemented`; those are not the live Tauri authentication path.
 
-- The package name `@refract/tauri-poc` and Cargo description still say proof-of-concept even though Tauri is production. Renaming affects scripts and release automation, so treat it as a deliberate migration.
+- The package name `@refract/tauri-poc` is historical even though Tauri is production. Renaming affects scripts and release automation, so treat it as a deliberate migration.
 - `packages/plugin-api` currently defines only `LauncherPlugin` and `PluginContext`; do not promise plugin loading without implementing discovery, sandboxing, lifecycle, and UI integration.
 - `locales/README.md` contains a few old path examples. The current files live under `apps/renderer/src/renderer/src/...`; verify paths against the tree.
 - Old source comments can describe earlier scope. Trust registered commands and current call paths over historical comments.

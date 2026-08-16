@@ -178,16 +178,12 @@ fn detect_uncached() -> Vec<Install> {
         add(probe(&PathBuf::from(jh).join("bin").join(JAVA_BIN)));
     }
 
-    // 2. PATH
-    let probe_cmd = if cfg!(windows) { "where" } else { "which" };
-    let mut cmd = Command::new(probe_cmd);
-    crate::procutil::hide_window(&mut cmd);
-    if let Ok(out) = cmd.arg("java").output() {
-        for line in String::from_utf8_lossy(&out.stdout).lines() {
-            let p = line.trim();
-            if !p.is_empty() {
-                add(probe(Path::new(p)));
-            }
+    // 2. PATH. Inspect every entry instead of asking which, which only
+    // returns the first Java on Unix. Nix packages expose several immutable
+    // runtimes on PATH so the launcher can select the correct major version.
+    if let Some(path) = std::env::var_os("PATH") {
+        for java_exe in java_candidates_on_path(&path) {
+            add(probe(&java_exe));
         }
     }
 
@@ -239,6 +235,12 @@ fn detect_uncached() -> Vec<Install> {
 
     found.sort_by(|a, b| b.version.cmp(&a.version));
     found
+}
+
+fn java_candidates_on_path(path: &std::ffi::OsStr) -> Vec<PathBuf> {
+    std::env::split_paths(path)
+        .map(|dir| dir.join(JAVA_BIN))
+        .collect()
 }
 
 /// Detected + managed installations, deduped by path, newest first.
@@ -357,8 +359,21 @@ fn required_for(mc_version: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{required_for, resolve_symlink_target, strip_safe_top_component};
-    use std::path::Path;
+    use super::{
+        java_candidates_on_path, required_for, resolve_symlink_target, strip_safe_top_component,
+        JAVA_BIN,
+    };
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn discovers_every_java_runtime_exposed_on_path() {
+        let dirs = [PathBuf::from("jdk-8/bin"), PathBuf::from("jdk 21/bin")];
+        let path = std::env::join_paths(&dirs).unwrap();
+        assert_eq!(
+            java_candidates_on_path(&path),
+            dirs.map(|dir| dir.join(JAVA_BIN))
+        );
+    }
 
     #[test]
     fn maps_current_release_versions_to_expected_java() {

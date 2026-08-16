@@ -423,6 +423,7 @@ function Settings() {
   }, [])
 
   useEffect(() => {
+    if (!__APP_UPDATER_ENABLED__) return
     const unAvailable = api.updater.onAvailable(({ version }) => {
       setAppUpdate({ phase: 'available', version })
     })
@@ -537,7 +538,9 @@ function Settings() {
       case 'ready': return t.settings.appUpdateReady
       case 'installing': return t.settings.restartingForUpdate
       case 'error': return t.settings.appUpdateFailed(appUpdate.error ?? t.settings.unknownError)
-      default: return t.settings.appUpdatesNote
+      default: return __APP_UPDATER_ENABLED__
+        ? t.settings.appUpdatesNote
+        : t.settings.appUpdatesManaged
     }
   }
 
@@ -1174,18 +1177,20 @@ function Settings() {
               {appUpdateStatusText()}
             </div>
           </div>
-          <Button
-            variant={appUpdate.phase === 'ready' ? 'primary' : 'secondary'}
-            onClick={runAppUpdateAction}
-            disabled={
-              appUpdate.phase === 'checking'
-              || appUpdate.phase === 'downloading'
-              || appUpdate.phase === 'installing'
-            }
-            style={{ flexShrink:0 }}
-          >
-            {appUpdateButtonLabel()}
-          </Button>
+          {__APP_UPDATER_ENABLED__ && (
+            <Button
+              variant={appUpdate.phase === 'ready' ? 'primary' : 'secondary'}
+              onClick={runAppUpdateAction}
+              disabled={
+                appUpdate.phase === 'checking'
+                || appUpdate.phase === 'downloading'
+                || appUpdate.phase === 'installing'
+              }
+              style={{ flexShrink:0 }}
+            >
+              {appUpdateButtonLabel()}
+            </Button>
+          )}
         </div>
       </Panel>
 
