@@ -11,7 +11,7 @@ import { compressImage } from '@/lib/image'
 import type { JavaInstallation } from '@refract/core'
 import { useT } from '@/i18n'
 import { useLanguageStore } from '@/stores/language'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from '@/components/ui/Icon'
 
 export const Route = createFileRoute('/settings/')({
   component: Settings,

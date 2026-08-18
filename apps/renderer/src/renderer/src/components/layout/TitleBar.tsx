@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell } from 'lucide-react'
+import { Bell } from '@/components/ui/Icon'
 import { api } from '@/lib/api'
 import { useT, type T } from '@/i18n'
 

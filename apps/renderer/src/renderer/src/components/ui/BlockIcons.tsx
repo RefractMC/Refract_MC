@@ -17,7 +17,6 @@ export const ModsIcon     = (p:Props) => <BlockIcon size={p.size} pattern={['..X
 export const ModpacksIcon = (p:Props) => <BlockIcon size={p.size} pattern={['.XXX.','X...X','X...X','X...X','.XXX.']} />
 export const AccountIcon  = (p:Props) => <BlockIcon size={p.size} pattern={['.XX..', '.XX..','XXXX.','XXXX.','X..X.']} />
 export const CogIcon      = (p:Props) => <BlockIcon size={p.size} pattern={['X.X.X', '.XXX.','XX.XX', '.XXX.','X.X.X']} />
-export const SignOutIcon  = (p:Props) => <BlockIcon size={p.size} pattern={['XX...','X..X.','X.XX.','X..X.','XX...']} />
 export const BellIcon     = (p:Props) => <BlockIcon size={p.size} pattern={['..X..', '.XXX.','XXXXX','XXXXX','..X..']} />
 export const SearchIcon   = (p:Props) => <BlockIcon size={p.size} pattern={['.XX..','X..X.','X..X.','.XX..','...XX']} />
 export const ChevLeftIcon = (p:Props) => <BlockIcon size={p.size} pattern={['..X..','.X...','X....', '.X...','..X..']} />

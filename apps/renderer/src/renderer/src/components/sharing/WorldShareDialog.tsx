@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { Check, Copy, Radio, Users, X } from 'lucide-react'
+import { Check, Copy, Radio, Users, X } from '@/components/ui/Icon'
 import { useState } from 'react'
 import type { Instance } from '@refract/core'
 import { Button } from '@/components/ui/Button'

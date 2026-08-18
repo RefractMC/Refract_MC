@@ -8,7 +8,7 @@ import {
   PackageOpen,
   ShieldCheck,
   UploadCloud,
-} from 'lucide-react'
+} from '@/components/ui/Icon'
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Instance } from '@refract/core'

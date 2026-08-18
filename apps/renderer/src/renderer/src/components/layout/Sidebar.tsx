@@ -1,52 +1,33 @@
 import { Link, useMatchRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { SignOutIcon } from '../ui/BlockIcons'
+import {
+  Add,
+  ArrowLeft,
+  ArrowRight,
+  Copy,
+  Edit,
+  Fingerprint,
+  Library,
+  Link2,
+  LogOut,
+  MagicWand,
+  Newspaper,
+  PackageOpen,
+  PackageSearch,
+  RefreshCw,
+  Settings,
+  Shirt,
+  UserAdd,
+  UserRemove,
+  X,
+  type IconComponent,
+} from '@/components/ui/Icon'
 import { api, type SafeAccount } from '@/lib/api'
 import { useT } from '@/i18n'
 import { useThemeStore } from '@/stores/theme'
 import { loadSkinFaceDataUrl, subscribeSkinFaceRefresh } from '@/lib/skin-face'
 import { SkinViewer3DLazy } from '../ui/SkinViewer3DLazy'
 import discordIcon          from '@/assets/discord-icon.webp'
-import libraryIconRaw    from '@/assets/instance-library.svg?raw'
-import browseModsIconRaw from '@/assets/browse-mods.svg?raw'
-import modpacksIconRaw   from '@/assets/modpacks.svg?raw'
-import settingsIconRaw   from '@/assets/settings.svg?raw'
-import skinsIconRaw      from '@/assets/skins.svg?raw'
-
-function svgDataUrl(raw: string) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`
-}
-
-const libraryIcon    = svgDataUrl(libraryIconRaw)
-const browseModsIcon = svgDataUrl(browseModsIconRaw)
-const modpacksIcon   = svgDataUrl(modpacksIconRaw)
-const settingsIcon   = svgDataUrl(settingsIconRaw)
-const skinsIcon      = svgDataUrl(skinsIconRaw)
-const newsIcon       = svgDataUrl(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M4 6h16v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z"/>
-  <path d="M4 10h16"/>
-  <path d="M8 6v12"/>
-  <path d="M12 10h4"/>
-  <path d="M12 14h4"/>
-</svg>`)
-
-function NavIcon({ src, size = 18 }: { src: string; size?: number }) {
-  return (
-    <div style={{
-      width: size, height: size, flexShrink: 0,
-      background: 'currentColor',
-      WebkitMaskImage: `url(${src})`,
-      WebkitMaskSize: 'contain',
-      WebkitMaskRepeat: 'no-repeat',
-      WebkitMaskPosition: 'center',
-      maskImage: `url(${src})`,
-      maskSize: 'contain',
-      maskRepeat: 'no-repeat',
-      maskPosition: 'center',
-    }} />
-  )
-}
 
 interface Friend {
   uuid: string
@@ -55,8 +36,8 @@ interface Friend {
   note?: string
 }
 
-interface NavItemProps { to: string; label: string; iconSrc: string; exact: boolean; compact?: boolean }
-function NavItem({ to, label, iconSrc, exact, compact }: NavItemProps) {
+interface NavItemProps { to: string; label: string; icon: IconComponent; exact: boolean; compact?: boolean }
+function NavItem({ to, label, icon: Icon, exact, compact }: NavItemProps) {
   const matchRoute = useMatchRoute()
   const active = !!matchRoute({ to: to as '/', fuzzy: !exact })
   const [hover, setHover] = useState(false)
@@ -81,7 +62,7 @@ function NavItem({ to, label, iconSrc, exact, compact }: NavItemProps) {
       }}
     >
       {active && !compact && <div style={{ position:'absolute', left:-13, top:6, bottom:6, width:3, background:'var(--accent)', borderRadius:2, boxShadow:'0 0 12px var(--accent)' }} />}
-      <NavIcon src={iconSrc} size={compact ? 20 : 18} />
+      <Icon size={compact ? 20 : 18} style={{ flexShrink: 0 }} />
       {!compact && <span>{label}</span>}
     </Link>
   )
@@ -169,7 +150,7 @@ function AvatarBlock({ compact }: { compact: boolean }) {
       </div>
       {account && (
         <button onClick={signOut} title={t.sidebar.signOut} style={{ width:28, height:28, background:'none', border:'none', cursor:'pointer', color:'var(--ink-4)', padding:0, display:'flex', alignItems:'center', justifyContent:'center', opacity:.7, flexShrink:0 }}>
-          <SignOutIcon />
+          <LogOut size={16} />
         </button>
       )}
     </div>
@@ -207,7 +188,9 @@ function SkinPopup({ friend, onClose }: { friend: Friend; onClose: () => void })
         <button
           onClick={onClose}
           style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 16, lineHeight: 1, padding: 4 }}
-        >✕</button>
+        >
+          <X size={14} />
+        </button>
         <SkinViewer3DLazy skinUrl={skinUrl} width={160} height={240} walk rotate />
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
           {friend.username}
@@ -322,7 +305,7 @@ function FriendsPanel() {
               transition: 'color .12s, border-color .12s',
             }}
           >
-            {refreshing ? '...' : 'R'}
+            <RefreshCw size={12} />
           </button>
           {!adding && (
             <button
@@ -347,7 +330,7 @@ function FriendsPanel() {
                 b.style.borderColor = 'var(--border-r)'
               }}
             >
-              +
+              <Add size={13} />
             </button>
           )}
         </div>
@@ -394,7 +377,7 @@ function FriendsPanel() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              ✕
+              <X size={13} />
             </button>
           </div>
           {error && (
@@ -529,19 +512,23 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
         {hovered && (
           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
             <ActionBtn title={t.sidebar.copyUsername} active={copied === 'name'} onClick={() => copy(friend.username, 'name')}>
-              A
+              <Copy size={11} />
             </ActionBtn>
             <ActionBtn title={t.sidebar.copyUuid} active={copied === 'uuid'} onClick={() => copy(friend.uuid, 'uuid')}>
-              #
+              <Fingerprint size={11} />
             </ActionBtn>
             <ActionBtn title={t.sidebar.copyNameMcLink} active={copied === 'namemc'} onClick={() => copy(nameMcUrl, 'namemc')}>
-              N
+              <Link2 size={11} />
             </ActionBtn>
             <ActionBtn title={t.sidebar.copyWhitelistCommand} active={copied === 'wl'} onClick={() => copy('/whitelist add ' + friend.username, 'wl')}>
-              +
+              <UserAdd size={11} />
             </ActionBtn>
-            <ActionBtn title={t.sidebar.addNote} onClick={startNote}>✎</ActionBtn>
-            <ActionBtn title={t.sidebar.removeFriend} danger onClick={onRemove}>✕</ActionBtn>
+            <ActionBtn title={t.sidebar.addNote} onClick={startNote}>
+              <Edit size={11} />
+            </ActionBtn>
+            <ActionBtn title={t.sidebar.removeFriend} danger onClick={onRemove}>
+              <UserRemove size={11} />
+            </ActionBtn>
           </div>
         )}
       </div>
@@ -633,9 +620,11 @@ function CollapseToggle({ compact, onClick, label }: { compact: boolean; onClick
         transition: 'background 100ms, color 100ms',
       }}
     >
-      <svg width={18} height={18} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-        <path d={compact ? 'M6 4l5 5-5 5' : 'M12 4L7 9l5 5'} />
-      </svg>
+      {compact ? (
+        <ArrowRight size={18} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+      ) : (
+        <ArrowLeft size={18} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+      )}
       {!compact && <span>{label}</span>}
     </button>
   )
@@ -659,12 +648,12 @@ export function Sidebar() {
   }
 
   const navItems: NavItemProps[] = [
-    { to: '/',          label: t.nav.library,    iconSrc: libraryIcon,    exact: true  },
-    { to: '/browse/',   label: t.nav.browse,     iconSrc: browseModsIcon, exact: false },
-    { to: '/news/',     label: t.nav.news,       iconSrc: newsIcon,       exact: false },
-    { to: '/modpacks/', label: t.nav.content,    iconSrc: modpacksIcon,   exact: false },
-    { to: '/creator/',  label: t.nav.creator,    iconSrc: modpacksIcon,   exact: false },
-    { to: '/skins',     label: t.skins.navLabel, iconSrc: skinsIcon,      exact: false },
+    { to: '/',          label: t.nav.library,    icon: Library,       exact: true  },
+    { to: '/browse/',   label: t.nav.browse,     icon: PackageSearch, exact: false },
+    { to: '/news/',     label: t.nav.news,       icon: Newspaper,     exact: false },
+    { to: '/modpacks/', label: t.nav.content,    icon: PackageOpen,   exact: false },
+    { to: '/creator/',  label: t.nav.creator,    icon: MagicWand,     exact: false },
+    { to: '/skins',     label: t.skins.navLabel, icon: Shirt,         exact: false },
   ]
 
   return (
@@ -708,7 +697,7 @@ export function Sidebar() {
 
       {/* Bottom */}
       <div style={{ marginTop:'auto', flexShrink:0, display:'flex', flexDirection:'column', gap:2, paddingTop:10, borderTop:'1px solid var(--sb-line)' }}>
-        <NavItem to="/settings" label={t.nav.settings} iconSrc={settingsIcon} exact={true} compact={compact} />
+        <NavItem to="/settings" label={t.nav.settings} icon={Settings} exact={true} compact={compact} />
         <button
           title={compact ? t.nav.discord : undefined}
           onClick={openDiscord}

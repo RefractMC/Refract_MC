@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink, Newspaper, RefreshCw } from 'lucide-react'
+import { ExternalLink, Newspaper, RefreshCw } from '@/components/ui/Icon'
 import { api } from '@/lib/api'
 import { useT } from '@/i18n'
 

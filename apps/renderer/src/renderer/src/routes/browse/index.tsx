@@ -1,7 +1,7 @@
 ﻿import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type React from 'react'
-import { Link2 } from 'lucide-react'
+import { Link2 } from '@/components/ui/Icon'
 import { SearchIcon } from '@/components/ui/BlockIcons'
 import { Button } from '@/components/ui/Button'
 import { CardGridSkeleton, TextSkeleton } from '@/components/ui/Skeleton'

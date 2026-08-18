@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useNavigate } from '@tanstack/react-router'
-import { Link2, X } from 'lucide-react'
+import { Link2, X } from '@/components/ui/Icon'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { useT } from '@/i18n'

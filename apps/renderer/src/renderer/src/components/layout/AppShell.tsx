@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
-import { Info, X } from 'lucide-react'
+import { Info, X } from '@/components/ui/Icon'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'

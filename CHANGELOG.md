@@ -9,6 +9,11 @@
 ### Changed
 
 * Nix builds now defer application updates to Nix instead of offering an incompatible self-update.
+* Replaced Lucide and custom sidebar icons with Hugeicons throughout the launcher interface.
+
+### Security
+
+* Patched the nanoid dependency security advisory.
 
 ## 1.3.4
 
