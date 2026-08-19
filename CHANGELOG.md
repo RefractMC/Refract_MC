@@ -14,6 +14,7 @@
 ### Fixes
 
 * Prevented automatic Java selection from launching Minecraft with an incompatible installed runtime instead of downloading the required one.
+* Fixed legacy Minecraft and Forge launch arguments containing quoted values or paths with spaces.
 
 ### Security
 

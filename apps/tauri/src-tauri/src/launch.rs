@@ -275,6 +275,84 @@ fn tokenize(input: &str) -> Vec<String> {
     tokens
 }
 
+/// Tokenize Mojang's legacy `minecraftArguments` template before substituting
+/// values. This keeps an unquoted placeholder such as `${game_directory}` as one
+/// argv entry even when the resolved path contains spaces.
+fn tokenize_legacy_template(input: &str) -> Result<Vec<String>, String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut started = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(q) if c == '\\' => {
+                if let Some(&next) = chars.peek() {
+                    if next == q {
+                        current.push(next);
+                        chars.next();
+                    } else {
+                        current.push(c);
+                    }
+                } else {
+                    current.push(c);
+                }
+            }
+            Some(_) => current.push(c),
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                started = true;
+            }
+            None if c.is_whitespace() => {
+                if started {
+                    tokens.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            None if c == '\\' => {
+                if let Some(&next) = chars.peek() {
+                    if next == '"' || next == '\'' || next.is_whitespace() {
+                        current.push(next);
+                        chars.next();
+                    } else {
+                        current.push(c);
+                    }
+                } else {
+                    current.push(c);
+                }
+                started = true;
+            }
+            None => {
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+
+    if let Some(q) = quote {
+        let kind = if q == '"' { "double" } else { "single" };
+        return Err(format!(
+            "Invalid legacy Minecraft arguments: unterminated {kind} quote."
+        ));
+    }
+    if started {
+        tokens.push(current);
+    }
+    Ok(tokens)
+}
+
+fn resolve_legacy_args(
+    template: &str,
+    vars: &HashMap<String, String>,
+) -> Result<Vec<String>, String> {
+    Ok(tokenize_legacy_template(template)?
+        .into_iter()
+        .map(|arg| substitute(&arg, vars))
+        .collect())
+}
+
 /// Launch straight into a server or singleplayer world (Prism-style Quick Play).
 #[derive(serde::Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -309,7 +387,7 @@ fn build_command(
     resolution: Option<(u64, u64)>,
     fullscreen: bool,
     quick_play: Option<&QuickPlay>,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let asset_index = version_json["assetIndex"]["id"]
         .as_str()
         .unwrap_or("legacy")
@@ -390,10 +468,7 @@ fn build_command(
             let overlay_legacy_args = overlay
                 .and_then(|o| o.get("minecraftArguments"))
                 .and_then(Value::as_str);
-            let mut game: Vec<String> = substitute(overlay_legacy_args.unwrap_or(mc_args), &vars)
-                .split(' ')
-                .map(String::from)
-                .collect();
+            let mut game = resolve_legacy_args(overlay_legacy_args.unwrap_or(mc_args), &vars)?;
             if let Some(ov) = overlay_args {
                 jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
                 if overlay_legacy_args.is_none() {
@@ -460,7 +535,7 @@ fn build_command(
     }
     cmd.push(main_class);
     cmd.extend(game_args);
-    cmd
+    Ok(cmd)
 }
 
 // ── pre/post-launch hooks ────────────────────────────────────────────────────
@@ -865,7 +940,7 @@ pub async fn launch_minecraft(
         resolution,
         fullscreen,
         quick_play.as_ref(),
-    );
+    )?;
     let (exe, args) = cmd.split_first().ok_or("empty launch command")?;
 
     let mut launch_cmd = Command::new(exe);
@@ -984,7 +1059,8 @@ mod tests {
             None,
             false,
             None,
-        );
+        )
+        .unwrap();
 
         assert!(cmd
             .iter()
@@ -993,5 +1069,64 @@ mod tests {
             .iter()
             .any(|arg| arg == "net.minecraft.launchwrapper.VanillaTweaker"));
         assert!(cmd.iter().any(|arg| arg == "{}"));
+    }
+
+    #[test]
+    fn legacy_substitution_keeps_game_directories_with_spaces_in_one_argument() {
+        let base = json!({
+            "assetIndex": { "id": "legacy" },
+            "libraries": [],
+            "mainClass": "net.minecraft.client.Minecraft",
+            "minecraftArguments": "--gameDir ${game_directory} --username ${auth_player_name}"
+        });
+        let cmd = build_command(
+            "1.6.4",
+            &base,
+            None,
+            Path::new("libraries"),
+            Path::new("assets"),
+            Path::new("natives"),
+            Path::new("C:/Minecraft Profiles/Legacy Pack"),
+            Path::new("versions/1.6.4/1.6.4.jar"),
+            "java",
+            1024,
+            None,
+            &auth(),
+            None,
+            false,
+            None,
+        )
+        .unwrap();
+
+        let game_dir = cmd.iter().position(|arg| arg == "--gameDir").unwrap();
+        assert_eq!(cmd[game_dir + 1], "C:/Minecraft Profiles/Legacy Pack");
+        assert!(!cmd.iter().any(|arg| arg == "C:/Minecraft"));
+    }
+
+    #[test]
+    fn legacy_template_tokenizer_preserves_quotes_paths_and_empty_values() {
+        let quote = '"';
+        let unc_path = r"\\server\share folder";
+        let template = format!(
+            "--label {quote}Legacy Pack{quote} --path {quote}{}{quote} --unc {quote}{}{quote} --empty {quote}{quote}",
+            r"C:\Program Files\Java",
+            unc_path
+        );
+        assert_eq!(
+            tokenize_legacy_template(&template).unwrap(),
+            vec![
+                "--label",
+                "Legacy Pack",
+                "--path",
+                r"C:\Program Files\Java",
+                "--unc",
+                unc_path,
+                "--empty",
+                "",
+            ]
+        );
+
+        let malformed = format!("--label {quote}unterminated");
+        assert!(tokenize_legacy_template(&malformed).is_err());
     }
 }
