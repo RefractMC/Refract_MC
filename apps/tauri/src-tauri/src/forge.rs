@@ -1,14 +1,15 @@
 //! Forge / NeoForge install — Rust port of downloader.ts installForge +
-//! runForgeProcessors. Downloads the installer, extracts it, saves the loader
-//! version JSON (overlay) under versions/<mc>-<loader>-<ver>/, downloads the
-//! Forge + processor-tool libraries, copies the installer's embedded maven libs,
-//! then runs the client-side processors (each a `java -cp … <Main-Class> …`
-//! invocation with the install_profile data-map token substitution) to patch the
-//! client jar. Progress streams over mc://progress like the rest of install.
+//! runForgeProcessors. Downloads and extracts the installer, resolves its
+//! libraries, copies embedded Maven artifacts, and runs client-side processors
+//! (each a `java -cp … <Main-Class> …` invocation with install-profile token
+//! substitution). Required inputs and SHA-1-declared outputs are validated before
+//! the loader JSON is published. Progress streams over mc://progress.
 
 use crate::{java, net, paths};
 use serde_json::{json, Value};
+use sha1::{Digest, Sha1};
 use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{AppHandle, Emitter};
@@ -309,6 +310,105 @@ fn resolve_data(
     Some(value.to_string())
 }
 
+fn file_matches_sha1(path: &Path, expected: &str) -> Result<bool, String> {
+    if expected.len() != 40 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "Forge metadata declared an invalid SHA-1 for {}",
+            path.display()
+        ));
+    }
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("Could not read {}: {error}", path.display())),
+    };
+    let mut hasher = Sha1::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()).eq_ignore_ascii_case(expected))
+}
+
+fn processor_output_specs(
+    processor: &Value,
+    data: &Value,
+    mc: &str,
+    installer: &Path,
+    extract: &Path,
+) -> Result<Vec<(PathBuf, String)>, String> {
+    let Some(outputs) = processor.get("outputs").and_then(Value::as_object) else {
+        return Ok(Vec::new());
+    };
+    outputs
+        .iter()
+        .map(|(raw_path, raw_hash)| {
+            let path = resolve_data(raw_path, data, mc, installer, extract).ok_or_else(|| {
+                format!("Forge processor output could not be resolved: {raw_path}")
+            })?;
+            let raw_hash = raw_hash
+                .as_str()
+                .ok_or_else(|| format!("Forge processor output has no SHA-1: {raw_path}"))?;
+            let hash = resolve_data(raw_hash, data, mc, installer, extract).ok_or_else(|| {
+                format!("Forge processor output SHA-1 could not be resolved: {raw_path}")
+            })?;
+            if hash.len() != 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(format!(
+                    "Forge processor output has an invalid SHA-1: {raw_path}"
+                ));
+            }
+            Ok((PathBuf::from(path), hash))
+        })
+        .collect()
+}
+
+fn processor_outputs_match(outputs: &[(PathBuf, String)]) -> Result<bool, String> {
+    if outputs.is_empty() {
+        return Ok(false);
+    }
+    for (path, hash) in outputs {
+        if !file_matches_sha1(path, hash)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn uses_modern_processor_schema(processors: &[Value]) -> bool {
+    processors
+        .iter()
+        .any(|processor| processor.get("jar").is_some())
+}
+
+fn require_processor_file(path: &Path, description: &str) -> Result<(), String> {
+    if path.is_file() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Forge processor is missing required {description}: {}",
+            path.display()
+        ))
+    }
+}
+
+fn verify_processor_outputs(jar_coord: &str, outputs: &[(PathBuf, String)]) -> Result<(), String> {
+    for (path, hash) in outputs {
+        if !file_matches_sha1(path, hash)? {
+            return Err(format!(
+                "Forge processor failed ({jar_coord}): required output is missing or corrupt: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Read Main-Class from a jar's META-INF/MANIFEST.MF (unfolding continuations).
 fn read_jar_main_class(jar: &Path) -> Option<String> {
     let file = File::open(jar).ok()?;
@@ -335,10 +435,10 @@ fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
             None => continue,
         };
         if e.is_dir() {
-            fs::create_dir_all(&out).ok();
+            fs::create_dir_all(&out).map_err(|err| err.to_string())?;
         } else {
             if let Some(p) = out.parent() {
-                fs::create_dir_all(p).ok();
+                fs::create_dir_all(p).map_err(|err| err.to_string())?;
             }
             let mut f = File::create(&out).map_err(|err| err.to_string())?;
             std::io::copy(&mut e, &mut f).map_err(|err| err.to_string())?;
@@ -347,46 +447,75 @@ fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn copy_maven(src: &Path, dst: &Path) {
-    let entries = match fs::read_dir(src) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
+fn read_optional_json(path: &Path, label: &str) -> Result<Option<Value>, String> {
+    match fs::read_to_string(path) {
+        Ok(contents) => serde_json::from_str(&contents)
+            .map(Some)
+            .map_err(|error| format!("Invalid {label} in Forge installer: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "Could not read {label} from Forge installer: {error}"
+        )),
+    }
+}
+
+fn copy_maven(src: &Path, dst: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(src)
+        .map_err(|error| format!("Could not read embedded Forge libraries: {error}"))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("Could not read Forge library entry: {error}"))?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
         if from.is_dir() {
-            fs::create_dir_all(&to).ok();
-            copy_maven(&from, &to);
+            fs::create_dir_all(&to).map_err(|error| error.to_string())?;
+            copy_maven(&from, &to)?;
         } else if !to.exists() {
             if let Some(p) = to.parent() {
-                fs::create_dir_all(p).ok();
+                fs::create_dir_all(p).map_err(|error| error.to_string())?;
             }
-            fs::copy(&from, &to).ok();
+            fs::copy(&from, &to).map_err(|error| {
+                format!(
+                    "Could not copy embedded Forge library {}: {error}",
+                    from.display()
+                )
+            })?;
         }
     }
+    Ok(())
 }
 
-fn copy_legacy_installer_artifact(profile: &Value, extract: &Path) {
-    let Some(coord) = profile["install"]["path"].as_str() else {
-        return;
-    };
-    let Some(file_path) = profile["install"]["filePath"].as_str() else {
-        return;
+fn copy_legacy_installer_artifact(profile: &Value, extract: &Path) -> Result<(), String> {
+    let coord = profile["install"]["path"].as_str();
+    let file_path = profile["install"]["filePath"].as_str();
+    let (Some(coord), Some(file_path)) = (coord, file_path) else {
+        if coord.is_some() || file_path.is_some() {
+            return Err("Legacy Forge installer artifact metadata is incomplete".into());
+        }
+        return Ok(());
     };
     let src = extract.join(file_path);
-    if !src.exists() {
-        return;
+    if !src.is_file() {
+        return Err(format!(
+            "Legacy Forge installer artifact is missing: {}",
+            src.display()
+        ));
     }
     let dst = resolve_lib_path(coord);
     if let Some(parent) = dst.parent() {
-        fs::create_dir_all(parent).ok();
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let _ = fs::copy(src, dst);
+    fs::copy(&src, &dst).map_err(|error| {
+        format!(
+            "Could not copy legacy Forge installer artifact {}: {error}",
+            src.display()
+        )
+    })?;
+    Ok(())
 }
 
 /// Download a version/profile library list (downloads.artifact, or maven name+url).
-async fn download_libraries(libs: &[Value]) {
+async fn download_libraries(libs: &[Value]) -> Result<(), String> {
     let libs_dir = paths::libraries_dir();
     for lib in libs {
         if let (Some(path), Some(url)) = (
@@ -394,15 +523,19 @@ async fn download_libraries(libs: &[Value]) {
             lib["downloads"]["artifact"]["url"].as_str(),
         ) {
             if !url.is_empty() {
-                let _ = download_to(
+                download_to(
                     url,
                     &libs_dir.join(path),
                     lib["downloads"]["artifact"]["sha1"].as_str(),
                 )
-                .await;
+                .await
+                .map_err(|error| format!("Could not download Forge library {path}: {error}"))?;
             }
         } else if let Some(name) = lib["name"].as_str() {
             let rel = resolve_lib_path(name);
+            if rel.is_file() {
+                continue;
+            }
             // resolve_lib_path returns an absolute libs path; recompute the maven
             // relative path for the URL.
             if let Ok(relpath) = rel.strip_prefix(&libs_dir) {
@@ -413,10 +546,48 @@ async fn download_libraries(libs: &[Value]) {
                     format!("{base}/")
                 };
                 let url = format!("{base}{}", relpath.to_string_lossy().replace('\\', "/"));
-                let _ = download_to(&url, &rel, None).await;
+                download_to(&url, &rel, None)
+                    .await
+                    .map_err(|error| format!("Could not download Forge library {name}: {error}"))?;
+            } else {
+                return Err(format!("Invalid Forge library path: {name}"));
             }
         }
     }
+    Ok(())
+}
+
+fn validate_libraries(libs: &[Value], stage: &str) -> Result<(), String> {
+    let libs_dir = paths::libraries_dir();
+    for lib in libs {
+        let path = if let Some(path) = lib["downloads"]["artifact"]["path"].as_str() {
+            Some(libs_dir.join(path))
+        } else {
+            lib["name"].as_str().map(resolve_lib_path)
+        };
+        if let Some(path) = path {
+            if !path.is_file() {
+                let name = lib["name"].as_str().unwrap_or("unknown library");
+                return Err(format!(
+                    "Forge {stage} is missing required library {name}: {}",
+                    path.display()
+                ));
+            }
+            if let Some(hash) = lib["downloads"]["artifact"]["sha1"]
+                .as_str()
+                .filter(|hash| !hash.is_empty())
+            {
+                if !file_matches_sha1(&path, hash)? {
+                    let name = lib["name"].as_str().unwrap_or("unknown library");
+                    return Err(format!(
+                        "Forge {stage} library failed SHA-1 verification ({name}): {}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn run_processors(
@@ -433,20 +604,20 @@ async fn run_processors(
         .as_array()
         .cloned()
         .unwrap_or_default();
-    // Client-side processors only (skip server/data-less entries).
+    // Forge 1.7-era profiles use an older, non-executable processor schema.
+    // Their installer artifact is handled by copy_legacy_installer_artifact.
+    // Once any modern JAR-based processor is present, every selected processor
+    // must satisfy the modern schema and missing JAR fields are fatal.
+    if !uses_modern_processor_schema(&all) {
+        return Ok(());
+    }
+    // Client-side processors only. Processors without declared outputs still
+    // need to run; a successful exit is the only completion signal available.
     let processors: Vec<&Value> = all
         .iter()
-        .filter(|p| {
-            let has_outputs = p
-                .get("outputs")
-                .and_then(Value::as_object)
-                .map(|o| !o.is_empty())
-                .unwrap_or(true);
-            let client = match p.get("sides").and_then(Value::as_array) {
-                None => true,
-                Some(s) => s.iter().any(|x| x.as_str() == Some("client")),
-            };
-            has_outputs && client
+        .filter(|p| match p.get("sides").and_then(Value::as_array) {
+            None => true,
+            Some(s) => s.iter().any(|x| x.as_str() == Some("client")),
         })
         .collect();
     let total = processors.len().max(1);
@@ -459,41 +630,37 @@ async fn run_processors(
             70.0 + (i as f64 / total as f64) * 28.0,
         );
 
-        // Skip if every declared output already exists.
-        if let Some(outputs) = proc.get("outputs").and_then(Value::as_object) {
-            if !outputs.is_empty()
-                && outputs.keys().all(|k| {
-                    resolve_data(k, &data, mc, installer, extract)
-                        .map(|p| Path::new(&p).exists())
-                        .unwrap_or(false)
-                })
-            {
-                continue;
-            }
+        let outputs = processor_output_specs(proc, &data, mc, installer, extract)?;
+        if processor_outputs_match(&outputs)? {
+            continue;
         }
 
         let jar_coord = proc["jar"].as_str().ok_or("processor has no jar")?;
         let jar_path = resolve_lib_path(jar_coord);
-        if !jar_path.exists() {
-            continue;
-        }
+        require_processor_file(&jar_path, &format!("JAR ({jar_coord})"))?;
 
         let mut cp = vec![jar_path.to_string_lossy().to_string()];
         for c in proc["classpath"].as_array().cloned().unwrap_or_default() {
-            if let Some(s) = c.as_str() {
-                cp.push(resolve_lib_path(s).to_string_lossy().to_string());
-            }
+            let coord = c
+                .as_str()
+                .ok_or_else(|| format!("Forge processor {jar_coord} has an invalid classpath"))?;
+            let path = resolve_lib_path(coord);
+            require_processor_file(&path, &format!("classpath JAR {coord} for {jar_coord}"))?;
+            cp.push(path.to_string_lossy().to_string());
         }
-        let args: Vec<String> = proc["args"]
+        let args = proc["args"]
             .as_array()
-            .cloned()
-            .unwrap_or_default()
+            .ok_or_else(|| format!("Forge processor {jar_coord} has no argument list"))?
             .iter()
-            .filter_map(|a| {
-                a.as_str()
-                    .and_then(|s| resolve_data(s, &data, mc, installer, extract))
+            .map(|arg| {
+                let raw = arg.as_str().ok_or_else(|| {
+                    format!("Forge processor {jar_coord} has a non-string argument")
+                })?;
+                resolve_data(raw, &data, mc, installer, extract).ok_or_else(|| {
+                    format!("Forge processor {jar_coord} argument could not be resolved: {raw}")
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let main_class = read_jar_main_class(&jar_path).ok_or(format!(
             "Forge processor failed ({jar_coord}): could not read Main-Class from {}",
@@ -529,6 +696,7 @@ async fn run_processors(
                 }
             ));
         }
+        verify_processor_outputs(jar_coord, &outputs)?;
     }
     Ok(())
 }
@@ -587,12 +755,11 @@ async fn install_forge_inner(
     fs::create_dir_all(extract).map_err(|e| e.to_string())?;
     unzip(installer, extract)?;
 
-    let profile: Option<Value> = fs::read_to_string(extract.join("install_profile.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
-    let version_json: Value = fs::read_to_string(extract.join("version.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+    let profile = read_optional_json(
+        &extract.join("install_profile.json"),
+        "install_profile.json",
+    )?;
+    let version_json = read_optional_json(&extract.join("version.json"), "version.json")?
         .or_else(|| profile.as_ref().and_then(|p| p.get("versionInfo").cloned()))
         .ok_or(
             "Forge version metadata not found in installer. Forge may not support this MC version.",
@@ -600,14 +767,17 @@ async fn install_forge_inner(
 
     let loader = if is_neo { "neoforge" } else { "forge" };
     let json_path = loader_json_path(mc, loader, forge_version);
-    if let Some(p) = json_path.parent() {
-        fs::create_dir_all(p).map_err(|e| e.to_string())?;
+
+    // Make installer-bundled artifacts available before resolving network
+    // libraries. Some legacy profiles omit a repository URL because the JAR is
+    // expected to come from the installer's embedded Maven tree.
+    if let Some(profile) = profile.as_ref() {
+        let maven_dir = extract.join("maven");
+        if maven_dir.exists() {
+            copy_maven(&maven_dir, &paths::libraries_dir())?;
+        }
+        copy_legacy_installer_artifact(profile, extract)?;
     }
-    fs::write(
-        &json_path,
-        serde_json::to_vec_pretty(&version_json).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
 
     emit(app, iid, "Downloading Forge libraries", 35.0);
     download_libraries(
@@ -616,18 +786,16 @@ async fn install_forge_inner(
             .cloned()
             .unwrap_or_default(),
     )
-    .await;
+    .await?;
 
     if let Some(profile) = profile.as_ref() {
         if let Some(libs) = profile["libraries"].as_array() {
             emit(app, iid, "Downloading Forge tools", 55.0);
-            download_libraries(libs).await;
+            download_libraries(libs).await?;
         }
-        let maven_dir = extract.join("maven");
-        if maven_dir.exists() {
-            copy_maven(&maven_dir, &paths::libraries_dir());
+        if let Some(libs) = profile["libraries"].as_array() {
+            validate_libraries(libs, "tools")?;
         }
-        copy_legacy_installer_artifact(profile, extract);
 
         // Processors must run on a Java that satisfies the MC version. Use the
         // vanilla version JSON (already saved by install_minecraft) for the major.
@@ -643,6 +811,26 @@ async fn install_forge_inner(
         emit(app, iid, "Running Forge processors", 70.0);
         run_processors(app, iid, &profile, mc, &java_exe, installer, extract).await?;
     }
+
+    validate_libraries(
+        &version_json["libraries"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+        "runtime",
+    )?;
+
+    // Publish loader metadata only after every required download, copy, and
+    // processor has completed successfully. A failed reinstall keeps the last
+    // known-good profile instead of exposing a partial install to the launcher.
+    if let Some(parent) = json_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(
+        &json_path,
+        serde_json::to_vec_pretty(&version_json).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
 
     emit(app, iid, "Forge installed", 100.0);
     Ok(())
@@ -660,6 +848,115 @@ mod tests {
           <version>26.2.0.42-beta</version>
         </versions></versioning></metadata>
     "#;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("refract-forge-{label}-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn processor_outputs_require_matching_sha1_before_skip() {
+        let root = temp_dir("outputs");
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("patched.jar");
+        fs::write(&output, b"hello").unwrap();
+
+        let mut declared = serde_json::Map::new();
+        declared.insert(
+            output.to_string_lossy().into_owned(),
+            json!("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"),
+        );
+        let processor = json!({ "outputs": Value::Object(declared) });
+        let specs = processor_output_specs(
+            &processor,
+            &json!({}),
+            "1.20.1",
+            &root.join("installer.jar"),
+            &root,
+        )
+        .unwrap();
+
+        assert!(processor_outputs_match(&specs).unwrap());
+        fs::write(&output, b"corrupt").unwrap();
+        assert!(!processor_outputs_match(&specs).unwrap());
+        assert!(verify_processor_outputs("processor:test:1", &specs).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn processor_output_hash_tokens_and_legacy_schemas_are_supported() {
+        assert!(!uses_modern_processor_schema(&[json!({})]));
+        assert!(uses_modern_processor_schema(&[json!({
+            "jar": "net.minecraftforge:installertools:1.4.1"
+        })]));
+
+        let root = temp_dir("hash-token");
+        let output = root.join("patched.jar");
+        let mut declared = serde_json::Map::new();
+        declared.insert(
+            output.to_string_lossy().into_owned(),
+            json!("{PATCHED_SHA}"),
+        );
+        let processor = json!({ "outputs": Value::Object(declared) });
+        let data = json!({
+            "PATCHED_SHA": {
+                "client": "'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d'"
+            }
+        });
+        let specs = processor_output_specs(
+            &processor,
+            &data,
+            "1.20.1",
+            &root.join("installer.jar"),
+            &root,
+        )
+        .unwrap();
+        assert_eq!(specs[0].1, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+    }
+
+    #[test]
+    fn malformed_output_hashes_and_metadata_fail_closed() {
+        let root = temp_dir("metadata");
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("patched.jar");
+        let mut declared = serde_json::Map::new();
+        declared.insert(output.to_string_lossy().into_owned(), json!("not-a-sha1"));
+        let processor = json!({ "outputs": Value::Object(declared) });
+        assert!(processor_output_specs(
+            &processor,
+            &json!({}),
+            "1.20.1",
+            &root.join("installer.jar"),
+            &root,
+        )
+        .is_err());
+
+        let invalid_json = root.join("install_profile.json");
+        fs::write(&invalid_json, "{").unwrap();
+        assert!(read_optional_json(&invalid_json, "install_profile.json").is_err());
+        assert!(
+            read_optional_json(&root.join("missing.json"), "missing.json")
+                .unwrap()
+                .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn required_embedded_artifact_failures_are_not_ignored() {
+        let root = temp_dir("embedded");
+        fs::create_dir_all(&root).unwrap();
+        assert!(require_processor_file(&root.join("missing.jar"), "processor JAR").is_err());
+        assert!(copy_maven(&root.join("missing"), &root.join("libraries")).is_err());
+
+        let profile = json!({
+            "install": {
+                "path": "net.minecraftforge:forge:1.0",
+                "filePath": "maven/missing.jar"
+            }
+        });
+        assert!(copy_legacy_installer_artifact(&profile, &root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn resolves_neoforge_versions_for_legacy_minecraft_versions() {

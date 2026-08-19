@@ -114,6 +114,8 @@ The most important architectural rule is: UI components call the stable `api.*` 
 
 Legacy `minecraftArguments` templates are tokenized before placeholder substitution so quoted values and resolved paths containing spaces retain their intended argument boundaries. Malformed quoted templates stop launch with an explicit error.
 
+Forge and NeoForge installation fail when required library downloads, embedded Maven copies, processor JARs, classpath entries, arguments, or declared outputs are invalid. Processor outputs with declared SHA-1 hashes must match before reuse and after execution, and loader metadata is written only after all installation stages succeed.
+
 ### Content installation
 
 - Modrinth is CORS-open, so project search/detail requests can run in the renderer. Native code still owns downloads and filesystem writes.

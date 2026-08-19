@@ -15,6 +15,7 @@
 
 * Prevented automatic Java selection from launching Minecraft with an incompatible installed runtime instead of downloading the required one.
 * Fixed legacy Minecraft and Forge launch arguments containing quoted values or paths with spaces.
+* Prevented incomplete Forge and NeoForge installations from succeeding when required libraries, processors, or verified outputs are missing.
 
 ### Security
 
