@@ -69,6 +69,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | `locales` | Translation JSON | English is the schema/fallback; Ukrainian and Simplified Chinese are registered. |
 | `logo` | Brand and README assets | Includes icons and the current screenshot. |
 | `packaging/aur` | Arch User Repository package | Binary package consumes the stable RPM release asset. |
+| `packaging/{homebrew,scoop,chocolatey,nixpkgs}` | Upstream package submissions | Manifests and a source-built nixpkgs expression; refresh with `packaging/scripts/update-packages.py`. |
 | `flake.nix`, `nix/package.nix` | NixOS package and development shell | Builds the native app from source and supplies Java and Minecraft runtime libraries. |
 | `.github/workflows` | Build, audit, release, AUR, and Discord automation | CI uses Node 24 and pnpm 11. |
 | `README.md` | Product overview and public setup | Start here for users. |
@@ -445,6 +446,7 @@ There is no dedicated JavaScript test suite in package scripts. Rust has embedde
 | `security-audit.yml` | PR and push to `main` | pnpm audit, cargo audit with documented ignores, cargo check, and renderer typecheck. |
 | `release-tauri.yml` | `v*.*.*` tag or manual | Multi-platform draft GitHub release, updater artifacts, stable filenames, and rewritten `latest.json`. |
 | `publish-aur.yml` | Published stable release or manual | Downloads the stable RPM, updates PKGBUILD/checksum and `.SRCINFO`, then pushes `refract-launcher-bin` to AUR. |
+| `update-package-manifests.yml` | Published stable release or manual | Refreshes package hashes and opens a pull request; it never pushes package metadata directly to `main`. |
 | `discord-changelog.yml` | Published release or manual | Posts the matching `CHANGELOG.md` section through a Discord webhook. |
 
 ### Release sequence
@@ -454,7 +456,7 @@ There is no dedicated JavaScript test suite in package scripts. Rust has embedde
 3. Commit and tag `vX.Y.Z`, or manually dispatch the Tauri release workflow with the intended tag.
 4. Wait for Windows x64, macOS ARM64, macOS Intel, and Linux x64 builds.
 5. Review the draft release and its `latest.json`, signatures, stable filenames, and installers before publishing.
-6. Publishing triggers the Discord announcement and stable AUR package workflow.
+6. Publishing triggers the Discord announcement, stable AUR package workflow, and package-manifest pull request workflow.
 
 The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`. It rejects a UTF-8 BOM, invalid manifest structure, or a manifest version that differs from the release tag. It then matches every manifest URL filename to one release asset and requires an authenticated HTTP 200 HEAD response before uploading `latest.json` or removing versioned duplicates.
 

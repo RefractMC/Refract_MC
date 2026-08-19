@@ -1,0 +1,50 @@
+name: Update package manifests
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag (for example, v1.3.4)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set release tag
+        id: release
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: echo "tag=${INPUT_TAG:-$EVENT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh and validate package metadata
+        run: |
+          python packaging/scripts/update-packages.py "${{ steps.release.outputs.tag }}"
+          python packaging/scripts/validate-packages.py
+
+      - name: Open package metadata pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/package-manifests-${{ steps.release.outputs.tag }}
+          delete-branch: true
+          commit-message: "chore(packaging): update manifests for ${{ steps.release.outputs.tag }}"
+          title: "chore(packaging): update manifests for ${{ steps.release.outputs.tag }}"
+          body: |
+            Refresh Homebrew, Scoop, Chocolatey, and nixpkgs metadata from the published release.
+
+            Validation ran with `packaging/scripts/validate-packages.py`.

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>refract</id>
+    <version>1.3.4</version>
+    <title>Refract</title>
+    <authors>RefractMC</authors>
+    <owners>RefractMC</owners>
+    <projectUrl>https://refractmc.net</projectUrl>
+    <projectSourceUrl>https://github.com/RefractMC/Refract_MC</projectSourceUrl>
+    <packageSourceUrl>https://github.com/RefractMC/Refract_MC/tree/main/packaging/chocolatey</packageSourceUrl>
+    <docsUrl>https://github.com/RefractMC/Refract_MC/releases/tag/v1.3.4</docsUrl>
+    <iconUrl>https://raw.githubusercontent.com/RefractMC/Refract_MC/main/apps/tauri/src-tauri/icons/icon.png</iconUrl>
+    <copyright>Copyright © RefractMC</copyright>
+    <licenseUrl>https://github.com/RefractMC/Refract_MC/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Fast, open-source Minecraft launcher built with Tauri and React.</description>
+    <summary>Open-source Minecraft launcher</summary>
+    <tags>minecraft launcher gaming tauri react refract</tags>
+    <releaseNotes>https://github.com/RefractMC/Refract_MC/releases/tag/v1.3.4</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

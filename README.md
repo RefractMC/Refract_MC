@@ -119,6 +119,15 @@ curl -fsSL https://refractmc.net/install.sh | sh
 | Linux - NixOS          | `nix run github:RefractMC/Refract_MC`                                                                                  |
 | Other packages         | [View the latest release](https://github.com/RefractMC/Refract_MC/releases/latest)                                     |
 
+### Package manager status
+
+The AUR package is published automatically as `refract-launcher-bin`. Homebrew,
+Scoop, Chocolatey, and nixpkgs metadata is prepared in [`docs/PACKAGING.md`](docs/PACKAGING.md)
+but still requires upstream review and acceptance. The GitHub `.deb`, `.rpm`,
+and `.AppImage` files above are direct release downloads, not Debian, Fedora, or
+openSUSE repository packages. Repology tracking is pending a verified project
+slug; see [`docs/REPOLOGY.md`](docs/REPOLOGY.md).
+
 
 > [!NOTE]
 > macOS builds are currently unsigned. On first launch, right-click Refract,
