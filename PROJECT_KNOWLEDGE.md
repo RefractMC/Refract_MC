@@ -9,7 +9,7 @@ tags:
   - architecture
 status: living
 created: 2026-07-19
-updated: 2026-08-11
+updated: 2026-08-19
 project_version: 1.3.4
 repository: https://github.com/RefractMC/Refract_MC
 ---
@@ -125,7 +125,7 @@ Forge and NeoForge installation fail when required library downloads, embedded M
 - Required dependencies are resolved recursively; optional dependencies can be selected by the user.
 - CurseForge files with API distribution disabled use the supported manual flow: Refract opens the official download page and watches the Downloads directory for the expected file/hash. It does not bypass author restrictions.
 - Modpacks support Modrinth `.mrpack`, CurseForge manifests, FTB packs, and local archive imports.
-- Modpack updates reuse the instance and replace its mod set while preserving worlds, options, screenshots, and other player data.
+- Modpack updates reuse the instance and replace its mod set through a rollback guard: the previous mods and instance metadata are backed up before mutation and restored if any required stage fails.
 
 ## User-facing areas
 
