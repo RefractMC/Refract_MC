@@ -256,17 +256,32 @@ fn all_installs() -> Vec<Install> {
     all
 }
 
-/// Best installed runtime satisfying `required`: smallest eligible major (loaders
-/// bootstrap against a specific Java, so newer-than-needed can break Forge).
+/// Whether an installed Java major is safe for metadata requesting `required`.
+///
+/// Java 17 is a compatible successor for the short-lived Java 16 runtime used
+/// by Minecraft 1.17. Other Minecraft eras stay on their requested major because
+/// newer JVMs can remove APIs or tighten behavior that legacy loaders depend on.
+fn major_is_compatible(required: u32, candidate: u32) -> bool {
+    candidate == required || (required == 16 && candidate == 17)
+}
+
+fn select_compatible(installs: &[Install], required: u32) -> Option<&Install> {
+    installs
+        .iter()
+        .filter(|j| major_is_compatible(required, j.version))
+        .min_by_key(|j| u8::from(j.version != required))
+}
+
+/// Best installed runtime satisfying `required`, preferring the exact major.
 fn find_installed(required: u32) -> Option<Install> {
-    all_installs()
-        .into_iter()
-        .filter(|j| j.version >= required)
-        .min_by_key(|j| j.version)
+    let installs = all_installs();
+    select_compatible(&installs, required).cloned()
 }
 
 /// Resolve a Java executable for a required major: the instance's own path if
-/// set, else the closest installed runtime ≥ requirement, else the newest.
+/// set as an explicit override, otherwise a compatible installed runtime.
+/// Returns `None` when automatic selection finds no match so the caller can
+/// provision the requested runtime instead of launching with an incompatible JVM.
 pub fn resolve_for(required: u32, instance_java: Option<&str>) -> Option<String> {
     if let Some(p) = instance_java {
         let c = p.trim();
@@ -282,12 +297,7 @@ pub fn resolve_for(required: u32, instance_java: Option<&str>) -> Option<String>
         }
     }
     let installs = all_installs();
-    installs
-        .iter()
-        .filter(|j| j.version >= required)
-        .min_by_key(|j| j.version)
-        .or_else(|| installs.first())
-        .map(|j| exe_in_home(&j.path))
+    select_compatible(&installs, required).map(|j| exe_in_home(&j.path))
 }
 
 /// Resolve a runtime for `required`, downloading a Temurin JRE if none qualifies.
@@ -357,13 +367,58 @@ fn required_for(mc_version: &str) -> u32 {
     }
 }
 
+fn metadata_java_major(metadata: &Value) -> Option<u32> {
+    metadata["javaVersion"]["majorVersion"]
+        .as_u64()
+        .and_then(|major| u32::try_from(major).ok())
+        .filter(|major| *major > 0)
+}
+
+fn legacy_forge_requires_java_8(loader: &str, mc_version: &str) -> bool {
+    if !loader.eq_ignore_ascii_case("forge") {
+        return false;
+    }
+    let mut parts = mc_version
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok());
+    matches!((parts.next(), parts.next()), (Some(1), Some(0..=16)))
+}
+
+/// Resolve the preferred Java major from loader/base metadata and known loader
+/// constraints. Loader metadata takes precedence when it declares a runtime.
+pub fn required_for_launch(
+    mc_version: &str,
+    loader: &str,
+    version_json: &Value,
+    overlay: Option<&Value>,
+) -> u32 {
+    if legacy_forge_requires_java_8(loader, mc_version) {
+        return 8;
+    }
+    overlay
+        .and_then(metadata_java_major)
+        .or_else(|| metadata_java_major(version_json))
+        .unwrap_or_else(|| required_for(mc_version))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        java_candidates_on_path, required_for, resolve_symlink_target, strip_safe_top_component,
-        JAVA_BIN,
+        java_candidates_on_path, major_is_compatible, required_for, required_for_launch,
+        resolve_symlink_target, select_compatible, strip_safe_top_component, Install, JAVA_BIN,
     };
+    use serde_json::json;
     use std::path::{Path, PathBuf};
+
+    fn install(version: u32, path: &str) -> Install {
+        Install {
+            version,
+            path: path.into(),
+            vendor: "Test".into(),
+            custom: None,
+        }
+    }
 
     #[test]
     fn discovers_every_java_runtime_exposed_on_path() {
@@ -388,6 +443,53 @@ mod tests {
     fn maps_modern_snapshot_names_to_java_25() {
         assert_eq!(required_for("26.1 Snapshot 1"), 25);
         assert_eq!(required_for("26.2 Snapshot 3"), 25);
+    }
+
+    #[test]
+    fn automatic_selection_never_falls_back_to_an_incompatible_major() {
+        let installs = vec![install(25, "java-25"), install(21, "java-21")];
+        assert!(select_compatible(&installs, 8).is_none());
+        assert!(select_compatible(&installs, 17).is_none());
+    }
+
+    #[test]
+    fn automatic_selection_prefers_the_requested_major() {
+        let installs = vec![install(17, "java-17"), install(16, "java-16")];
+        let selected = select_compatible(&installs, 16).unwrap();
+        assert_eq!(selected.version, 16);
+        assert_eq!(selected.path, "java-16");
+    }
+
+    #[test]
+    fn java_17_is_the_only_newer_fallback_for_java_16_metadata() {
+        assert!(major_is_compatible(16, 17));
+        assert!(!major_is_compatible(16, 21));
+        assert!(!major_is_compatible(8, 17));
+        assert!(!major_is_compatible(17, 21));
+    }
+
+    #[test]
+    fn launch_requirement_uses_loader_metadata_before_base_metadata() {
+        let base = json!({ "javaVersion": { "majorVersion": 17 } });
+        let overlay = json!({ "javaVersion": { "majorVersion": 21 } });
+        assert_eq!(
+            required_for_launch("1.20.5", "fabric", &base, Some(&overlay)),
+            21
+        );
+    }
+
+    #[test]
+    fn legacy_forge_keeps_its_java_8_constraint_separate() {
+        let base = json!({ "javaVersion": { "majorVersion": 17 } });
+        let overlay = json!({ "javaVersion": { "majorVersion": 21 } });
+        assert_eq!(
+            required_for_launch("1.16.5", "forge", &base, Some(&overlay)),
+            8
+        );
+        assert_eq!(
+            required_for_launch("1.16.5", "fabric", &base, Some(&overlay)),
+            21
+        );
     }
 
     #[test]

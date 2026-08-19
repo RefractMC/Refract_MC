@@ -108,7 +108,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 1. Creating an instance writes `instance.json`, assigns a UUID, creates a safe folder name, and initializes playtime and mod metadata.
 2. Installing Minecraft downloads the version JSON, client jar, allowed libraries, natives, and assets. Fabric/Quilt use loader overlays; Forge/NeoForge run their installer processors.
 3. Downloads use a shared Rust engine with connection pooling, bounded concurrency, retries, `.part` files, hash/size verification, and atomic rename.
-4. Launch resolves the active account, refreshes authenticated tokens inside Rust, chooses or downloads a compatible Java runtime, merges loader metadata, builds JVM/game arguments, runs optional pre-launch hooks, and starts Minecraft.
+4. Launch resolves the active account, refreshes authenticated tokens inside Rust, chooses or downloads a compatible Java runtime, merges loader metadata, builds JVM/game arguments, runs optional pre-launch hooks, and starts Minecraft. Automatic Java selection uses loader metadata plus legacy Forge constraints, never falls back to an incompatible installed major, and treats a configured per-instance Java path as an explicit override.
 5. Output streams over `mc://log`; exit state streams over `mc://exit`. Playtime is added to lifetime and local-calendar-day totals.
 6. Optional Quick Play targets open a saved world or server directly. Optional offline launch skips token refresh.
 

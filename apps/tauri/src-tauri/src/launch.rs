@@ -766,10 +766,9 @@ pub async fn launch_minecraft(
         _ => None,
     };
 
-    let required_java = version_json["javaVersion"]["majorVersion"]
-        .as_u64()
-        .unwrap_or(8) as u32;
-    // Resolve a runtime, auto-downloading a Temurin JRE if none qualifies.
+    let required_java =
+        crate::java::required_for_launch(&mc_version, &loader, &version_json, overlay.as_ref());
+    // Resolve a compatible runtime, auto-downloading a Temurin JRE if none qualifies.
     let java_exe = crate::java::resolve_or_provision(
         &app,
         required_java,

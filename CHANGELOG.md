@@ -11,6 +11,10 @@
 * Nix builds now defer application updates to Nix instead of offering an incompatible self-update.
 * Replaced Lucide and custom sidebar icons with Hugeicons throughout the launcher interface.
 
+### Fixes
+
+* Prevented automatic Java selection from launching Minecraft with an incompatible installed runtime instead of downloading the required one.
+
 ### Security
 
 * Patched the nanoid dependency security advisory.
