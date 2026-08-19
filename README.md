@@ -84,6 +84,13 @@ themes, Discord Rich Presence, and Java Edition license verification.
 
 ## Download
 
+<a href="https://repology.org/project/refract-launcher/versions">
+  <img
+    src="https://repology.org/badge/vertical-allrepos/refract-launcher.svg?exclude_unsupported=1"
+    alt="Packaging status"
+  />
+</a>
+
 ### Linux and macOS install script
 
 ```sh
@@ -116,7 +123,7 @@ curl -fsSL https://refractmc.net/install.sh | sh
 | Linux — Debian/Ubuntu | [Download `.deb`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-amd64.deb)            |
 | Linux — Fedora        | [Download `.rpm`](https://github.com/RefractMC/Refract_MC/releases/latest/download/Refract-Linux-x86_64.rpm)           |
 | Linux — Arch/AUR      | [`yay -S refract-launcher-bin`](https://aur.archlinux.org/packages/refract-launcher-bin)                               |
-| Linux - NixOS          | `nix run github:RefractMC/Refract_MC`                                                                                  |
+| Linux - Nix          | `nix run github:RefractMC/Refract_MC`                                                                                  |
 | Other packages         | [View the latest release](https://github.com/RefractMC/Refract_MC/releases/latest)                                     |
 
 ### Package manager status
