@@ -866,18 +866,13 @@ pub async fn apply_mod_updates(
             let game_root = game_root.clone();
             async move {
                 let result = async {
-                    let dir =
-                        game_root.join(subdir_for(update.content_type.as_deref().unwrap_or("mod")));
-                    let new_name = Path::new(&update.new_filename)
-                        .file_name()
-                        .ok_or("invalid new filename")?
-                        .to_string_lossy()
-                        .to_string();
-                    let old_name = Path::new(&update.filename)
-                        .file_name()
-                        .ok_or("invalid filename")?
-                        .to_string_lossy()
-                        .to_string();
+                    let content_type = update.content_type.as_deref().unwrap_or("mod");
+                    if !matches!(content_type, "mod" | "resourcepack" | "shader" | "datapack") {
+                        return Err(format!("Unsupported content type: {content_type}"));
+                    }
+                    let dir = game_root.join(subdir_for(content_type));
+                    let new_name = safe_content_name(&update.new_filename)?;
+                    let old_name = safe_content_name(&update.filename)?;
                     net::download_to(
                         &update.download_url,
                         &dir.join(&new_name),
