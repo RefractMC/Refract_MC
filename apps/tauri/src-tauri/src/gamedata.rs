@@ -8,19 +8,47 @@ use base64::Engine as _;
 use serde::Serialize;
 use std::fs;
 use std::io::{Cursor, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
-/// Join `name` under `base`, rejecting anything that escapes it (path traversal).
+/// Join one renderer-supplied path component under `base`.
 fn safe_child(base: &Path, name: &str) -> Option<PathBuf> {
-    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
         return None;
     }
-    let p = base.join(name);
-    if p.starts_with(base) {
-        Some(p)
-    } else {
-        None
+    let mut components = Path::new(name).components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => Some(base.join(name)),
+        _ => None,
     }
+}
+
+fn is_link_or_reparse(path: &Path) -> Result<bool, String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Ok(true);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn safe_existing_child(base: &Path, name: &str) -> Result<PathBuf, String> {
+    let candidate = safe_child(base, name).ok_or("Invalid filename.")?;
+    if is_link_or_reparse(&candidate)? {
+        return Err("Linked filesystem entries are not allowed here.".into());
+    }
+    let canonical_base = fs::canonicalize(base).map_err(|e| e.to_string())?;
+    let canonical_target = fs::canonicalize(&candidate).map_err(|e| e.to_string())?;
+    if canonical_target.parent() != Some(canonical_base.as_path()) {
+        return Err("Filesystem entry escapes its allowed directory.".into());
+    }
+    Ok(canonical_target)
 }
 
 fn dir_size_kb(dir: &Path) -> u64 {
@@ -82,10 +110,10 @@ pub fn mc_worlds(instance_id: String) -> Vec<World> {
 #[tauri::command]
 pub fn mc_delete_world(instance_id: String, world_name: String) -> Result<(), String> {
     let saves = instances::game_dir(&instance_id).join("saves");
-    if let Some(p) = safe_child(&saves, &world_name) {
-        if p.exists() {
-            fs::remove_dir_all(&p).map_err(|e| e.to_string())?;
-        }
+    let candidate = safe_child(&saves, &world_name).ok_or("Invalid world name.")?;
+    if candidate.exists() {
+        let world = safe_existing_child(&saves, &world_name)?;
+        fs::remove_dir_all(world).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -341,10 +369,8 @@ pub async fn mc_backup_world(
     dest_path: String,
 ) -> Result<String, String> {
     let saves = instances::game_dir(&instance_id).join("saves");
-    let world = safe_child(&saves, &world_name).ok_or("Invalid world name.")?;
-    if !world.exists() {
-        return Err("World not found.".into());
-    }
+    let world = safe_existing_child(&saves, &world_name)
+        .map_err(|_| "World not found or is not a safe local directory.".to_string())?;
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
         let file =
             fs::File::create(&dest_path).map_err(|e| format!("Couldn't write {dest_path}: {e}"))?;
@@ -391,6 +417,9 @@ pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, Stri
         if let Ok(entries) = fs::read_dir(&dir) {
             for e in entries.flatten() {
                 let p = e.path();
+                if is_link_or_reparse(&p).unwrap_or(true) {
+                    continue;
+                }
                 let ext = p
                     .extension()
                     .and_then(|x| x.to_str())
@@ -432,10 +461,8 @@ pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, Stri
 #[tauri::command]
 pub fn mc_open_screenshot(instance_id: String, filename: String) -> Result<(), String> {
     let dir = instances::game_dir(&instance_id).join("screenshots");
-    let p = safe_child(&dir, &filename).ok_or("Invalid filename.")?;
-    if !p.exists() {
-        return Err("Screenshot not found.".into());
-    }
+    let p = safe_existing_child(&dir, &filename)
+        .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
     #[cfg(target_os = "windows")]
     let _ = std::process::Command::new("explorer").arg(&p).spawn();
     #[cfg(target_os = "macos")]
@@ -452,7 +479,8 @@ pub async fn mc_screenshot_full(
     filename: String,
 ) -> Result<Option<String>, String> {
     let dir = instances::game_dir(&instance_id).join("screenshots");
-    let p = safe_child(&dir, &filename).ok_or("Invalid filename.")?;
+    let p = safe_existing_child(&dir, &filename)
+        .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
         let img = image::open(&p).ok()?;
         let out = if img.width() > 1920 || img.height() > 1080 {
@@ -483,6 +511,12 @@ fn zip_dir(
     for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
+        if is_link_or_reparse(&path)? {
+            return Err(format!(
+                "World backup contains a linked entry: {}",
+                path.display()
+            ));
+        }
         if path.is_dir() {
             zip_dir(zip, root, &path, opts)?;
         } else {
@@ -498,4 +532,25 @@ fn zip_dir(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_child;
+    use std::path::Path;
+
+    #[test]
+    fn renderer_names_are_single_path_components() {
+        let root = Path::new("root");
+        assert_eq!(
+            safe_child(root, "World .. One"),
+            Some(root.join("World .. One"))
+        );
+        assert!(safe_child(root, "../outside").is_none());
+        assert!(safe_child(root, "nested/world").is_none());
+        assert!(safe_child(root, r"nested\world").is_none());
+        assert!(safe_child(root, "C:\\outside").is_none());
+        assert!(safe_child(root, ".").is_none());
+        assert!(safe_child(root, "..").is_none());
+    }
 }
