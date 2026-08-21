@@ -56,6 +56,28 @@ fn subdir_for(kind: &str) -> &'static str {
     }
 }
 
+/// Renderer-supplied content names may only address one entry directly under
+/// the selected content directory. Reject traversal, absolute paths, and
+/// alternate separators before joining them to a privileged filesystem path.
+fn safe_content_name(name: &str) -> Result<String, String> {
+    let path = Path::new(name);
+    let base = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or("invalid content filename")?;
+    if path.is_absolute()
+        || path.parent().is_some_and(|parent| parent != Path::new(""))
+        || name.contains('/')
+        || name.contains('\\')
+        || base == "."
+        || base == ".."
+    {
+        return Err("content filename must be a single safe name".into());
+    }
+    Ok(base.to_string())
+}
+
 async fn download_verified(
     url: &str,
     dest: &Path,
@@ -352,16 +374,17 @@ pub fn mods_toggle(
     r#type: Option<String>,
 ) -> Result<(), String> {
     let dir = game_dir(&instance_id).join(subdir_for(r#type.as_deref().unwrap_or("mod")));
-    let src = dir.join(&filename);
+    let safe = safe_content_name(&filename)?;
+    let src = dir.join(&safe);
     if !src.exists() {
-        return Err(format!("Not found: {filename}"));
+        return Err(format!("Not found: {safe}"));
     }
     if src.is_dir() {
         return Ok(()); // folders can't be toggled
     }
-    let dst = match filename.strip_suffix(".disabled") {
+    let dst = match safe.strip_suffix(".disabled") {
         Some(base) => dir.join(base),
-        None => dir.join(format!("{filename}.disabled")),
+        None => dir.join(format!("{safe}.disabled")),
     };
     fs::rename(&src, &dst).map_err(|e| e.to_string())
 }
@@ -373,7 +396,8 @@ pub fn mods_delete(
     r#type: Option<String>,
 ) -> Result<(), String> {
     let dir = game_dir(&instance_id).join(subdir_for(r#type.as_deref().unwrap_or("mod")));
-    let src = dir.join(&filename);
+    let safe = safe_content_name(&filename)?;
+    let src = dir.join(&safe);
     if !src.exists() {
         return Ok(());
     }
@@ -1427,4 +1451,18 @@ pub fn uninstall_mod(instance_id: String, project_id: String) -> Result<(), Stri
         .collect();
     instances::update_instance(instance_id, json!({ "mods": remaining }))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_content_name;
+
+    #[test]
+    fn content_names_are_single_path_components() {
+        assert_eq!(safe_content_name("example.jar").unwrap(), "example.jar");
+        assert!(safe_content_name("../outside.jar").is_err());
+        assert!(safe_content_name("nested/example.jar").is_err());
+        assert!(safe_content_name(r"nested\example.jar").is_err());
+        assert!(safe_content_name("C:\\outside.jar").is_err());
+    }
 }

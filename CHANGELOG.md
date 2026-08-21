@@ -17,6 +17,8 @@
 * Fixed legacy Minecraft and Forge launch arguments containing quoted values or paths with spaces.
 * Prevented incomplete Forge and NeoForge installations from succeeding when required libraries, processors, or verified outputs are missing.
 * Made in-place modpack updates back up the existing mod set and restore it, along with instance metadata, when a required update stage fails.
+* Made required Minecraft client, library, asset, native, and loader downloads fail the install instead of leaving an instance marked installed.
+* Rejected traversal and absolute paths in renderer-controlled mod toggle and delete commands.
 
 ### Security
 

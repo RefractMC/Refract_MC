@@ -136,6 +136,10 @@ fn batch_progress(app: &AppHandle, iid: &str, step: &'static str) -> downloader:
     Arc::new(move |p: &downloader::BatchProgress| emit(&app, &iid, step, p.done, p.total))
 }
 
+fn require_batch_success(batch: &downloader::BatchResult, what: &str) -> Result<(), String> {
+    batch.error_summary(what).map_or(Ok(()), Err)
+}
+
 async fn get_json(url: &str) -> Result<Value, String> {
     net::validate_url(url, net::MINECRAFT_HOSTS)?;
     let res = reqwest::get(url).await.map_err(|e| e.to_string())?;
@@ -302,7 +306,6 @@ async fn install_loader(
             }
         })
         .collect();
-    // Per-lib failures stay non-fatal (matching the old behaviour).
     let batch = downloader::run(
         tasks,
         downloader::LIBRARY_CONCURRENCY,
@@ -312,6 +315,7 @@ async fn install_loader(
     .await;
     timer.add_batch(&batch);
     check_cancelled(iid)?;
+    require_batch_success(&batch, "loader libraries")?;
     emit(app, iid, label, 1, 1);
     Ok(version)
 }
@@ -368,6 +372,14 @@ pub async fn install_minecraft(
     let _guard = InstallGuard::new(iid)?;
     let timer = downloader::InstallTimer::start();
 
+    // An interrupted repair must not leave a previously installed instance
+    // marked as healthy. Only the final successful commit sets this back to
+    // true.
+    instances::update_instance(
+        instance_id.clone(),
+        serde_json::json!({ "isInstalled": false }),
+    )?;
+
     // 1. Version JSON
     emit(&app, iid, "Fetching version data", 0, 1);
     check_cancelled(iid)?;
@@ -384,16 +396,18 @@ pub async fn install_minecraft(
 
     // 2. Client jar
     emit(&app, iid, "Downloading client", 0, 1);
-    if let Some(url) = vjson["downloads"]["client"]["url"].as_str() {
-        let bytes = download_to(
-            iid,
-            url,
-            &vdir.join(format!("{version_id}.jar")),
-            vjson["downloads"]["client"]["sha1"].as_str(),
-        )
-        .await?;
-        timer.add(bytes, 1);
-    }
+    let client_url = vjson["downloads"]["client"]["url"]
+        .as_str()
+        .filter(|url| !url.is_empty())
+        .ok_or("Minecraft version metadata has no client download.")?;
+    let bytes = download_to(
+        iid,
+        client_url,
+        &vdir.join(format!("{version_id}.jar")),
+        vjson["downloads"]["client"]["sha1"].as_str(),
+    )
+    .await?;
+    timer.add(bytes, 1);
     emit(&app, iid, "Downloading client", 1, 1);
 
     // 3. Libraries (OS-filtered), through the parallel engine; existing jars
@@ -429,6 +443,7 @@ pub async fn install_minecraft(
     .await;
     timer.add_batch(&batch);
     check_cancelled(iid)?;
+    require_batch_success(&batch, "Minecraft libraries")?;
 
     // 4. Natives
     emit(&app, iid, "Extracting natives", 0, 1);
@@ -447,10 +462,9 @@ pub async fn install_minecraft(
             let art = &lib["downloads"]["classifiers"][&classifier];
             if let (Some(path), Some(url)) = (art["path"].as_str(), art["url"].as_str()) {
                 let jar = libs_dir.join(path);
-                if let Ok(bytes) = download_to(iid, url, &jar, art["sha1"].as_str()).await {
-                    timer.add(bytes, 1);
-                    let _ = extract_natives(&jar, &natives_dir);
-                }
+                let bytes = download_to(iid, url, &jar, art["sha1"].as_str()).await?;
+                timer.add(bytes, 1);
+                extract_natives(&jar, &natives_dir)?;
             }
         }
     }
@@ -511,6 +525,7 @@ pub async fn install_minecraft(
         .await;
         timer.add_batch(&batch);
         check_cancelled(iid)?;
+        require_batch_success(&batch, "Minecraft assets")?;
     }
 
     // 6. Mod loader overlay. Forge/NeoForge use their installer processor runner.
