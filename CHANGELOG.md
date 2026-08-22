@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.4.0
+
 ### Added
 
 * Added a Nix flake with native NixOS packaging, a Tauri development shell, bundled Java runtimes, and Minecraft runtime libraries.
@@ -25,6 +27,8 @@
 ### Security
 
 * Patched the nanoid dependency security advisory.
+
+Full comparison: [v1.3.4...v1.4.0](https://github.com/RefractMC/Refract_MC/compare/v1.3.4...v1.4.0)
 
 ## 1.3.4
 

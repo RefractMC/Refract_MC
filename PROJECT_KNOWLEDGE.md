@@ -9,8 +9,8 @@ tags:
   - architecture
 status: living
 created: 2026-07-19
-updated: 2026-08-19
-project_version: 1.3.4
+updated: 2026-08-22
+project_version: 1.4.0
 repository: https://github.com/RefractMC/Refract_MC
 ---
 
@@ -20,7 +20,7 @@ repository: https://github.com/RefractMC/Refract_MC
 > This is the shared, Obsidian-friendly source of truth for people and AI assistants working on Refract. It describes the project as implemented in the repository, not only as advertised. Update it whenever architecture, commands, persisted data, release steps, or major features change.
 
 > [!info] Snapshot
-> Reviewed for the 1.3.4 release on 2026-08-11. The root `package.json` version is older and is not the desktop release version.
+> Reviewed for the 1.4.0 release on 2026-08-22. The root `package.json` version is older and is not the desktop release version.
 
 ## Quick facts
 
@@ -506,7 +506,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 - `locales/README.md` contains a few old path examples. The current files live under `apps/renderer/src/renderer/src/...`; verify paths against the tree.
 - Old source comments can describe earlier scope. Trust registered commands and current call paths over historical comments.
 - The production updater public key is already configured. Older release documentation text about replacing a placeholder is no longer the current state.
-- The root `package.json` version (`1.0.1`) is stale relative to the desktop packages (`1.3.4`). Use Tauri/Cargo/renderer versions and the release tag when determining app version.
+- The root `package.json` version (`1.0.1`) is stale relative to the desktop packages (`1.4.0`). Use Tauri/Cargo/renderer versions and the release tag when determining app version.
 - NeoForge version resolution strips the leading `1.` for legacy Minecraft releases but preserves the full year-based version, such as `26.1.2`.
 - Large route files (`routes/index.tsx`, `browse/index.tsx`, and `modpacks/index.tsx`) contain substantial page logic. Refactors should preserve query invalidation, event cleanup, modal scroll locking, localization, and install state.
 - Browser preview fallbacks can hide native integration defects. Always test meaningful native work in Tauri.
@@ -550,7 +550,7 @@ Before handing off:
 
 ## Project history in one paragraph
 
-Refract began as an Electron-based launcher and accumulated instance management, content browsing, accounts, Java management, themes, friends, skins, playtime, external launcher sync, and rich Minecraft tooling. Version `1.2.0` completed the move to Tauri/Rust with compatible data paths and a secure new token vault. Version `1.3.0` added Quick Play, shortcuts, offline fallback, instance launch controls, options sync, `.mrpack` export, broader archive imports, Java 25 detection, localization, Linux fixes, stable release filenames, and signing pipelines. Version `1.3.1` improved parallel verified downloads, blocked dependency handling, release manifest finalization, UI feedback, and Chinese translations. Version `1.3.2` added eLink installs, system-adaptive preferences, expanded localization, Discord controls and reliability fixes, Linux managed Java extraction, AUR packaging, security patches, and dependency and workflow maintenance. Version `1.3.3` adds world and server invites, Creator Mode publishing, launcher responsiveness fixes, stable macOS updater archives, updater URL validation, and dependency-security maintenance.
+Refract began as an Electron-based launcher and accumulated instance management, content browsing, accounts, Java management, themes, friends, skins, playtime, external launcher sync, and rich Minecraft tooling. Version `1.2.0` completed the move to Tauri/Rust with compatible data paths and a secure new token vault. Version `1.3.0` added Quick Play, shortcuts, offline fallback, instance launch controls, options sync, `.mrpack` export, broader archive imports, Java 25 detection, localization, Linux fixes, stable release filenames, and signing pipelines. Version `1.3.1` improved parallel verified downloads, blocked dependency handling, release manifest finalization, UI feedback, and Chinese translations. Version `1.3.2` added eLink installs, system-adaptive preferences, expanded localization, Discord controls and reliability fixes, Linux managed Java extraction, AUR packaging, security patches, and dependency and workflow maintenance. Version `1.3.3` added world and server invites, Creator Mode publishing, launcher responsiveness fixes, stable macOS updater archives, updater URL validation, and dependency-security maintenance. Version `1.3.4` improved updater controls and validation and added Minecraft 26.x NeoForge support. Version `1.4.0` adds NixOS and optional MSIX packaging, refreshed launcher icons, hardened install and content paths, safer modpack rollback, and more reliable Java and legacy launch handling.
 
 ## Primary references
 
@@ -570,4 +570,4 @@ Refract began as an Electron-based launcher and accumulated instance management,
 
 ---
 
-Last reviewed: 2026-08-11. Treat this as a living note, not an immutable specification.
+Last reviewed: 2026-08-22. Treat this as a living note, not an immutable specification.
