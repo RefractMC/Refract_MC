@@ -40,7 +40,7 @@ let
     owner = "RefractMC";
     repo = "Refract_MC";
     rev = "v${version}";
-    hash = "sha256-RI1jXTnKPGacoKaroMwHGzK8aQGoONTQ4H+KbjCdwXE=";
+    hash = "sha256-RpJL0sBAhrifYPHJP6jJwh4uwqWhyzJAjsmEEQnP9ag=";
   };
   runtimeLibraries = [
     addDriverRunpath.driverLink libGL libx11 libxcursor libxext libxrandr
@@ -59,7 +59,7 @@ rustPlatform.buildRustPackage {
     inherit version src;
     pnpm = pnpm_11;
     fetcherVersion = 4;
-    hash = "sha256-02RHViN1e4IdCekrgl/q6m2lgLnM0wCQW8MJw8C/AKc=";
+    hash = "sha256-12RZzs30Ao+JTvyF5Af0oVOEeD/PvSUZKLSbRgcsiXs=";
   };
 
   nativeBuildInputs = [ cargo-tauri.hook nodejs_24 pkg-config pnpmConfigHook pnpm_11 wrapGAppsHook4 ];

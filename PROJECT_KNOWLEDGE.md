@@ -70,6 +70,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | `logo` | Brand and README assets | Includes icons and the current screenshot. |
 | `packaging/aur` | Arch User Repository package | Binary package consumes the stable RPM release asset. |
 | `packaging/{homebrew,scoop,chocolatey,nixpkgs}` | Upstream package submissions | Manifests and a source-built nixpkgs expression; refresh with `packaging/scripts/update-packages.py`. |
+| `packaging/msix` | Optional Windows MSIX package | Certificate-gated `makeappx`/`signtool` workflow; NSIS/MSI and updater remain authoritative. |
 | `flake.nix`, `nix/package.nix` | NixOS package and development shell | Builds the native app from source and supplies Java and Minecraft runtime libraries. |
 | `.github/workflows` | Build, audit, release, AUR, and Discord automation | CI uses Node 24 and pnpm 11. |
 | `README.md` | Product overview and public setup | Start here for users. |
@@ -107,7 +108,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 ### Create, install, and launch
 
 1. Creating an instance writes `instance.json`, assigns a UUID, creates a safe folder name, and initializes playtime and mod metadata.
-2. Installing Minecraft downloads the version JSON, client jar, allowed libraries, natives, and assets. Fabric/Quilt use loader overlays; Forge/NeoForge run their installer processors.
+2. Installing Minecraft downloads the version JSON, client jar, allowed libraries, natives, and assets. Required download and native extraction failures abort the install, and `isInstalled` is cleared before work begins and set only after the full pipeline succeeds. Fabric/Quilt use loader overlays; Forge/NeoForge run their installer processors.
 3. Downloads use a shared Rust engine with connection pooling, bounded concurrency, retries, `.part` files, hash/size verification, and atomic rename.
 4. Launch resolves the active account, refreshes authenticated tokens inside Rust, chooses or downloads a compatible Java runtime, merges loader metadata, builds JVM/game arguments, runs optional pre-launch hooks, and starts Minecraft. Automatic Java selection uses loader metadata plus legacy Forge constraints, never falls back to an incompatible installed major, and treats a configured per-instance Java path as an explicit override.
 5. Output streams over `mc://log`; exit state streams over `mc://exit`. Playtime is added to lifetime and local-calendar-day totals.
@@ -116,6 +117,10 @@ The most important architectural rule is: UI components call the stable `api.*` 
 Legacy `minecraftArguments` templates are tokenized before placeholder substitution so quoted values and resolved paths containing spaces retain their intended argument boundaries. Malformed quoted templates stop launch with an explicit error.
 
 Forge and NeoForge installation fail when required library downloads, embedded Maven copies, processor JARs, classpath entries, arguments, or declared outputs are invalid. Processor outputs with declared SHA-1 hashes must match before reuse and after execution, and loader metadata is written only after all installation stages succeed.
+
+Renderer-controlled content filenames are restricted to a single safe path component before mod toggle/delete operations; traversal and absolute paths are rejected.
+
+World delete/backup and screenshot open/read commands canonicalize direct children and reject symlinks and Windows reparse points. World backups also reject linked entries found during recursive traversal.
 
 ### Content installation
 
@@ -447,6 +452,7 @@ There is no dedicated JavaScript test suite in package scripts. Rust has embedde
 | `release-tauri.yml` | `v*.*.*` tag or manual | Multi-platform draft GitHub release, updater artifacts, stable filenames, and rewritten `latest.json`. |
 | `publish-aur.yml` | Published stable release or manual | Downloads the stable RPM, updates PKGBUILD/checksum and `.SRCINFO`, then pushes `refract-launcher-bin` to AUR. |
 | `update-package-manifests.yml` | Published stable release or manual | Refreshes package hashes and opens a pull request; it never pushes package metadata directly to `main`. |
+| `build-msix.yml` | Manual, published tag | Builds and signs an optional MSIX package, then uploads it to the selected release when certificate secrets exist. |
 | `discord-changelog.yml` | Published release or manual | Posts the matching `CHANGELOG.md` section through a Discord webhook. |
 
 ### Release sequence

@@ -5,6 +5,7 @@
 ### Added
 
 * Added a Nix flake with native NixOS packaging, a Tauri development shell, bundled Java runtimes, and Minecraft runtime libraries.
+* Added an optional certificate-gated workflow for building, signing, verifying, and uploading Windows MSIX packages.
 
 ### Changed
 

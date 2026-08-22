@@ -7,11 +7,12 @@ of the generated bundles and are the URLs consumed by package manifests.
 | Platform / repository | Status | Package name | Automated | Source |
 | --- | --- | --- | --- | --- |
 | GitHub Releases | Existing | Refract | Yes | official |
+| Windows MSIX | Optional/manual; certificate-gated | `Refract-Windows-x64.msix` | Manual workflow | packaging/msix |
 | AUR | Existing | `refract-launcher-bin` | Yes, on published releases | official |
-| Homebrew Cask | Ready for upstream submission | `refract` | Hashes can be refreshed by script | local manifest |
-| Scoop | Ready for upstream submission | `refract` | Hashes can be refreshed by script | local manifest |
+| Homebrew Cask | Submitted upstream ([PR #282100](https://github.com/Homebrew/homebrew-cask/pull/282100)) | `refract` | Hashes can be refreshed by script | upstream review |
+| Scoop | Submitted upstream ([PR #18562](https://github.com/ScoopInstaller/Extras/pull/18562)) | `refract` | Hashes can be refreshed by script | upstream review |
 | Chocolatey | Ready for upstream submission | `refract` | Hashes can be refreshed by script | local package |
-| nixpkgs | Ready for upstream submission | `refract` | Source/hash refresh script | local expression |
+| nixpkgs | Partially prepared; submission needs maintainer follow-up | `refract` | Source/hash refresh script | upstream review |
 | Flathub | Blocked pending sandbox design | — | No | evaluation only |
 
 “Ready” means the repository contains reviewable metadata; it does not mean an
@@ -34,6 +35,9 @@ these stable aliases:
 
 The updater’s signed `latest.json` uses separate `.app.tar.gz` aliases. Package
 manifests intentionally use the installer/DMG aliases, not updater archives.
+MSIX is not listed as a direct-download link until a trusted publisher
+certificate is configured and a signed package has passed clean Windows install,
+upgrade, uninstall, WebView2, and data-directory tests.
 
 ## Refreshing metadata
 

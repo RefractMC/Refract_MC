@@ -135,6 +135,10 @@ and `.AppImage` files above are direct release downloads, not Debian, Fedora, or
 openSUSE repository packages. Repology tracking is pending a verified project
 slug; see [`docs/REPOLOGY.md`](docs/REPOLOGY.md).
 
+An MSIX package is available through a certificate-gated manual release workflow
+once Windows package signing is configured. Until then, use the existing NSIS
+Windows installer above.
+
 
 > [!NOTE]
 > macOS builds are currently unsigned. On first launch, right-click Refract,

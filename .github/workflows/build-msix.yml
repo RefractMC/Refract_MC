@@ -1,0 +1,85 @@
+name: Build MSIX package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag (for example, v1.3.4)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    env:
+      HAS_MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE_BASE64 != '' }}
+    steps:
+      - name: Require MSIX signing certificate
+        if: env.HAS_MSIX_CERTIFICATE != 'true'
+        shell: pwsh
+        run: throw 'Configure MSIX_CERTIFICATE_BASE64, MSIX_CERTIFICATE_PASSWORD, and MSIX_PUBLISHER before running this workflow.'
+
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          if ('${{ inputs.tag }}' -notmatch '^v\d+\.\d+\.\d+$') {
+            throw 'MSIX workflow requires a stable vMAJOR.MINOR.PATCH release tag.'
+          }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri executable
+        working-directory: apps/tauri
+        run: pnpm exec tauri build --no-bundle
+
+      - name: Decode signing certificate
+        shell: pwsh
+        env:
+          MSIX_CERTIFICATE_BASE64: ${{ secrets.MSIX_CERTIFICATE_BASE64 }}
+        run: |
+          [IO.File]::WriteAllBytes(
+            "$env:RUNNER_TEMP\refract-msix.pfx",
+            [Convert]::FromBase64String($env:MSIX_CERTIFICATE_BASE64)
+          )
+
+      - name: Build and sign MSIX
+        shell: pwsh
+        env:
+          MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
+          MSIX_PUBLISHER: ${{ secrets.MSIX_PUBLISHER }}
+        run: |
+          $version = '${{ inputs.tag }}'.TrimStart('v') + '.0'
+          ./packaging/msix/build-msix.ps1 `
+            -Executable 'apps/tauri/src-tauri/target/release/refract-tauri.exe' `
+            -Version $version `
+            -Publisher $env:MSIX_PUBLISHER `
+            -CertificatePath "$env:RUNNER_TEMP\refract-msix.pfx" `
+            -CertificatePassword $env:MSIX_CERTIFICATE_PASSWORD `
+            -OutputPath "Refract-Windows-x64.msix"
+
+      - name: Upload MSIX to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload '${{ inputs.tag }}' Refract-Windows-x64.msix --clobber
