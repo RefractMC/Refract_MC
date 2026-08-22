@@ -19,7 +19,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@refract/core": "workspace:*",
     "@refract/plugin-api": "workspace:*",
-    "@tanstack/react-query": "^5.51.1",
+    "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.15",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
