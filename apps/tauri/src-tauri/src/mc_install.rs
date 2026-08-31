@@ -18,6 +18,19 @@ const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
 const QUILT_META: &str = "https://meta.quiltmc.org/v3";
 const INSTALL_CANCELLED: &str = "Install cancelled";
 
+#[derive(Clone, Copy, PartialEq)]
+enum InstallMode {
+    Install,
+    Repair,
+}
+
+fn asset_existing_policy(mode: InstallMode) -> downloader::Existing {
+    match mode {
+        InstallMode::Install => downloader::Existing::SkipIfExists,
+        InstallMode::Repair => downloader::Existing::ReuseIfValid,
+    }
+}
+
 #[derive(Default)]
 struct CancelState {
     active: HashSet<String>,
@@ -353,7 +366,7 @@ pub async fn mc_repair(app: AppHandle, instance_id: String) -> Result<Value, Str
         .and_then(Value::as_str)
         .map(String::from);
     let url = mojang_version_url(&mc).await?;
-    install_minecraft(app, instance_id, mc, url, loader, lv).await
+    install_minecraft_inner(app, instance_id, mc, url, loader, lv, InstallMode::Repair).await
 }
 
 /// Install (or repair) a Minecraft version + loader for an instance. Returns
@@ -367,6 +380,27 @@ pub async fn install_minecraft(
     version_url: String,
     mod_loader: Option<String>,
     mod_loader_version: Option<String>,
+) -> Result<Value, String> {
+    install_minecraft_inner(
+        app,
+        instance_id,
+        version_id,
+        version_url,
+        mod_loader,
+        mod_loader_version,
+        InstallMode::Install,
+    )
+    .await
+}
+
+async fn install_minecraft_inner(
+    app: AppHandle,
+    instance_id: String,
+    version_id: String,
+    version_url: String,
+    mod_loader: Option<String>,
+    mod_loader_version: Option<String>,
+    mode: InstallMode,
 ) -> Result<Value, String> {
     let iid = instance_id.as_str();
     let _guard = InstallGuard::new(iid)?;
@@ -492,9 +526,11 @@ pub async fn install_minecraft(
             .map_err(|e| e.to_string())
             .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))?;
 
-        // Assets are content-addressed (path = its own SHA-1), so an existing
-        // file is trusted without re-hashing; the engine verifies new downloads.
+        // Assets are content-addressed (path = its own SHA-1). Ordinary installs
+        // trust an existing object for speed, while repair hashes every object and
+        // re-downloads anything missing or corrupt.
         let obj_dir = paths::assets_dir().join("objects");
+        let existing_policy = asset_existing_policy(mode);
         let asset_tasks: Vec<downloader::Task> = index["objects"]
             .as_object()
             .map(|m| {
@@ -510,7 +546,7 @@ pub async fn install_minecraft(
                             )
                             .hash(Some(downloader::OwnedHash::Sha1(hash.to_string())))
                             .size(o["size"].as_u64())
-                            .existing(downloader::Existing::SkipIfExists),
+                            .existing(existing_policy),
                         )
                     })
                     .collect()
@@ -583,4 +619,16 @@ pub async fn install_minecraft(
 
     emit(&app, iid, "Done", 1, 1);
     Ok(timer.to_json())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{asset_existing_policy, InstallMode};
+    use crate::downloader::Existing;
+
+    #[test]
+    fn repair_revalidates_cached_assets() {
+        assert!(asset_existing_policy(InstallMode::Install) == Existing::SkipIfExists);
+        assert!(asset_existing_policy(InstallMode::Repair) == Existing::ReuseIfValid);
+    }
 }

@@ -118,6 +118,8 @@ Legacy `minecraftArguments` templates are tokenized before placeholder substitut
 
 Forge and NeoForge installation fail when required library downloads, embedded Maven copies, processor JARs, classpath entries, arguments, or declared outputs are invalid. Processor outputs with declared SHA-1 hashes must match before reuse and after execution, and loader metadata is written only after all installation stages succeed.
 
+Minecraft repair rebuilds the required artifact plan from current Mojang and loader metadata. It verifies cached libraries and every content-addressed asset against its declared hash, re-downloads missing or corrupt files, refreshes the client and native archives, reruns loader installation, and only restores `isInstalled` after the full pipeline succeeds. Ordinary installs may trust existing content-addressed assets for faster shared-cache reuse; the explicit repair path does not.
+
 Renderer-controlled content filenames are restricted to a single safe path component before mod toggle/delete operations; traversal and absolute paths are rejected.
 
 World delete/backup and screenshot open/read commands canonicalize direct children and reject symlinks and Windows reparse points. World backups also reject linked entries found during recursive traversal.

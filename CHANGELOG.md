@@ -5,6 +5,7 @@
 ### Fixes
 
 * Made individual content updates hash-verified and rollback-safe, and persist the updated file, version, and repair metadata only after replacement succeeds.
+* Made Minecraft repair re-hash cached assets and re-download missing or corrupt objects instead of trusting every existing asset file.
 
 ## 1.4.0
 
