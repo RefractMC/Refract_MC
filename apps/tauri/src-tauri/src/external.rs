@@ -522,38 +522,6 @@ fn input_from_external(ext: &ExternalInstance, imported: bool) -> Value {
     input
 }
 
-fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
-    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            let _ = copy_dir_contents(&from, &to);
-        } else {
-            let _ = fs::copy(&from, &to);
-        }
-    }
-    Ok(())
-}
-
-fn copy_game_dirs(src_game_dir: &Path, dest_game_dir: &Path) {
-    for dir in [
-        "mods",
-        "resourcepacks",
-        "shaderpacks",
-        "config",
-        "saves",
-        "datapacks",
-    ] {
-        let src = src_game_dir.join(dir);
-        if !src.exists() {
-            continue;
-        }
-        let _ = copy_dir_contents(&src, &dest_game_dir.join(dir));
-    }
-}
-
 #[tauri::command]
 pub fn link_external_instance(ext: ExternalInstance) -> Result<Value, String> {
     instances::create_instance(input_from_external(&ext, false))
@@ -567,7 +535,20 @@ pub fn import_external_instance(ext: ExternalInstance) -> Result<Value, String> 
         .and_then(Value::as_str)
         .ok_or("created instance has no id")?;
     let dest = instances::resolve_instance_dir(id).join("minecraft");
-    copy_game_dirs(Path::new(&ext.game_dir), &dest);
+    if let Err(error) = instances::copy_game_directories_checked(
+        Path::new(&ext.game_dir),
+        &dest,
+        &[
+            "mods",
+            "resourcepacks",
+            "shaderpacks",
+            "config",
+            "saves",
+            "datapacks",
+        ],
+    ) {
+        return Err(instances::rollback_created_instance(id, error));
+    }
     Ok(instance)
 }
 

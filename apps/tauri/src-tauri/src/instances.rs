@@ -419,19 +419,105 @@ pub fn open_instance_folder(id: String) -> Result<(), String> {
     Ok(())
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
+fn copy_source_is_link(path: &Path) -> Result<bool, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|e| format!("Could not inspect copy source {}: {e}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        return Ok(true);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn copy_dir_all_checked(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst)
+        .map_err(|e| format!("Could not create copy directory {}: {e}", dst.display()))?;
+    for entry in fs::read_dir(src)
+        .map_err(|e| format!("Could not read copy source {}: {e}", src.display()))?
+    {
+        let entry =
+            entry.map_err(|e| format!("Could not read an entry under {}: {e}", src.display()))?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            copy_dir_all(&from, &to)?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Could not inspect copy source {}: {e}", from.display()))?;
+        if copy_source_is_link(&from)? {
+            return Err(format!(
+                "Refusing to copy linked filesystem entry: {}",
+                from.display()
+            ));
+        }
+        if file_type.is_dir() {
+            copy_dir_all_checked(&from, &to)?;
+        } else if file_type.is_file() {
+            fs::copy(&from, &to).map_err(|e| {
+                format!("Could not copy {} to {}: {e}", from.display(), to.display())
+            })?;
         } else {
-            fs::copy(&from, &to)?;
+            return Err(format!(
+                "Refusing to copy unsupported filesystem entry: {}",
+                from.display()
+            ));
         }
     }
     Ok(())
+}
+
+pub(crate) fn copy_game_directories_checked(
+    src_game_dir: &Path,
+    dst_game_dir: &Path,
+    directories: &[&str],
+) -> Result<(), String> {
+    if !src_game_dir.is_dir() {
+        return Err(format!(
+            "Copy source game directory does not exist: {}",
+            src_game_dir.display()
+        ));
+    }
+    for directory in directories {
+        let source = src_game_dir.join(directory);
+        let metadata = match fs::symlink_metadata(&source) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Could not inspect copy source {}: {error}",
+                    source.display()
+                ))
+            }
+        };
+        if copy_source_is_link(&source)? {
+            return Err(format!(
+                "Refusing to copy linked filesystem entry: {}",
+                source.display()
+            ));
+        }
+        if !metadata.is_dir() {
+            return Err(format!(
+                "Expected copy source to be a directory: {}",
+                source.display()
+            ));
+        }
+        copy_dir_all_checked(&source, &dst_game_dir.join(directory))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn rollback_created_instance(id: &str, operation_error: String) -> String {
+    match delete_instance(id.to_string()) {
+        Ok(()) => operation_error,
+        Err(cleanup_error) => format!(
+            "{operation_error}; cleanup of the incomplete instance also failed: {cleanup_error}"
+        ),
+    }
 }
 
 /// Duplicate an instance: a fresh instance with the same settings, with the
@@ -439,7 +525,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
 #[tauri::command]
 pub fn duplicate_instance(id: String) -> Result<Value, String> {
     let src = get_instance_by_id(id.clone()).ok_or(format!("Instance not found: {id}"))?;
-    let src_dir = resolve_instance_dir(&id);
+    let src_game_dir = game_dir(&id);
 
     let mut input = json!({
         "name": format!("{} (copy)", src.get("name").and_then(Value::as_str).unwrap_or("Instance")),
@@ -467,30 +553,40 @@ pub fn duplicate_instance(id: String) -> Result<Value, String> {
         .ok_or("copy has no id")?
         .to_string();
     let dst_dir = resolve_instance_dir(&copy_id);
-
-    for d in [
-        "mods",
-        "resourcepacks",
-        "shaderpacks",
-        "datapacks",
-        "config",
-    ] {
-        let s = src_dir.join("minecraft").join(d);
-        if s.exists() {
-            let _ = copy_dir_all(&s, &dst_dir.join("minecraft").join(d));
-        }
+    if let Err(error) = copy_game_directories_checked(
+        &src_game_dir,
+        &dst_dir.join("minecraft"),
+        &[
+            "mods",
+            "resourcepacks",
+            "shaderpacks",
+            "datapacks",
+            "config",
+        ],
+    ) {
+        return Err(rollback_created_instance(&copy_id, error));
     }
+
+    let mut patch = json!({
+        "mods": src.get("mods").cloned().unwrap_or(json!([])),
+    });
     if src
         .get("isInstalled")
         .and_then(Value::as_bool)
         .unwrap_or(false)
     {
-        update_instance(
-            copy_id.clone(),
-            json!({ "isInstalled": true, "mods": src.get("mods").cloned().unwrap_or(json!([])) }),
-        )?;
+        patch["isInstalled"] = json!(true);
     }
-    get_instance_by_id(copy_id).ok_or_else(|| "duplicate failed".to_string())
+    if let Err(error) = update_instance(copy_id.clone(), patch) {
+        return Err(rollback_created_instance(&copy_id, error));
+    }
+    match get_instance_by_id(copy_id.clone()) {
+        Some(instance) => Ok(instance),
+        None => Err(rollback_created_instance(
+            &copy_id,
+            "The duplicated instance could not be read after copying".into(),
+        )),
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -680,5 +776,40 @@ pub fn delete_instance(id: String) -> Result<(), String> {
     match last_err {
         Some(e) => Err(e),
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::copy_game_directories_checked;
+    use std::fs;
+
+    #[test]
+    fn checked_game_copy_is_recursive_and_propagates_destination_errors() {
+        let root =
+            std::env::temp_dir().join(format!("refract-instance-copy-{}", uuid::Uuid::new_v4()));
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(source.join("mods").join("nested")).unwrap();
+        fs::write(
+            source.join("mods").join("nested").join("example.jar"),
+            b"mod",
+        )
+        .unwrap();
+
+        copy_game_directories_checked(&source, &destination, &["mods"]).unwrap();
+        assert_eq!(
+            fs::read(destination.join("mods").join("nested").join("example.jar")).unwrap(),
+            b"mod"
+        );
+
+        fs::create_dir_all(source.join("resourcepacks")).unwrap();
+        fs::write(source.join("resourcepacks").join("pack.zip"), b"pack").unwrap();
+        fs::write(destination.join("resourcepacks"), b"destination conflict").unwrap();
+        let error = copy_game_directories_checked(&source, &destination, &["resourcepacks"])
+            .expect_err("a destination file must not be treated as a directory");
+        assert!(error.contains("Could not create copy directory"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

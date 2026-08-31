@@ -114,6 +114,8 @@ The most important architectural rule is: UI components call the stable `api.*` 
 5. Output streams over `mc://log`; exit state streams over `mc://exit`. Playtime is added to lifetime and local-calendar-day totals.
 6. Optional Quick Play targets open a saved world or server directly. Optional offline launch skips token refresh.
 
+Instance duplication and external-launcher imports use checked recursive copies for their selected content directories. Linked filesystem entries are rejected, failures identify the affected path, and a newly created destination is removed instead of being left registered as a successful but incomplete copy.
+
 Legacy `minecraftArguments` templates are tokenized before placeholder substitution so quoted values and resolved paths containing spaces retain their intended argument boundaries. Malformed quoted templates stop launch with an explicit error.
 
 Forge and NeoForge installation fail when required library downloads, embedded Maven copies, processor JARs, classpath entries, arguments, or declared outputs are invalid. Processor outputs with declared SHA-1 hashes must match before reuse and after execution, and loader metadata is written only after all installation stages succeed.
