@@ -902,6 +902,7 @@
     "selectAll": "Select all",
     "clear": "✕ Clear",
     "updateAll": "Update All ({{n}})",
+    "updateFailed": "{{n}} update(s) failed: {{error}}",
     "updating": "Updating…",
     "pinging": "pinging…",
     "offline": "offline",

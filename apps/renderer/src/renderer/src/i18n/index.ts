@@ -203,6 +203,8 @@ function build(l: Locale) {
       ...l.instanceDetail,
       selected:  (n: number) => i(l.instanceDetail.selected, { n }),
       updateAll: (n: number) => i(l.instanceDetail.updateAll, { n }),
+      updateFailed: (n: number, error: string) =>
+        i(l.instanceDetail.updateFailed, { n, error }),
       players:   (online: number, max: number) => i(l.instanceDetail.players, { online, max }),
       verifyAllOk:    (n: number) => i(l.instanceDetail.verifyAllOk, { n }),
       verifyIssues:   (n: number) => i(l.instanceDetail.verifyIssues, { n }),

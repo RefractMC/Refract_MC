@@ -9,7 +9,7 @@ tags:
   - architecture
 status: living
 created: 2026-07-19
-updated: 2026-08-22
+updated: 2026-08-31
 project_version: 1.4.0
 repository: https://github.com/RefractMC/Refract_MC
 ---
@@ -127,6 +127,7 @@ World delete/backup and screenshot open/read commands canonicalize direct childr
 - Modrinth is CORS-open, so project search/detail requests can run in the renderer. Native code still owns downloads and filesystem writes.
 - CurseForge and FTB calls go through Rust because CurseForge needs an API key and both need native/CORS handling.
 - Mods, resource packs, shaders, and datapacks are installed per instance.
+- Individual Modrinth content updates download to verified staging files, retain the old file until the replacement and one consolidated metadata write succeed, and restore committed files if metadata persistence fails. Successful updates persist the new version, filename, size, URL, and hashes for later verify/repair operations.
 - Required dependencies are resolved recursively; optional dependencies can be selected by the user.
 - CurseForge files with API distribution disabled use the supported manual flow: Refract opens the official download page and watches the Downloads directory for the expected file/hash. It does not bypass author restrictions.
 - Modpacks support Modrinth `.mrpack`, CurseForge manifests, FTB packs, and local archive imports.
@@ -310,7 +311,7 @@ The shared `Instance` model includes:
 - Minecraft selection: `minecraftVersion`, optional `modLoader`, and `modLoaderVersion`.
 - Runtime: `javaPath`, `javaArgs`, `memoryMb`, resolution, fullscreen, pre-launch command, and post-exit command.
 - Organization: `iconPath`, `groupId`, and `pinned`.
-- State: `createdAt`, `lastPlayed`, `totalTimePlayed`, `playtimeLog`, `isInstalled`, and recorded `mods`.
+- State: `createdAt`, `lastPlayed`, `totalTimePlayed`, `playtimeLog`, `isInstalled`, and recorded content metadata in `mods`, including optional version names, hashes, repair URLs, and update timestamps.
 - Modpack provenance: source, project ID, and version ID, used for update detection.
 
 Managed folder names are human-readable, ASCII-safe, limited to 64 characters, and made unique. Cyrillic names are transliterated for disk paths while the original display name is preserved.

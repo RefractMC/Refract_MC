@@ -1079,7 +1079,8 @@ function createTauriApi(): RefractAPI {
         await tinvoke('install_content_file', { instanceId, url: file.url, fileName: file.filename, contentType, mod, sha512: file.hashes?.sha512, sha1: file.hashes?.sha1 })
       }) as RefractAPI['modrinth']['contentInstall'],
       checkModUpdates: ((instanceId: string, force?: boolean) => tinvoke('check_mod_updates', { instanceId, force })) as RefractAPI['modrinth']['checkModUpdates'],
-      applyModUpdates: ((instanceId: string, updates: Array<{ filename: string; downloadUrl: string; newFilename: string }>) => tinvoke('apply_mod_updates', { instanceId, updates })) as RefractAPI['modrinth']['applyModUpdates'],
+      applyModUpdates: ((instanceId, updates) =>
+        tinvoke('apply_mod_updates', { instanceId, updates })) as RefractAPI['modrinth']['applyModUpdates'],
       uninstall: ((instanceId: string, projectId: string) => tinvoke('uninstall_mod', { instanceId, projectId })) as RefractAPI['modrinth']['uninstall'],
     },
     mods: {

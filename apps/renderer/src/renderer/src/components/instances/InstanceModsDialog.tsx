@@ -22,7 +22,7 @@ type ScreenshotEntry = { filename: string; sizeKb: number; timestamp: number; da
 type ModUpdateEntry = {
   filename: string; projectId: string; latestVersionId: string
   latestVersionName: string; latestFilename: string; downloadUrl: string; hasUpdate: boolean
-  contentType: string
+  latestSha512: string; latestSha1?: string; contentType: string
 }
 
 type TabFilter = 'all' | ContentType | 'worlds' | 'screenshots' | 'updates' | 'servers'
@@ -530,14 +530,33 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 onClick={async () => {
                   if (!instance || updatingAll) return
                   setUpdatingAll(true)
+                  setError(null)
                   try {
-                    await api.modrinth.applyModUpdates(
+                    const results = await api.modrinth.applyModUpdates(
                       instance.id,
-                      updatesAvailable.map(u => ({ filename: u.filename, downloadUrl: u.downloadUrl, newFilename: u.latestFilename, contentType: u.contentType }))
+                      updatesAvailable.map(u => ({
+                        filename: u.filename,
+                        projectId: u.projectId,
+                        downloadUrl: u.downloadUrl,
+                        newFilename: u.latestFilename,
+                        latestVersionId: u.latestVersionId,
+                        latestVersionName: u.latestVersionName,
+                        sha512: u.latestSha512,
+                        sha1: u.latestSha1,
+                        contentType: u.contentType,
+                      })),
                     )
+                    const failed = results.filter(result => !result.success)
                     await loadUpdates(true)
-                    onUpdateApplied?.(instance.id)
-                  } catch { /* ignore */ } finally {
+                    if (results.some(result => result.success)) {
+                      onUpdateApplied?.(instance.id)
+                    }
+                    if (failed.length > 0) {
+                      throw new Error(td.updateFailed(failed.length, failed[0].error ?? 'Unknown error'))
+                    }
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e))
+                  } finally {
                     setUpdatingAll(false)
                   }
                 }}

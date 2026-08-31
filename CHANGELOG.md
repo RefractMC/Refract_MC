@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+* Made individual content updates hash-verified and rollback-safe, and persist the updated file, version, and repair metadata only after replacement succeeds.
+
 ## 1.4.0
 
 ### Added

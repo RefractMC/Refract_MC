@@ -556,6 +556,10 @@ pub struct ModUpdateEntry {
     latest_filename: String,
     #[serde(rename = "downloadUrl")]
     download_url: String,
+    #[serde(rename = "latestSha512")]
+    latest_sha512: String,
+    #[serde(rename = "latestSha1", skip_serializing_if = "Option::is_none")]
+    latest_sha1: Option<String>,
     #[serde(rename = "hasUpdate")]
     has_update: bool,
     /// "mod" | "resourcepack" | "shader" | "datapack" — which folder this file lives in, so the
@@ -567,10 +571,20 @@ pub struct ModUpdateEntry {
 #[derive(Deserialize)]
 pub struct ApplyModUpdate {
     filename: String,
+    #[serde(rename = "projectId")]
+    project_id: String,
     #[serde(rename = "downloadUrl")]
     download_url: String,
     #[serde(rename = "newFilename")]
     new_filename: String,
+    #[serde(rename = "latestVersionId")]
+    latest_version_id: String,
+    #[serde(rename = "latestVersionName")]
+    latest_version_name: String,
+    #[serde(rename = "sha512")]
+    sha512: String,
+    #[serde(rename = "sha1", default)]
+    sha1: Option<String>,
     #[serde(rename = "contentType", default)]
     content_type: Option<String>,
 }
@@ -840,6 +854,12 @@ pub async fn check_mod_updates(
                 .unwrap_or_default()
                 .to_string(),
             download_url: download_url.to_string(),
+            latest_sha512: latest_hash.to_string(),
+            latest_sha1: file
+                .get("hashes")
+                .and_then(|h| h.get("sha1"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
             has_update: !latest_hash.eq_ignore_ascii_case(input_hash),
             content_type: content_type.to_string(),
         });
@@ -854,6 +874,204 @@ pub async fn check_mod_updates(
     Ok(out)
 }
 
+struct StagedContentUpdate {
+    index: usize,
+    update: ApplyModUpdate,
+    content_type: String,
+    old_path: PathBuf,
+    new_path: PathBuf,
+    staged_path: PathBuf,
+    file_size: u64,
+}
+
+struct CommittedContentUpdate {
+    staged: StagedContentUpdate,
+    backup_path: PathBuf,
+}
+
+impl CommittedContentUpdate {
+    fn rollback(&self) -> Result<(), String> {
+        if self.staged.new_path.exists() {
+            fs::remove_file(&self.staged.new_path).map_err(|e| {
+                format!(
+                    "Could not remove the failed update {}: {e}",
+                    self.staged.new_path.display()
+                )
+            })?;
+        }
+        fs::rename(&self.backup_path, &self.staged.old_path).map_err(|e| {
+            format!(
+                "Could not restore {} from its update backup: {e}",
+                self.staged.old_path.display()
+            )
+        })
+    }
+
+    fn finish(self) {
+        let _ = fs::remove_file(self.backup_path);
+    }
+}
+
+async fn stage_content_update(
+    game_root: &Path,
+    index: usize,
+    update: ApplyModUpdate,
+) -> Result<StagedContentUpdate, String> {
+    let content_type = update.content_type.as_deref().unwrap_or("mod");
+    if !matches!(content_type, "mod" | "resourcepack" | "shader" | "datapack") {
+        return Err(format!("Unsupported content type: {content_type}"));
+    }
+    if update.sha512.trim().is_empty() {
+        return Err("Modrinth update is missing its required SHA-512 hash".into());
+    }
+
+    let content_type = content_type.to_string();
+    let dir = game_root.join(subdir_for(&content_type));
+    let new_name = safe_content_name(&update.new_filename)?;
+    let old_name = safe_content_name(&update.filename)?;
+    let old_path = dir.join(old_name);
+    let new_path = dir.join(new_name);
+    if !old_path.is_file() {
+        return Err(format!(
+            "Installed content file was not found: {}",
+            update.filename
+        ));
+    }
+    if new_path != old_path && new_path.exists() {
+        return Err(format!(
+            "The update target already exists and was not replaced: {}",
+            update.new_filename
+        ));
+    }
+
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let staged_path = dir.join(format!(".refract-update-{}.tmp", uuid::Uuid::new_v4()));
+    download_verified(
+        &update.download_url,
+        &staged_path,
+        net::MODRINTH_HOSTS,
+        Some(&update.sha512),
+        update.sha1.as_deref(),
+    )
+    .await?;
+    let file_size = fs::metadata(&staged_path)
+        .map_err(|e| format!("Could not read the verified update file: {e}"))?
+        .len();
+
+    Ok(StagedContentUpdate {
+        index,
+        update,
+        content_type,
+        old_path,
+        new_path,
+        staged_path,
+        file_size,
+    })
+}
+
+fn commit_content_update(staged: StagedContentUpdate) -> Result<CommittedContentUpdate, String> {
+    let backup_path = staged.old_path.with_file_name(format!(
+        ".refract-update-backup-{}.tmp",
+        uuid::Uuid::new_v4()
+    ));
+    if let Err(error) = fs::rename(&staged.old_path, &backup_path) {
+        let _ = fs::remove_file(&staged.staged_path);
+        return Err(format!(
+            "Could not back up the installed content before updating: {error}"
+        ));
+    }
+    if let Err(error) = fs::rename(&staged.staged_path, &staged.new_path) {
+        let restore = fs::rename(&backup_path, &staged.old_path);
+        let _ = fs::remove_file(&staged.staged_path);
+        return match restore {
+            Ok(()) => Err(format!("Could not commit the verified content update: {error}")),
+            Err(restore_error) => Err(format!(
+                "Could not commit the verified content update: {error}; the original file remains at {} because restoring it also failed: {restore_error}",
+                backup_path.display()
+            )),
+        };
+    }
+
+    Ok(CommittedContentUpdate {
+        staged,
+        backup_path,
+    })
+}
+
+fn update_content_record(
+    records: &mut Vec<Value>,
+    instance: &Value,
+    committed: &CommittedContentUpdate,
+) {
+    let update = &committed.staged.update;
+    let content_type = committed.staged.content_type.as_str();
+    let same_type = |record: &Value| {
+        record
+            .get("contentType")
+            .and_then(Value::as_str)
+            .unwrap_or("mod")
+            == content_type
+    };
+    let position = records
+        .iter()
+        .position(|record| {
+            same_type(record)
+                && record.get("fileName").and_then(Value::as_str) == Some(update.filename.as_str())
+        })
+        .or_else(|| {
+            records.iter().position(|record| {
+                same_type(record)
+                    && record.get("projectId").and_then(Value::as_str)
+                        == Some(update.project_id.as_str())
+            })
+        });
+
+    let mut record = position
+        .map(|index| records.remove(index))
+        .unwrap_or_else(|| json!({}));
+    let object = record
+        .as_object_mut()
+        .expect("new content record is an object");
+    object.insert("projectId".into(), json!(update.project_id));
+    object.insert("versionId".into(), json!(update.latest_version_id));
+    object.insert("versionName".into(), json!(update.latest_version_name));
+    object.insert("fileName".into(), json!(update.new_filename));
+    object.insert("fileSize".into(), json!(committed.staged.file_size));
+    object.insert("sha512".into(), json!(update.sha512));
+    object.insert("downloadUrl".into(), json!(update.download_url));
+    object.insert(
+        "updatedAt".into(),
+        json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+    );
+    if let Some(sha1) = update.sha1.as_deref().filter(|value| !value.is_empty()) {
+        object.insert("sha1".into(), json!(sha1));
+    } else {
+        object.remove("sha1");
+    }
+    if content_type != "mod" {
+        object.insert("contentType".into(), json!(content_type));
+    }
+    object
+        .entry("name")
+        .or_insert_with(|| json!(update.new_filename));
+    object.entry("loader").or_insert_with(|| {
+        instance
+            .get("modLoader")
+            .cloned()
+            .unwrap_or_else(|| json!("vanilla"))
+    });
+    object.entry("gameVersion").or_insert_with(|| {
+        instance
+            .get("minecraftVersion")
+            .cloned()
+            .unwrap_or_else(|| json!("unknown"))
+    });
+    object.entry("installedAt").or_insert_with(|| {
+        json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+    });
+    records.insert(0, record);
+}
+
 #[tauri::command]
 pub async fn apply_mod_updates(
     instance_id: String,
@@ -861,51 +1079,96 @@ pub async fn apply_mod_updates(
 ) -> Result<Vec<ApplyModUpdateResult>, String> {
     use futures_util::StreamExt;
     let game_root = game_dir(&instance_id);
-    let results: Vec<ApplyModUpdateResult> =
-        futures_util::stream::iter(updates.into_iter().map(|update| {
+    let instance =
+        instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
+    let staged_results: Vec<(usize, String, Result<StagedContentUpdate, String>)> =
+        futures_util::stream::iter(updates.into_iter().enumerate().map(|(index, update)| {
             let game_root = game_root.clone();
+            let filename = update.filename.clone();
             async move {
-                let result = async {
-                    let content_type = update.content_type.as_deref().unwrap_or("mod");
-                    if !matches!(content_type, "mod" | "resourcepack" | "shader" | "datapack") {
-                        return Err(format!("Unsupported content type: {content_type}"));
-                    }
-                    let dir = game_root.join(subdir_for(content_type));
-                    let new_name = safe_content_name(&update.new_filename)?;
-                    let old_name = safe_content_name(&update.filename)?;
-                    net::download_to(
-                        &update.download_url,
-                        &dir.join(&new_name),
-                        net::MODRINTH_HOSTS,
-                        None,
-                    )
-                    .await?;
-                    let old_path = dir.join(&old_name);
-                    let new_path = dir.join(&new_name);
-                    if old_path.exists() && old_path != new_path {
-                        fs::remove_file(old_path).map_err(|e| e.to_string())?;
-                    }
-                    Ok::<(), String>(())
-                }
-                .await;
-
-                match result {
-                    Ok(()) => ApplyModUpdateResult {
-                        filename: update.filename,
-                        success: true,
-                        error: None,
-                    },
-                    Err(error) => ApplyModUpdateResult {
-                        filename: update.filename,
-                        success: false,
-                        error: Some(error),
-                    },
-                }
+                let result = stage_content_update(&game_root, index, update).await;
+                (index, filename, result)
             }
         }))
         .buffer_unordered(downloader::MOD_CONCURRENCY)
         .collect()
         .await;
+
+    let mut results = Vec::new();
+    let mut committed = Vec::new();
+    for (index, filename, staged) in staged_results {
+        match staged.and_then(commit_content_update) {
+            Ok(update) => committed.push(update),
+            Err(error) => results.push((
+                index,
+                ApplyModUpdateResult {
+                    filename,
+                    success: false,
+                    error: Some(error),
+                },
+            )),
+        }
+    }
+
+    if !committed.is_empty() {
+        let original_records: Vec<Value> = instance
+            .get("mods")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut updated_records = original_records.clone();
+        for update in &committed {
+            update_content_record(&mut updated_records, &instance, update);
+        }
+
+        if let Err(metadata_error) =
+            instances::update_instance(instance_id.clone(), json!({ "mods": updated_records }))
+        {
+            for update in committed.into_iter().rev() {
+                let filename = update.staged.update.filename.clone();
+                let mut error = format!(
+                    "The verified file was not kept because instance metadata could not be updated: {metadata_error}"
+                );
+                if let Err(rollback_error) = update.rollback() {
+                    error.push_str(&format!("; rollback failed: {rollback_error}"));
+                }
+                results.push((
+                    update.staged.index,
+                    ApplyModUpdateResult {
+                        filename,
+                        success: false,
+                        error: Some(error),
+                    },
+                ));
+            }
+        } else {
+            if let Ok(mut cache) = UPDATE_CACHE.lock() {
+                cache.remove(&instance_id);
+            }
+            if let Ok(mut cache) = HASH_CACHE.lock() {
+                for update in &committed {
+                    cache.remove(&update.staged.old_path);
+                    cache.remove(&update.staged.new_path);
+                }
+            }
+            for update in committed {
+                let index = update.staged.index;
+                let filename = update.staged.update.filename.clone();
+                update.finish();
+                results.push((
+                    index,
+                    ApplyModUpdateResult {
+                        filename,
+                        success: true,
+                        error: None,
+                    },
+                ));
+            }
+        }
+    }
+
+    results.sort_by_key(|(index, _)| *index);
+    let results = results.into_iter().map(|(_, result)| result).collect();
     Ok(results)
 }
 
@@ -1450,7 +1713,12 @@ pub fn uninstall_mod(instance_id: String, project_id: String) -> Result<(), Stri
 
 #[cfg(test)]
 mod tests {
-    use super::safe_content_name;
+    use super::{
+        commit_content_update, safe_content_name, update_content_record, ApplyModUpdate,
+        StagedContentUpdate,
+    };
+    use serde_json::json;
+    use std::fs;
 
     #[test]
     fn content_names_are_single_path_components() {
@@ -1459,5 +1727,95 @@ mod tests {
         assert!(safe_content_name("nested/example.jar").is_err());
         assert!(safe_content_name(r"nested\example.jar").is_err());
         assert!(safe_content_name("C:\\outside.jar").is_err());
+    }
+
+    #[test]
+    fn committed_content_update_can_restore_the_original_file() {
+        let root =
+            std::env::temp_dir().join(format!("refract-content-update-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let old_path = root.join("old.jar");
+        let new_path = root.join("new.jar");
+        let staged_path = root.join("staged.tmp");
+        fs::write(&old_path, b"working old version").unwrap();
+        fs::write(&staged_path, b"verified new version").unwrap();
+
+        let committed = commit_content_update(StagedContentUpdate {
+            index: 0,
+            update: test_update(),
+            content_type: "mod".into(),
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            staged_path,
+            file_size: 20,
+        })
+        .unwrap();
+        assert_eq!(fs::read(&new_path).unwrap(), b"verified new version");
+        assert!(!old_path.exists());
+
+        committed.rollback().unwrap();
+        assert_eq!(fs::read(&old_path).unwrap(), b"working old version");
+        assert!(!new_path.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn content_update_persists_version_filename_and_hash_metadata() {
+        let update = test_update();
+        let committed = super::CommittedContentUpdate {
+            staged: StagedContentUpdate {
+                index: 0,
+                update,
+                content_type: "mod".into(),
+                old_path: "old.jar".into(),
+                new_path: "new.jar".into(),
+                staged_path: "staged.tmp".into(),
+                file_size: 20,
+            },
+            backup_path: "backup.tmp".into(),
+        };
+        let instance = json!({
+            "minecraftVersion": "1.21.8",
+            "modLoader": "fabric",
+        });
+        let mut records = vec![json!({
+            "projectId": "project",
+            "versionId": "old-version",
+            "name": "Example",
+            "fileName": "old.jar",
+            "fileSize": 10,
+            "loader": "fabric",
+            "gameVersion": "1.21.8",
+            "installedAt": "2026-01-01T00:00:00Z",
+        })];
+
+        update_content_record(&mut records, &instance, &committed);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["versionId"], "new-version");
+        assert_eq!(records[0]["versionName"], "2.0.0");
+        assert_eq!(records[0]["fileName"], "new.jar");
+        assert_eq!(records[0]["fileSize"], 20);
+        assert_eq!(records[0]["sha512"], "expected-sha512");
+        assert_eq!(records[0]["sha1"], "expected-sha1");
+        assert_eq!(
+            records[0]["downloadUrl"],
+            "https://cdn.modrinth.com/new.jar"
+        );
+        assert_eq!(records[0]["name"], "Example");
+    }
+
+    fn test_update() -> ApplyModUpdate {
+        ApplyModUpdate {
+            filename: "old.jar".into(),
+            project_id: "project".into(),
+            download_url: "https://cdn.modrinth.com/new.jar".into(),
+            new_filename: "new.jar".into(),
+            latest_version_id: "new-version".into(),
+            latest_version_name: "2.0.0".into(),
+            sha512: "expected-sha512".into(),
+            sha1: Some("expected-sha1".into()),
+            content_type: Some("mod".into()),
+        }
     }
 }

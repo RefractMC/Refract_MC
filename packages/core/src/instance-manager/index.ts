@@ -3,13 +3,18 @@ export type ModLoader = 'fabric' | 'forge' | 'quilt' | 'neoforge'
 export interface InstalledMod {
   projectId: string
   versionId: string
+  versionName?: string
   name: string
   fileName: string
   fileSize: number
   loader: string
   gameVersion: string
   installedAt: string
+  updatedAt?: string
   contentType?: 'mod' | 'resourcepack' | 'shader' | 'datapack'
+  sha512?: string
+  sha1?: string
+  downloadUrl?: string
 }
 
 export interface Instance {
