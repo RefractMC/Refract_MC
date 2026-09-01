@@ -175,7 +175,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 
 - Tauri mode maps typed `api.*` methods to native `invoke` commands, dialogs, window APIs, updater APIs, and event listeners.
 - Browser-preview mode uses browser APIs and localStorage for a limited preview experience. It is useful for UI work but is not proof that native install, launch, auth, filesystem, or updater behavior works.
-- `tinvoke` normalizes Rust string errors into JavaScript `Error` objects so the UI can display them consistently.
+- `tinvoke` normalizes both legacy Rust string errors and structured IPC errors into JavaScript `Error` objects so the UI can display them consistently. Structured payloads become `RefractError` instances with a stable code, retryability, and safe context; Minecraft install and repair are the first migrated commands.
 
 ### Internationalization
 
@@ -206,6 +206,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 | `creator.rs` | Secure Modrinth account connection and project/version publishing for generated `.mrpack` archives. |
 | `discord.rs` | Discord Rich Presence lifecycle for running games. |
 | `downloader.rs` | Shared verified parallel download engine and install statistics. |
+| `error.rs` | Serializable structured IPC error payloads and domain classification. |
 | `external.rs` | Prism, MultiMC, Modrinth App, ATLauncher, CurseForge, and GDLauncher discovery/link/import. |
 | `forge.rs` | Forge/NeoForge version resolution, installer extraction, libraries, and processors. |
 | `friends.rs` | Friend records and Mojang profile lookup. |

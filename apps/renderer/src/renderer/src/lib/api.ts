@@ -51,6 +51,27 @@ export interface CreatorPublishResult {
   reviewSubmissionError?: string
 }
 
+export interface IpcErrorPayload {
+  code: string
+  message: string
+  retryable: boolean
+  context: Record<string, unknown>
+}
+
+export class RefractError extends Error {
+  readonly code: string
+  readonly retryable: boolean
+  readonly context: Record<string, unknown>
+
+  constructor(payload: IpcErrorPayload) {
+    super(payload.message)
+    this.name = 'RefractError'
+    this.code = payload.code
+    this.retryable = payload.retryable
+    this.context = payload.context
+  }
+}
+
 const CONFIG_KEY = 'refract.dev.config'
 const INSTANCES_KEY = 'refract.dev.instances'
 const LINKED_SERVERS_KEY = 'refract.dev.linked-servers'
@@ -541,12 +562,42 @@ if (!isTauri) {
   logger.warn('browserApi', 'Tauri API is unavailable; using browser preview storage.')
 }
 
-// Tauri rejects invoke() with a plain string (the Rust Err). The UI checks
-// `e instanceof Error`, so a bare string surfaces as "Unknown error" and hides
-// the real message — wrap every call so failures reject with a real Error.
+function structuredIpcError(value: unknown): IpcErrorPayload | null {
+  let candidate = value
+  if (typeof value === 'string' && value.startsWith('{')) {
+    try {
+      candidate = JSON.parse(value)
+    } catch {
+      return null
+    }
+  }
+  if (!candidate || typeof candidate !== 'object') return null
+  const record = candidate as Record<string, unknown>
+  if (
+    typeof record.code !== 'string'
+    || typeof record.message !== 'string'
+    || typeof record.retryable !== 'boolean'
+  ) {
+    return null
+  }
+  return {
+    code: record.code,
+    message: record.message,
+    retryable: record.retryable,
+    context: record.context && typeof record.context === 'object'
+      ? record.context as Record<string, unknown>
+      : {},
+  }
+}
+
+// Commands are migrating from plain string failures to structured payloads.
+// Normalize both forms to Error instances so existing UI remains compatible,
+// while callers that need codes/retryability can inspect RefractError.
 function tinvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
   return invoke(cmd, args).catch((e: unknown) => {
     if (e instanceof Error) throw e
+    const structured = structuredIpcError(e)
+    if (structured) throw new RefractError(structured)
     throw new Error(typeof e === 'string' ? e : e == null ? 'Unknown error' : JSON.stringify(e))
   })
 }

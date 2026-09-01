@@ -7,6 +7,7 @@ mod content;
 mod creator;
 mod discord;
 mod downloader;
+mod error;
 mod external;
 mod forge;
 mod friends;

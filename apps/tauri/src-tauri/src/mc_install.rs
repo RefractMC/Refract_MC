@@ -4,7 +4,7 @@
 //! separate step. Progress streams to the renderer over `mc://progress`,
 //! matching the renderer `mc:progress` payload shape.
 
-use crate::{downloader, instances, net, paths};
+use crate::{downloader, error::IpcError, instances, net, paths};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -348,7 +348,14 @@ async fn mojang_version_url(mc: &str) -> Result<String, String> {
 /// install pipeline, which re-downloads missing/corrupt files and re-persists
 /// isInstalled + the resolved loader version.
 #[tauri::command]
-pub async fn mc_repair(app: AppHandle, instance_id: String) -> Result<Value, String> {
+pub async fn mc_repair(app: AppHandle, instance_id: String) -> Result<Value, IpcError> {
+    let context_id = instance_id.clone();
+    repair_minecraft_inner(app, instance_id)
+        .await
+        .map_err(|error| IpcError::minecraft("repair", &context_id, error))
+}
+
+async fn repair_minecraft_inner(app: AppHandle, instance_id: String) -> Result<Value, String> {
     let inst = instances::get_instance_by_id(instance_id.clone())
         .ok_or(format!("Instance not found: {instance_id}"))?;
     let mc = inst
@@ -374,6 +381,27 @@ pub async fn mc_repair(app: AppHandle, instance_id: String) -> Result<Value, Str
 /// report real download speed.
 #[tauri::command]
 pub async fn install_minecraft(
+    app: AppHandle,
+    instance_id: String,
+    version_id: String,
+    version_url: String,
+    mod_loader: Option<String>,
+    mod_loader_version: Option<String>,
+) -> Result<Value, IpcError> {
+    let context_id = instance_id.clone();
+    install_minecraft_internal(
+        app,
+        instance_id,
+        version_id,
+        version_url,
+        mod_loader,
+        mod_loader_version,
+    )
+    .await
+    .map_err(|error| IpcError::minecraft("install", &context_id, error))
+}
+
+pub(crate) async fn install_minecraft_internal(
     app: AppHandle,
     instance_id: String,
     version_id: String,

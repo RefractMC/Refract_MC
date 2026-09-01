@@ -861,9 +861,15 @@ async fn install_modrinth_inner(
 
     progress(app, project_id, "Installing Minecraft…", 50.0);
     let url = mojang_url(&mc).await?;
-    let stats =
-        mc_install::install_minecraft(app.clone(), id.to_string(), mc, url, loader, loader_version)
-            .await?;
+    let stats = mc_install::install_minecraft_internal(
+        app.clone(),
+        id.to_string(),
+        mc,
+        url,
+        loader,
+        loader_version,
+    )
+    .await?;
     absorb_mc_stats(timer, &stats);
     Ok(())
 }
@@ -1055,9 +1061,15 @@ async fn install_curseforge_inner(
 
     progress(app, project_id, "Installing Minecraft…", 50.0);
     let url = mojang_url(&mc).await?;
-    let stats =
-        mc_install::install_minecraft(app.clone(), id.clone(), mc, url, loader, loader_version)
-            .await?;
+    let stats = mc_install::install_minecraft_internal(
+        app.clone(),
+        id.clone(),
+        mc,
+        url,
+        loader,
+        loader_version,
+    )
+    .await?;
     absorb_mc_stats(timer, &stats);
 
     finalize(
@@ -1219,9 +1231,15 @@ async fn install_ftb(
 
     progress(app, &project_id, "Installing Minecraft…", 50.0);
     let url = mojang_url(&mc).await?;
-    let stats =
-        mc_install::install_minecraft(app.clone(), id.clone(), mc, url, loader, loader_version)
-            .await?;
+    let stats = mc_install::install_minecraft_internal(
+        app.clone(),
+        id.clone(),
+        mc,
+        url,
+        loader,
+        loader_version,
+    )
+    .await?;
     absorb_mc_stats(&timer, &stats);
 
     if let Some(mut guard) = update_guard {
@@ -1489,7 +1507,7 @@ async fn install_from_file_inner(
         copy_dir_checked(&root.join("client-overrides"), &staged_game_dir)?;
         progress(app, project_id, "Installing Minecraft…", 38.0);
         let url = mojang_url(&mc).await?;
-        let stats = mc_install::install_minecraft(
+        let stats = mc_install::install_minecraft_internal(
             app.clone(),
             stage_id.to_string(),
             mc.clone(),
@@ -1535,7 +1553,7 @@ async fn install_from_file_inner(
         copy_dir_checked(&root.join(overrides), &staged_game_dir)?;
         progress(app, project_id, "Installing Minecraft…", 42.0);
         let url = mojang_url(&mc).await?;
-        let stats = mc_install::install_minecraft(
+        let stats = mc_install::install_minecraft_internal(
             app.clone(),
             stage_id.to_string(),
             mc.clone(),
@@ -1619,7 +1637,7 @@ async fn install_from_file_inner(
     copy_dir_checked(&payload, &staged_game_dir)?;
     progress(app, project_id, "Installing Minecraft…", 52.0);
     let url = mojang_url(&mc).await?;
-    let stats = mc_install::install_minecraft(
+    let stats = mc_install::install_minecraft_internal(
         app.clone(),
         stage_id.to_string(),
         mc.clone(),
