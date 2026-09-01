@@ -24,6 +24,7 @@ mod net;
 mod news;
 mod paths;
 mod procutil;
+mod rules;
 mod secrets;
 mod servers;
 mod shortcuts;

@@ -8,6 +8,7 @@
 * Made Minecraft repair re-hash cached assets and re-download missing or corrupt objects instead of trusting every existing asset file.
 * Made instance duplication and external-launcher imports fail visibly and remove incomplete destinations when any selected file cannot be copied.
 * Added structured error codes, retryability, and safe operation context for Minecraft install and repair failures while preserving existing user-facing messages.
+* Fixed Minecraft metadata rules to honor operating-system architecture, version, and active launcher features, including architecture-correct native classifiers.
 
 ## 1.4.0
 

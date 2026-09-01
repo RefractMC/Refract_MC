@@ -114,6 +114,8 @@ The most important architectural rule is: UI components call the stable `api.*` 
 5. Output streams over `mc://log`; exit state streams over `mc://exit`. Playtime is added to lifetime and local-calendar-day totals.
 6. Optional Quick Play targets open a saved world or server directly. Optional offline launch skips token refresh.
 
+Minecraft installation and launch share one Mojang metadata rule evaluator. It applies operating-system name, architecture and version regexes, last-match allow/deny ordering, and the active resolution and Quick Play feature flags. Native `${arch}` classifiers use the current target bitness, while explicit ARM64 classifiers remain unchanged.
+
 Instance duplication and external-launcher imports use checked recursive copies for their selected content directories. Linked filesystem entries are rejected, failures identify the affected path, and a newly created destination is removed instead of being left registered as a successful but incomplete copy.
 
 Legacy `minecraftArguments` templates are tokenized before placeholder substitution so quoted values and resolved paths containing spaces retain their intended argument boundaries. Malformed quoted templates stop launch with an explicit error.
@@ -223,6 +225,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 | `news.rs` | Official Minecraft news API/scrape fallback, sanitization, and URL validation. |
 | `paths.rs` | Stable data directory and shared assets/libraries/versions paths. |
 | `procutil.rs` | Platform process helpers such as hiding Windows console windows. |
+| `rules.rs` | Shared Mojang operating-system, architecture, version, feature-rule, and native-classifier evaluation. |
 | `secrets.rs` | Stronghold vault protected by a random master key stored in the OS keyring. |
 | `servers.rs` | `servers.dat` NBT parsing, linked-server persistence/validation, and Minecraft server-list ping. |
 | `shortcuts.rs` | Desktop Quick Play shortcuts and command-line parsing. |

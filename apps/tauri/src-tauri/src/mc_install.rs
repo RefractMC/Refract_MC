@@ -4,7 +4,7 @@
 //! separate step. Progress streams to the renderer over `mc://progress`,
 //! matching the renderer `mc:progress` payload shape.
 
-use crate::{downloader, error::IpcError, instances, net, paths};
+use crate::{downloader, error::IpcError, instances, net, paths, rules};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -92,13 +92,6 @@ pub fn cancel_install(instance_id: Option<String>) {
     }
 }
 
-#[cfg(target_os = "windows")]
-const OS_NAME: &str = "windows";
-#[cfg(target_os = "macos")]
-const OS_NAME: &str = "osx";
-#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-const OS_NAME: &str = "linux";
-
 #[derive(Clone, Serialize)]
 struct Progress {
     #[serde(rename = "instanceId")]
@@ -161,32 +154,6 @@ async fn get_json(url: &str) -> Result<Value, String> {
         return Err(format!("HTTP {} for {url}", res.status()));
     }
     res.json().await.map_err(|e| e.to_string())
-}
-
-/// Standard Mojang rule evaluation: no rules → allowed; else the last matching
-/// rule's action wins (default disallow).
-fn library_allowed(lib: &Value) -> bool {
-    match lib.get("rules").and_then(Value::as_array) {
-        None => true,
-        Some(rules) => {
-            let mut allowed = false;
-            for rule in rules {
-                let action_allow = rule.get("action").and_then(Value::as_str) == Some("allow");
-                let os_match = match rule
-                    .get("os")
-                    .and_then(|o| o.get("name"))
-                    .and_then(Value::as_str)
-                {
-                    None => true,
-                    Some(name) => name == OS_NAME,
-                };
-                if os_match {
-                    allowed = action_allow;
-                }
-            }
-            allowed
-        }
-    }
 }
 
 fn extract_natives(jar: &Path, dest: &Path) -> Result<(), String> {
@@ -284,7 +251,7 @@ async fn install_loader(
     let libs_dir = paths::libraries_dir();
     let tasks: Vec<downloader::Task> = libs
         .iter()
-        .filter(|l| library_allowed(l))
+        .filter(|l| rules::library_allowed(l))
         .filter_map(|lib| {
             if let (Some(path), Some(url)) = (
                 lib["downloads"]["artifact"]["path"].as_str(),
@@ -475,7 +442,7 @@ async fn install_minecraft_inner(
     // 3. Libraries (OS-filtered), through the parallel engine; existing jars
     // with a matching hash are reused. Per-lib failures stay non-fatal.
     let libs: Vec<Value> = vjson["libraries"].as_array().cloned().unwrap_or_default();
-    let allowed: Vec<&Value> = libs.iter().filter(|l| library_allowed(l)).collect();
+    let allowed: Vec<&Value> = libs.iter().filter(|l| rules::library_allowed(l)).collect();
     let libs_dir = paths::libraries_dir();
     let lib_tasks: Vec<downloader::Task> = allowed
         .iter()
@@ -515,19 +482,29 @@ async fn install_minecraft_inner(
         .join("natives");
     fs::create_dir_all(&natives_dir).map_err(|e| e.to_string())?;
     for lib in &allowed {
-        if let Some(classifier) = lib
-            .get("natives")
-            .and_then(|n| n.get(OS_NAME))
-            .and_then(Value::as_str)
-        {
-            let classifier = classifier.replace("${arch}", "64");
-            let art = &lib["downloads"]["classifiers"][&classifier];
-            if let (Some(path), Some(url)) = (art["path"].as_str(), art["url"].as_str()) {
-                let jar = libs_dir.join(path);
-                let bytes = download_to(iid, url, &jar, art["sha1"].as_str()).await?;
-                timer.add(bytes, 1);
-                extract_natives(&jar, &natives_dir)?;
-            }
+        if let Some(classifier) = rules::native_classifier(lib) {
+            let library_name = lib["name"].as_str().unwrap_or("unnamed library");
+            let art = lib["downloads"]["classifiers"]
+                .get(&classifier)
+                .ok_or_else(|| {
+                    format!("Minecraft metadata has no {classifier} native for {library_name}.")
+                })?;
+            let path = art["path"]
+                .as_str()
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| {
+                    format!("Minecraft native {classifier} for {library_name} has no path.")
+                })?;
+            let url = art["url"]
+                .as_str()
+                .filter(|url| !url.is_empty())
+                .ok_or_else(|| {
+                    format!("Minecraft native {classifier} for {library_name} has no download URL.")
+                })?;
+            let jar = libs_dir.join(path);
+            let bytes = download_to(iid, url, &jar, art["sha1"].as_str()).await?;
+            timer.add(bytes, 1);
+            extract_natives(&jar, &natives_dir)?;
         }
     }
     emit(&app, iid, "Extracting natives", 1, 1);

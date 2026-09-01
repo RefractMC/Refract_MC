@@ -7,7 +7,7 @@
 //! (Fabric/Forge/Quilt — #25.2) and the real Microsoft token chain (#25.4)
 //! extend this; both are gated with a clear error until ported.
 
-use crate::{auth, config, instances, paths};
+use crate::{auth, config, instances, paths, rules};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -17,13 +17,6 @@ use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use tauri::{AppHandle, Emitter};
-
-#[cfg(target_os = "windows")]
-const OS_NAME: &str = "windows";
-#[cfg(target_os = "macos")]
-const OS_NAME: &str = "osx";
-#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-const OS_NAME: &str = "linux";
 
 #[cfg(target_os = "windows")]
 const CP_SEP: &str = ";";
@@ -63,34 +56,6 @@ fn validate_java_executable(path: &str) -> Result<(), String> {
 
 // ── arg/classpath builders (port of core/launcher) ───────────────────────────
 
-/// Standard rule eval: empty → allowed; else the last matching rule's action
-/// wins. A rule matches when its `os.name` matches (or is absent) AND every
-/// required feature equals our value — and all our launcher features are false.
-fn rule_applies(rules: &[Value]) -> bool {
-    if rules.is_empty() {
-        return true;
-    }
-    let mut result = false;
-    for r in rules {
-        let os_match = match r
-            .get("os")
-            .and_then(|o| o.get("name"))
-            .and_then(Value::as_str)
-        {
-            None => true,
-            Some(n) => n == OS_NAME,
-        };
-        let features_match = match r.get("features").and_then(Value::as_object) {
-            None => true,
-            Some(f) => f.values().all(|v| v.as_bool() == Some(false)),
-        };
-        if os_match && features_match {
-            result = r.get("action").and_then(Value::as_str) == Some("allow");
-        }
-    }
-    result
-}
-
 /// `${var}` substitution; an unknown key is left verbatim (mirrors the TS regex).
 fn substitute(s: &str, vars: &HashMap<String, String>) -> String {
     let mut out = String::new();
@@ -119,7 +84,11 @@ fn substitute(s: &str, vars: &HashMap<String, String>) -> String {
     out
 }
 
-fn resolve_args(args: Option<&Value>, vars: &HashMap<String, String>) -> Vec<String> {
+fn resolve_args(
+    args: Option<&Value>,
+    vars: &HashMap<String, String>,
+    features: &HashMap<String, bool>,
+) -> Vec<String> {
     let arr = match args.and_then(Value::as_array) {
         Some(a) => a,
         None => return vec![],
@@ -134,7 +103,7 @@ fn resolve_args(args: Option<&Value>, vars: &HashMap<String, String>) -> Vec<Str
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            if rule_applies(&rules) {
+            if rules::allows(&rules, features) {
                 match obj.get("value") {
                     Some(Value::String(s)) => out.push(substitute(s, vars)),
                     Some(Value::Array(vals)) => {
@@ -205,10 +174,8 @@ fn build_classpath(
         all.extend(ov["libraries"].as_array().cloned().unwrap_or_default());
     }
     for lib in all {
-        if let Some(rules) = lib.get("rules").and_then(Value::as_array) {
-            if !rule_applies(rules) {
-                continue;
-            }
+        if !rules::library_allowed(&lib) {
+            continue;
         }
         let name = lib.get("name").and_then(Value::as_str).unwrap_or("");
         let jar_path: Option<PathBuf> = if name.is_empty() {
@@ -394,6 +361,23 @@ fn build_command(
         .to_string();
     let classpath = build_classpath(version_json, overlay, libs_dir, client_jar);
 
+    let features = HashMap::from([
+        ("is_demo_user".to_string(), false),
+        ("has_custom_resolution".to_string(), resolution.is_some()),
+        // Refract launches direct targets but does not consume Mojang's
+        // quickPlayPath log, so that separate capability remains disabled.
+        ("has_quick_plays_support".to_string(), false),
+        (
+            "is_quick_play_singleplayer".to_string(),
+            matches!(quick_play, Some(QuickPlay::World { .. })),
+        ),
+        (
+            "is_quick_play_multiplayer".to_string(),
+            matches!(quick_play, Some(QuickPlay::Server { .. })),
+        ),
+        ("is_quick_play_realms".to_string(), false),
+    ]);
+
     let mut vars: HashMap<String, String> = HashMap::new();
     let mut put = |k: &str, v: String| {
         vars.insert(k.to_string(), v);
@@ -427,6 +411,21 @@ fn build_command(
     put("resolution_width", res_w.to_string());
     put("resolution_height", res_h.to_string());
     put("clientid", auth.client_id.clone());
+    put(
+        "quickPlaySingleplayer",
+        match quick_play {
+            Some(QuickPlay::World { name }) => name.clone(),
+            _ => String::new(),
+        },
+    );
+    put(
+        "quickPlayMultiplayer",
+        match quick_play {
+            Some(QuickPlay::Server { address }) => address.clone(),
+            _ => String::new(),
+        },
+    );
+    put("quickPlayRealms", String::new());
 
     let mut jvm_base = vec![
         format!("-Xmx{memory_mb}m"),
@@ -453,11 +452,11 @@ fn build_command(
     let overlay_args = overlay.filter(|o| o.get("arguments").is_some());
     let (jvm_args, game_args): (Vec<String>, Vec<String>) =
         if version_json.get("arguments").is_some() {
-            let mut jvm = resolve_args(version_json["arguments"].get("jvm"), &vars);
-            let mut game = resolve_args(version_json["arguments"].get("game"), &vars);
+            let mut jvm = resolve_args(version_json["arguments"].get("jvm"), &vars, &features);
+            let mut game = resolve_args(version_json["arguments"].get("game"), &vars, &features);
             if let Some(ov) = overlay_args {
-                jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
-                game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+                jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars, &features));
+                game.extend(resolve_args(ov["arguments"].get("game"), &vars, &features));
             }
             (jvm, game)
         } else if let Some(mc_args) = version_json
@@ -470,9 +469,9 @@ fn build_command(
                 .and_then(Value::as_str);
             let mut game = resolve_legacy_args(overlay_legacy_args.unwrap_or(mc_args), &vars)?;
             if let Some(ov) = overlay_args {
-                jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars));
+                jvm.extend(resolve_args(ov["arguments"].get("jvm"), &vars, &features));
                 if overlay_legacy_args.is_none() {
-                    game.extend(resolve_args(ov["arguments"].get("game"), &vars));
+                    game.extend(resolve_args(ov["arguments"].get("game"), &vars, &features));
                 }
             }
             (jvm, game)
@@ -480,20 +479,13 @@ fn build_command(
             (vec!["-cp".into(), classpath.clone()], vec![])
         };
 
-    // Quick Play: modern versions (1.20+) take --quickPlayMultiplayer /
-    // --quickPlaySingleplayer; older ones only support joining a server via
-    // --server/--port. Support is detected from the version JSON's game args.
+    // Modern Quick Play arguments are selected above by Mojang feature rules.
+    // Older versions can still join a server through --server/--port.
     let mut game_args = game_args;
     if let Some(qp) = quick_play {
-        let supports_quick_play = version_json["arguments"]["game"]
-            .to_string()
-            .contains("quickPlayMultiplayer");
         match qp {
             QuickPlay::Server { address } => {
-                if supports_quick_play {
-                    game_args.push("--quickPlayMultiplayer".into());
-                    game_args.push(address.clone());
-                } else {
+                if !game_args.iter().any(|arg| arg == "--quickPlayMultiplayer") {
                     let (host, port) = match address.rsplit_once(':') {
                         Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => {
                             (h.to_string(), p.to_string())
@@ -506,14 +498,7 @@ fn build_command(
                     game_args.push(port);
                 }
             }
-            QuickPlay::World { name } => {
-                // Pre-1.20 has no way to join a world from the command line;
-                // launch normally in that case (checked before spawn).
-                if supports_quick_play {
-                    game_args.push("--quickPlaySingleplayer".into());
-                    game_args.push(name.clone());
-                }
-            }
+            QuickPlay::World { .. } => {}
         }
     }
     if fullscreen {
@@ -1128,5 +1113,76 @@ mod tests {
 
         let malformed = format!("--label {quote}unterminated");
         assert!(tokenize_legacy_template(&malformed).is_err());
+    }
+
+    #[test]
+    fn modern_feature_rules_resolve_resolution_and_quick_play_once() {
+        let base = json!({
+            "assetIndex": { "id": "modern" },
+            "libraries": [],
+            "mainClass": "net.minecraft.client.main.Main",
+            "arguments": {
+                "jvm": ["-cp", "${classpath}"],
+                "game": [
+                    {
+                        "rules": [{
+                            "action": "allow",
+                            "features": { "has_custom_resolution": true }
+                        }],
+                        "value": ["--width", "${resolution_width}", "--height", "${resolution_height}"]
+                    },
+                    {
+                        "rules": [{
+                            "action": "allow",
+                            "features": { "has_quick_plays_support": true }
+                        }],
+                        "value": ["--quickPlayPath", "${quickPlayPath}"]
+                    },
+                    {
+                        "rules": [{
+                            "action": "allow",
+                            "features": { "is_quick_play_multiplayer": true }
+                        }],
+                        "value": ["--quickPlayMultiplayer", "${quickPlayMultiplayer}"]
+                    }
+                ]
+            }
+        });
+        let quick_play = QuickPlay::Server {
+            address: "play.example.com:25570".into(),
+        };
+        let cmd = build_command(
+            "1.21.1",
+            &base,
+            None,
+            Path::new("libraries"),
+            Path::new("assets"),
+            Path::new("natives"),
+            Path::new("game"),
+            Path::new("versions/1.21.1/1.21.1.jar"),
+            "java",
+            2048,
+            None,
+            &auth(),
+            Some((1600, 900)),
+            false,
+            Some(&quick_play),
+        )
+        .unwrap();
+
+        assert_eq!(
+            cmd.iter()
+                .filter(|arg| *arg == "--quickPlayMultiplayer")
+                .count(),
+            1
+        );
+        let quick_play_arg = cmd
+            .iter()
+            .position(|arg| arg == "--quickPlayMultiplayer")
+            .unwrap();
+        assert_eq!(cmd[quick_play_arg + 1], "play.example.com:25570");
+        assert!(cmd.iter().any(|arg| arg == "1600"));
+        assert!(cmd.iter().any(|arg| arg == "900"));
+        assert!(!cmd.iter().any(|arg| arg == "--quickPlayPath"));
     }
 }
