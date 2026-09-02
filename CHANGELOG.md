@@ -10,6 +10,7 @@
 * Added structured error codes, retryability, and safe operation context for Minecraft install and repair failures while preserving existing user-facing messages.
 * Fixed Minecraft metadata rules to honor operating-system architecture, version, and active launcher features, including architecture-correct native classifiers.
 * Added retained pre-update instance snapshots with automatic modpack rollback and restore/delete controls in Edit Instance.
+* Updated Browserslist to 4.28.7 to resolve two high-severity build-tool audit findings.
 
 ## 1.4.0
 
