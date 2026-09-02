@@ -203,6 +203,9 @@ declare global {
         export:       (id: string) => Promise<string | null>
         exportMrpack: (id: string, fileName?: string) => Promise<string | null>
         duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
+        snapshots:      (instanceId: string) => Promise<import('@/lib/api').InstanceSnapshot[]>
+        restoreSnapshot:(instanceId: string, snapshotId: string) => Promise<import('@refract/core').Instance>
+        deleteSnapshot: (instanceId: string, snapshotId: string) => Promise<void>
         importMultiMc:  () => Promise<import('@refract/core').Instance | null>
         scanExternal:   () => Promise<ExternalInstance[]>
         scanExternalFolder: () => Promise<ExternalInstance[]>

@@ -26,3 +26,6 @@ pub fn assets_dir() -> PathBuf {
 pub fn themes_dir() -> PathBuf {
     data_dir().join("themes")
 }
+pub fn snapshots_dir() -> PathBuf {
+    data_dir().join("snapshots")
+}

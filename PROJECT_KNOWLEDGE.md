@@ -137,7 +137,7 @@ World delete/backup and screenshot open/read commands canonicalize direct childr
 - Required dependencies are resolved recursively; optional dependencies can be selected by the user.
 - CurseForge files with API distribution disabled use the supported manual flow: Refract opens the official download page and watches the Downloads directory for the expected file/hash. It does not bypass author restrictions.
 - Modpacks support Modrinth `.mrpack`, CurseForge manifests, FTB packs, and local archive imports.
-- Modpack updates reuse the instance and replace its mod set through a rollback guard: the previous mods and instance metadata are backed up before mutation and restored if any required stage fails.
+- Modpack updates reuse the instance through a persistent snapshot guard and refuse to start while Minecraft is active. Before mutation, Refract copies mods, configuration, resource packs, shaders, options, servers, and instance metadata to internal snapshot storage without following symlinks or Windows reparse points. Any required-stage failure restores that snapshot; success retains it as a user-visible rollback point. Manual restore first captures the current state, also refuses to run while Minecraft is active, preserves the live instance's internal storage locators, and keeps at most five snapshots per instance.
 
 ## User-facing areas
 
@@ -230,6 +230,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 | `servers.rs` | `servers.dat` NBT parsing, linked-server persistence/validation, and Minecraft server-list ping. |
 | `shortcuts.rs` | Desktop Quick Play shortcuts and command-line parsing. |
 | `skins.rs` | Local skin library plus Minecraft skin/cape APIs. |
+| `snapshots.rs` | Persistent pre-change instance snapshots, retention, safe restore, and rollback commands. |
 | `system.rs` | Total and available physical memory. |
 | `theme.rs` | Custom theme file install/list/delete and background selection. |
 
@@ -306,10 +307,16 @@ Refract/
   themes/
   logs/
     refract.log
+  snapshots/
+    <instance id>/
+      <snapshot id>/
+        manifest.json
+        instance.json
+        minecraft/
   cache/
 ```
 
-Custom-path and linked external instances are indexed through `instance-registry.json`; their game directory may be outside the Refract root.
+Custom-path and linked external instances are indexed through `instance-registry.json`; their game directory may be outside the Refract root. Their protected pre-change files are still copied into Refract's internal snapshot directory. The destructive launcher reset and instance deletion remove the applicable snapshots.
 
 ### Instance record
 

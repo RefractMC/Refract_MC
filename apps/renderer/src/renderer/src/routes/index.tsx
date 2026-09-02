@@ -1864,6 +1864,11 @@ function Library() {
           void queryClient.invalidateQueries({ queryKey: ['instances'] })
           if (inst) void recordActivity(t.home.activityDuplicated(inst.name))
         }}
+        onSnapshotRestore={async (id, snapshotId) => {
+          await api.instance.restoreSnapshot(id, snapshotId)
+          await queryClient.invalidateQueries({ queryKey: ['instances'] })
+          setEditTarget(null)
+        }}
       />
 
       {modpackUpdating && (

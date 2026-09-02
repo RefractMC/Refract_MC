@@ -58,6 +58,14 @@ export interface IpcErrorPayload {
   context: Record<string, unknown>
 }
 
+export interface InstanceSnapshot {
+  id: string
+  instanceId: string
+  reason: 'modpack_update' | 'before_snapshot_restore' | string
+  createdAt: string
+  sizeBytes: number
+}
+
 export class RefractError extends Error {
   readonly code: string
   readonly retryable: boolean
@@ -352,6 +360,9 @@ function createBrowserApi(): RefractAPI {
       export:        async () => null,
       exportMrpack:  async () => null,
       duplicate:     async () => null,
+      snapshots:     async () => [],
+      restoreSnapshot: async () => { throw new Error('Snapshot restore requires the desktop app.') },
+      deleteSnapshot: async () => undefined,
       importMultiMc:  async () => { throw new Error('MultiMC import requires the desktop app.') },
       scanExternal:   async () => [],
       scanExternalFolder: async () => [],
@@ -926,6 +937,12 @@ function createTauriApi(): RefractAPI {
       delete: ((id: string) => tinvoke('delete_instance', { id })) as RefractAPI['instance']['delete'],
       openFolder: ((id: string) => tinvoke('open_instance_folder', { id })) as RefractAPI['instance']['openFolder'],
       duplicate: ((id: string) => tinvoke('duplicate_instance', { id })) as RefractAPI['instance']['duplicate'],
+      snapshots: ((instanceId: string) =>
+        tinvoke('instance_snapshots_list', { instanceId })) as RefractAPI['instance']['snapshots'],
+      restoreSnapshot: ((instanceId: string, snapshotId: string) =>
+        tinvoke('instance_snapshot_restore', { instanceId, snapshotId })) as RefractAPI['instance']['restoreSnapshot'],
+      deleteSnapshot: ((instanceId: string, snapshotId: string) =>
+        tinvoke('instance_snapshot_delete', { instanceId, snapshotId })) as RefractAPI['instance']['deleteSnapshot'],
       browseFolder: (async () => {
         const p = await dialogOpen({ directory: true, multiple: false })
         return typeof p === 'string' ? p : null

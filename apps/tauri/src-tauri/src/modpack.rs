@@ -6,7 +6,7 @@
 //! new instance id, or an error) over `modpack://done`.
 
 use crate::cf::{self, CfRequiredFile};
-use crate::{config, downloader, external, instances, mc_install, mods, net, paths};
+use crate::{config, downloader, external, instances, mc_install, mods, net, paths, snapshots};
 use flate2::read::GzDecoder;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -403,98 +403,56 @@ fn copy_dir_checked(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Protect the currently working mod set while an in-place modpack update is
-/// downloading and installing. The old directory is moved out of the way
-/// before the destructive replacement; failures restore both the files and
-/// the instance metadata. A successful update removes the backup only after
-/// all required install stages have completed.
+/// Protect user-owned and update-sensitive state while an in-place modpack
+/// update is downloading and installing. Failures restore the persistent
+/// snapshot; successful updates retain it as a user-visible rollback point.
 struct ModpackUpdateGuard {
-    id: String,
-    mods_dir: PathBuf,
-    backup_dir: Option<PathBuf>,
-    previous_metadata: Value,
+    snapshot: snapshots::SnapshotHandle,
     committed: bool,
 }
 
 impl ModpackUpdateGuard {
-    fn start(id: &str) -> Result<Self, String> {
-        let previous_metadata = instances::get_instance_by_id(id.to_string())
-            .ok_or_else(|| format!("Instance not found: {id}"))?;
+    async fn start(id: &str) -> Result<Self, String> {
+        let snapshot_id = id.to_string();
+        let snapshot = tauri::async_runtime::spawn_blocking(move || {
+            snapshots::create_modpack_update(&snapshot_id)
+        })
+        .await
+        .map_err(|error| format!("Could not create the pre-update snapshot: {error}"))??;
+        let mut guard = Self {
+            snapshot,
+            committed: false,
+        };
         let mods_dir = instances::game_dir(id).join("mods");
-        let backup_dir = if mods_dir.exists() {
-            let backup = paths::data_dir()
-                .join("cache")
-                .join(format!("modpack-backup-{}", uuid::Uuid::new_v4()));
-            fs::create_dir_all(backup.parent().unwrap_or_else(|| Path::new(".")))
-                .map_err(|e| format!("Could not create modpack backup directory: {e}"))?;
-            if let Err(rename_error) = fs::rename(&mods_dir, &backup) {
-                copy_dir_checked(&mods_dir, &backup).map_err(|copy_error| {
-                    format!(
-                        "Could not stage the existing mod set (rename: {rename_error}; copy: {copy_error})"
-                    )
-                })?;
+        let preparation = (|| -> Result<(), String> {
+            if mods_dir.exists() {
                 fs::remove_dir_all(&mods_dir)
                     .map_err(|e| format!("Could not prepare the mod set for update: {e}"))?;
             }
             fs::create_dir_all(&mods_dir)
-                .map_err(|e| format!("Could not create the staged mod directory: {e}"))?;
-            Some(backup)
-        } else {
-            fs::create_dir_all(&mods_dir)
-                .map_err(|e| format!("Could not create the mod directory: {e}"))?;
-            None
-        };
-        Ok(Self {
-            id: id.to_string(),
-            mods_dir,
-            backup_dir,
-            previous_metadata,
-            committed: false,
-        })
+                .map_err(|e| format!("Could not create the staged mod directory: {e}"))
+        })();
+        if let Err(error) = preparation {
+            return match guard.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(format!("{error}; rollback failed: {rollback}")),
+            };
+        }
+        Ok(guard)
     }
 
-    fn commit(&mut self) -> Result<(), String> {
-        if let Some(backup) = self.backup_dir.as_ref() {
-            fs::remove_dir_all(backup)
-                .map_err(|e| format!("Could not remove the completed modpack backup: {e}"))?;
-        }
-        self.backup_dir = None;
+    fn commit(&mut self) {
         self.committed = true;
-        Ok(())
+        let _ = self.snapshot.commit();
     }
 
     fn rollback(&mut self) -> Result<(), String> {
-        let mut errors = Vec::new();
-        if let Err(error) = fs::remove_dir_all(&self.mods_dir) {
-            if self.mods_dir.exists() {
-                errors.push(format!("could not remove staged mods: {error}"));
-            }
-        }
-        if let Some(backup) = self.backup_dir.clone() {
-            if let Err(error) = fs::rename(&backup, &self.mods_dir) {
-                if let Err(copy_error) = copy_dir_checked(&backup, &self.mods_dir) {
-                    errors.push(format!(
-                        "could not restore previous mods: {error}; {copy_error}"
-                    ));
-                } else {
-                    let _ = fs::remove_dir_all(&backup);
-                    self.backup_dir = None;
-                }
-            } else {
-                self.backup_dir = None;
-            }
-        }
-        if let Err(error) =
-            instances::update_instance(self.id.clone(), self.previous_metadata.clone())
-        {
-            errors.push(format!("could not restore instance metadata: {error}"));
+        let result = self.snapshot.restore().map(|_| ());
+        if result.is_ok() {
+            let _ = self.snapshot.delete();
         }
         self.committed = true;
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors.join("; "))
-        }
+        result
     }
 }
 
@@ -733,10 +691,10 @@ async fn install_modrinth(
         .map(String::from);
 
     progress(app, &project_id, "Creating instance", 4.0);
-    let update_guard = existing
-        .as_deref()
-        .map(ModpackUpdateGuard::start)
-        .transpose()?;
+    let update_guard = match existing.as_deref() {
+        Some(id) => Some(ModpackUpdateGuard::start(id).await?),
+        None => None,
+    };
     let id = resolve_instance(
         existing.as_deref(),
         &name,
@@ -788,7 +746,7 @@ async fn install_modrinth(
         return Err(error);
     }
     if let Some(mut guard) = update_guard {
-        guard.commit()?;
+        guard.commit();
     }
 
     finalize(
@@ -968,10 +926,10 @@ async fn install_curseforge(
     fs::create_dir_all(&cache).ok();
     let zip_path = cache.join(format!("cf-{mod_id}-{file_id}.zip"));
     let temp = cache.join(format!("cf-{mod_id}-{file_id}"));
-    let update_guard = existing
-        .as_deref()
-        .map(ModpackUpdateGuard::start)
-        .transpose()?;
+    let update_guard = match existing.as_deref() {
+        Some(id) => Some(ModpackUpdateGuard::start(id).await?),
+        None => None,
+    };
 
     let res = install_curseforge_inner(
         app,
@@ -991,7 +949,7 @@ async fn install_curseforge(
     match res {
         Ok(id) => {
             if let Some(mut guard) = update_guard {
-                guard.commit()?;
+                guard.commit();
             }
             Ok(id)
         }
@@ -1118,10 +1076,10 @@ async fn install_ftb(
     let version = get_json(&format!("{FTB}/modpack/{pack_id}/{version_id}")).await?;
     let (mc, loader, loader_version) = ftb_targets(&version);
     let mc = mc.ok_or("This FTB version has no Minecraft target.")?;
-    let update_guard = existing
-        .as_deref()
-        .map(ModpackUpdateGuard::start)
-        .transpose()?;
+    let update_guard = match existing.as_deref() {
+        Some(id) => Some(ModpackUpdateGuard::start(id).await?),
+        None => None,
+    };
 
     progress(app, &project_id, "Creating instance", 4.0);
     let id = resolve_instance(
@@ -1243,7 +1201,7 @@ async fn install_ftb(
     absorb_mc_stats(&timer, &stats);
 
     if let Some(mut guard) = update_guard {
-        guard.commit()?;
+        guard.commit();
     }
     finalize(
         app,

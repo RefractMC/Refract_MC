@@ -3,7 +3,7 @@
 //! as the launcher, with identical folder sanitisation (incl. the
 //! Cyrillic→Latin transliteration) so the two stay interchangeable.
 
-use crate::paths;
+use crate::{paths, snapshots};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -164,6 +164,7 @@ pub fn launcher_delete_all() -> Result<(), String> {
         "versions",
         "cache",
         "logs",
+        "snapshots",
     ] {
         let p = data.join(sub);
         if p.exists() {
@@ -775,7 +776,7 @@ pub fn delete_instance(id: String) -> Result<(), String> {
 
     match last_err {
         Some(e) => Err(e),
-        None => Ok(()),
+        None => snapshots::delete_instance_snapshots(&id),
     }
 }
 

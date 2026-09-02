@@ -29,6 +29,7 @@ mod secrets;
 mod servers;
 mod shortcuts;
 mod skins;
+mod snapshots;
 mod system;
 mod theme;
 
@@ -114,6 +115,9 @@ pub fn run() {
             instances::open_instance_folder,
             instances::duplicate_instance,
             instances::export_instance,
+            snapshots::instance_snapshots_list,
+            snapshots::instance_snapshot_restore,
+            snapshots::instance_snapshot_delete,
             external::scan_external_instances,
             external::scan_external_folder,
             external::link_external_instance,

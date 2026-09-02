@@ -5,7 +5,7 @@ import type { Instance, ModLoader, JavaInstallation } from '@refract/core'
 import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
 import { Button } from '@/components/ui/Button'
-import { api } from '@/lib/api'
+import { api, type InstanceSnapshot } from '@/lib/api'
 import { useT } from '@/i18n'
 
 type T = ReturnType<typeof useT>
@@ -28,6 +28,7 @@ interface Props {
   onDelete?: (id: string) => Promise<void>
   onRepair?: (id: string) => void
   onDuplicate?: (id: string) => Promise<void>
+  onSnapshotRestore?: (id: string, snapshotId: string) => Promise<void>
 }
 
 const IrisLogo = () => (
@@ -43,7 +44,7 @@ const IrisLogo = () => (
   </svg>
 )
 
-export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDelete, onRepair, onDuplicate }: Props) {
+export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDelete, onRepair, onDuplicate, onSnapshotRestore }: Props) {
   const t = useT()
   const nameId   = useId()
   const verId    = useId()
@@ -81,6 +82,10 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [maxRamGb, setMaxRamGb]       = useState(16)
   const [previewHover, setPreviewHover] = useState(false)
+  const [rollbackSnapshots, setRollbackSnapshots] = useState<InstanceSnapshot[]>([])
+  const [snapshotBusy, setSnapshotBusy] = useState(false)
+  const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null)
+  const [snapshotConfirm, setSnapshotConfirm] = useState<{ id: string; action: 'restore' | 'delete' } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -114,8 +119,12 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
       setOptSource('')
       setOptServers(false)
       setOptMsg(null)
+      setRollbackSnapshots([])
+      setSnapshotMessage(null)
+      setSnapshotConfirm(null)
       api.mc.java().then(setJavas).catch(() => setJavas([]))
       api.instance.list().then(setAllInstances).catch(() => setAllInstances([]))
+      api.instance.snapshots(instance.id).then(setRollbackSnapshots).catch(() => setRollbackSnapshots([]))
     }
   }, [instance, open])
 
@@ -147,7 +156,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!instance || !name.trim()) return
+    if (!instance || !name.trim() || snapshotBusy) return
     setLoading(true)
     const versionChanged = mcVersion !== instance.minecraftVersion
       || (modLoader || undefined) !== instance.modLoader
@@ -178,7 +187,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   }
 
   async function handleDelete() {
-    if (!instance || !onDelete) return
+    if (!instance || !onDelete || snapshotBusy) return
     if (!confirmDelete) { setConfirmDelete(true); return }
     setLoading(true)
     try {
@@ -191,16 +200,22 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
 
   const loaderLabel = MOD_LOADERS.find(l => l.value === modLoader)?.label(t) ?? t.editInst.vanilla
   const displayName = name.trim() || t.editInst.instanceFallback
+  const snapshotReason = (reason: string) => reason === 'modpack_update'
+    ? t.editInst.snapshotReasonModpack
+    : t.editInst.snapshotReasonRestore
+  const snapshotSize = (bytes: number) => bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.ceil(bytes / 1024))} KB`
 
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!loading) onOpenChange(v) }}>
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!loading && !snapshotBusy) onOpenChange(v) }}>
       <Dialog.Portal>
         <Dialog.Overlay style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 149 }} />
         <Dialog.Content
           aria-label={t.editInst.title}
           className="ni-dialog"
-          onEscapeKeyDown={() => { if (!loading) onOpenChange(false) }}
-          onPointerDownOutside={() => { if (!loading) onOpenChange(false) }}
+          onEscapeKeyDown={() => { if (!loading && !snapshotBusy) onOpenChange(false) }}
+          onPointerDownOutside={() => { if (!loading && !snapshotBusy) onOpenChange(false) }}
         >
           {/* ── Header ── */}
           <div className="ni-dialog-header" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '20px 22px', borderBottom: '1px solid var(--border-r)', background: 'linear-gradient(var(--surface-2), var(--surface))', flexShrink: 0 }}>
@@ -211,7 +226,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 {displayName}
               </span>
             </div>
-            <button className="ni-close" onClick={() => { if (!loading) onOpenChange(false) }} aria-label={t.editInst.close} type="button">
+            <button className="ni-close" onClick={() => { if (!loading && !snapshotBusy) onOpenChange(false) }} aria-label={t.editInst.close} type="button">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
                 <path d="M6 6l12 12M18 6L6 18"/>
               </svg>
@@ -602,6 +617,91 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 </div>
               )}
 
+              {/* Persistent rollback snapshots */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.10em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  {t.editInst.rollbackSnapshots}
+                </label>
+                {rollbackSnapshots.length === 0 ? (
+                  <div style={{ padding: '10px 12px', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', background: 'var(--surface-2)', fontSize: 11, color: 'var(--ink-4)' }}>
+                    {t.editInst.noRollbackSnapshots}
+                  </div>
+                ) : rollbackSnapshots.map(snapshot => (
+                  <div key={snapshot.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', background: 'var(--surface-2)' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 650, color: 'var(--ink)' }}>{snapshotReason(snapshot.reason)}</div>
+                      <div style={{ marginTop: 3, fontSize: 10, color: 'var(--ink-4)' }}>
+                        {new Date(snapshot.createdAt).toLocaleString()} · {snapshotSize(snapshot.sizeBytes)}
+                      </div>
+                    </div>
+                    {onSnapshotRestore && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        disabled={snapshotBusy}
+                        onClick={async () => {
+                          if (!instance || snapshotBusy) return
+                          if (snapshotConfirm?.id !== snapshot.id || snapshotConfirm.action !== 'restore') {
+                            setSnapshotConfirm({ id: snapshot.id, action: 'restore' })
+                            return
+                          }
+                          setSnapshotBusy(true)
+                          setSnapshotMessage(null)
+                          try {
+                            await onSnapshotRestore(instance.id, snapshot.id)
+                            onOpenChange(false)
+                          } catch (error) {
+                            setSnapshotMessage(error instanceof Error ? error.message : String(error))
+                          } finally {
+                            setSnapshotBusy(false)
+                            setSnapshotConfirm(null)
+                          }
+                        }}
+                      >
+                        {snapshotConfirm?.id === snapshot.id && snapshotConfirm.action === 'restore'
+                          ? t.editInst.confirmRestore
+                          : t.editInst.restoreSnapshot}
+                      </Button>
+                    )}
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      type="button"
+                      disabled={snapshotBusy}
+                      onClick={async () => {
+                        if (!instance || snapshotBusy) return
+                        if (snapshotConfirm?.id !== snapshot.id || snapshotConfirm.action !== 'delete') {
+                          setSnapshotConfirm({ id: snapshot.id, action: 'delete' })
+                          return
+                        }
+                        setSnapshotBusy(true)
+                        setSnapshotMessage(null)
+                        try {
+                          await api.instance.deleteSnapshot(instance.id, snapshot.id)
+                          setRollbackSnapshots(current => current.filter(item => item.id !== snapshot.id))
+                        } catch (error) {
+                          setSnapshotMessage(error instanceof Error ? error.message : String(error))
+                        } finally {
+                          setSnapshotBusy(false)
+                          setSnapshotConfirm(null)
+                        }
+                      }}
+                    >
+                      {snapshotConfirm?.id === snapshot.id && snapshotConfirm.action === 'delete'
+                        ? t.editInst.confirmSnapshotDelete
+                        : t.editInst.deleteSnapshot}
+                    </Button>
+                  </div>
+                ))}
+                {snapshotMessage && (
+                  <div role="alert" style={{ fontSize: 11, color: 'var(--lava)' }}>{snapshotMessage}</div>
+                )}
+                <div style={{ fontSize: 10, color: 'var(--ink-4)', lineHeight: 1.5 }}>
+                  {t.editInst.rollbackHint}
+                </div>
+              </div>
+
               {/* Pin toggle */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <label htmlFor={pinId} className="ni-check" style={{ alignSelf: 'flex-start' }}>
@@ -624,7 +724,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 variant="danger"
                 type="button"
                 onClick={handleDelete}
-                disabled={loading}
+                disabled={loading || snapshotBusy}
                 style={{
                   height: 42, padding: '0 14px', borderRadius: 'var(--radius-lg)',
                   background: confirmDelete ? 'rgba(217,59,59,.25)' : 'rgba(217,59,59,.15)',
@@ -639,7 +739,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
             {onRepair && instance?.isInstalled && (
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || snapshotBusy}
                 onClick={() => { if (instance) { onOpenChange(false); onRepair(instance.id) } }}
                 className="ni-btn ni-btn-soft"
               >
@@ -649,7 +749,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
             {onDuplicate && (
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || snapshotBusy}
                 onClick={async () => {
                   if (!instance) return
                   setLoading(true)
@@ -662,10 +762,10 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
               </button>
             )}
             <div style={{ flex: 1 }} />
-            <button type="button" className="ni-btn ni-btn-ghost" disabled={loading} onClick={() => { if (!loading) onOpenChange(false) }}>
+            <button type="button" className="ni-btn ni-btn-ghost" disabled={loading || snapshotBusy} onClick={() => { if (!loading && !snapshotBusy) onOpenChange(false) }}>
               {t.editInst.cancel}
             </button>
-            <button type="submit" form="ei-form" className="ni-btn ni-btn-primary" disabled={!name.trim() || loading}>
+            <button type="submit" form="ei-form" className="ni-btn ni-btn-primary" disabled={!name.trim() || loading || snapshotBusy}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                 <polyline points="17 21 17 13 7 13 7 21"/>
