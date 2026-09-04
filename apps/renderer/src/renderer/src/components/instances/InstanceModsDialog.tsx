@@ -891,6 +891,21 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
             instanceId={instance.id}
             onClose={() => setLightbox(null)}
             onOpenExternal={() => { api.mc.openScreenshot(instance.id, lightbox.filename).catch(() => {}); setLightbox(null) }}
+            onRename={async newName => {
+              const oldName = lightbox.filename
+              const renamed = await api.mc.renameScreenshot(instance.id, oldName, newName)
+              setScreenshots(current => current.map(shot => shot.filename === oldName
+                ? { ...shot, filename: renamed }
+                : shot))
+              setLightbox(current => current?.filename === oldName
+                ? { ...current, filename: renamed }
+                : current)
+            }}
+            onDelete={async () => {
+              await api.mc.deleteScreenshot(instance.id, lightbox.filename)
+              setScreenshots(current => current.filter(shot => shot.filename !== lightbox.filename))
+              setLightbox(null)
+            }}
           />,
           document.body
         )}
@@ -901,25 +916,72 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   return createPortal(dialog, document.body)
 }
 
-function ScreenshotLightbox({ shot, instanceId, onClose, onOpenExternal }: {
+function ScreenshotLightbox({ shot, instanceId, onClose, onOpenExternal, onRename, onDelete }: {
   shot: ScreenshotEntry
   instanceId: string
   onClose: () => void
   onOpenExternal: () => void
+  onRename: (newName: string) => Promise<void>
+  onDelete: () => Promise<void>
 }) {
   const t = useT()
   const [fullSrc, setFullSrc] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  const [renameDraft, setRenameDraft] = useState(() => shot.filename.replace(/\.[^.]+$/, ''))
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose() }
     window.addEventListener('keydown', handler)
-    api.mc.screenshotFull(instanceId, shot.filename).then(s => setFullSrc(s)).catch(() => {})
     return () => window.removeEventListener('keydown', handler)
-  }, [shot.filename, instanceId, onClose])
+  }, [onClose, busy])
+
+  useEffect(() => {
+    setFullSrc(null)
+    api.mc.screenshotFull(instanceId, shot.filename).then(s => setFullSrc(s)).catch(() => {})
+  }, [shot.filename, instanceId])
+
+  useEffect(() => {
+    setRenameDraft(shot.filename.replace(/\.[^.]+$/, ''))
+    setRenaming(false)
+    setConfirmDelete(false)
+    setActionError(null)
+  }, [shot.filename])
+
+  async function submitRename() {
+    if (!renameDraft.trim() || busy) return
+    setBusy(true)
+    setActionError(null)
+    try {
+      await onRename(renameDraft)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deleteScreenshot() {
+    if (busy) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setBusy(true)
+    setActionError(null)
+    try {
+      await onDelete()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+      setBusy(false)
+    }
+  }
 
   return (
     <div
-      onClick={e => { e.stopPropagation(); onClose() }}
+      onClick={e => { e.stopPropagation(); if (!busy) onClose() }}
       style={{
         position: 'fixed', inset: 0, zIndex: 10001,
         background: 'rgba(0,0,0,.93)',
@@ -939,17 +1001,48 @@ function ScreenshotLightbox({ shot, instanceId, onClose, onOpenExternal }: {
           transition: 'opacity 200ms',
         }}
       />
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{ display: 'flex', gap: 10, alignItems: 'center' }}
-      >
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
         <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: 'rgba(255,255,255,.4)' }}>{shot.filename} · {shot.sizeKb} KB</span>
-        <Button variant="ghost" size="sm" onClick={onOpenExternal} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)' }}>
-          {t.instanceDetail.openViewer}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onClose} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)' }}>
-          ✕ Close
-        </Button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {renaming ? (
+            <>
+              <input
+                className="ni-input"
+                value={renameDraft}
+                onChange={event => setRenameDraft(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') { event.preventDefault(); void submitRename() }
+                }}
+                placeholder={t.instanceDetail.screenshotNamePlaceholder}
+                autoFocus
+                disabled={busy}
+                style={{ width: 240, height: 32, color: '#fff', background: 'rgba(255,255,255,.08)', borderColor: 'rgba(255,255,255,.18)' }}
+              />
+              <Button variant="ghost" size="sm" onClick={() => void submitRename()} disabled={!renameDraft.trim() || busy} style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.24)' }}>
+                {t.instanceDetail.saveScreenshotName}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setRenaming(false); setActionError(null) }} disabled={busy} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)' }}>
+                {t.instanceDetail.cancel}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => { setRenaming(true); setConfirmDelete(false); setActionError(null) }} disabled={busy} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)' }}>
+                {t.instanceDetail.renameScreenshot}
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => void deleteScreenshot()} disabled={busy} style={{ fontSize: 11 }}>
+                {confirmDelete ? t.instanceDetail.confirmScreenshotDelete : t.instanceDetail.delete}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onOpenExternal} disabled={busy} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)' }}>
+                {t.instanceDetail.openViewer}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onClose} disabled={busy} style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)' }}>
+                ✕ {t.editInst.close}
+              </Button>
+            </>
+          )}
+        </div>
+        {actionError && <span role="alert" style={{ maxWidth: 560, fontSize: 11, color: '#ff8b8b', textAlign: 'center' }}>{actionError}</span>}
       </div>
     </div>
   )

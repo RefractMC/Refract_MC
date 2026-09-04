@@ -126,7 +126,7 @@ Minecraft repair rebuilds the required artifact plan from current Mojang and loa
 
 Renderer-controlled content filenames are restricted to a single safe path component before mod toggle/delete operations; traversal and absolute paths are rejected.
 
-World delete/backup and screenshot open/read commands canonicalize direct children and reject symlinks and Windows reparse points. World backups also reject linked entries found during recursive traversal.
+World delete/backup and screenshot open/read/rename/delete commands canonicalize direct children and reject symlinks and Windows reparse points. Screenshot renames preserve the original image extension and reject nested, reserved-character, empty, and overlong names. World backups also reject linked entries found during recursive traversal.
 
 ### Content installation
 

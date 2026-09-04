@@ -214,6 +214,8 @@ pub fn run() {
             gamedata::mc_screenshots,
             gamedata::mc_open_screenshot,
             gamedata::mc_screenshot_full,
+            gamedata::mc_rename_screenshot,
+            gamedata::mc_delete_screenshot,
             servers::mc_servers,
             servers::linked_servers,
             servers::link_server,

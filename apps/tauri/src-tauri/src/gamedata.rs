@@ -407,6 +407,43 @@ fn png_data_url(img: &image::DynamicImage) -> Option<String> {
     ))
 }
 
+fn screenshot_rename_target(original: &str, requested: &str) -> Result<String, String> {
+    let extension = Path::new(original)
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Screenshot has an unsupported file extension.".to_string())?;
+    let extension_lower = extension.to_ascii_lowercase();
+    if !matches!(extension_lower.as_str(), "png" | "jpg" | "jpeg") {
+        return Err("Screenshot has an unsupported file extension.".into());
+    }
+    let requested = requested.trim();
+    let suffix = format!(".{extension}");
+    let suffix_lower = format!(".{extension_lower}");
+    let stem = requested
+        .strip_suffix(&suffix)
+        .or_else(|| {
+            requested
+                .to_ascii_lowercase()
+                .strip_suffix(&suffix_lower)
+                .map(|value| &requested[..value.len()])
+        })
+        .unwrap_or(requested)
+        .trim();
+    let invalid = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    if stem.is_empty()
+        || stem == "."
+        || stem == ".."
+        || stem.ends_with('.')
+        || stem.chars().count() > 120
+        || stem
+            .chars()
+            .any(|character| character.is_control() || invalid.contains(&character))
+    {
+        return Err("Screenshot name is invalid.".into());
+    }
+    Ok(format!("{stem}.{extension}"))
+}
+
 /// The instance's recent screenshots (newest 24) with 320×180 thumbnails. Decode
 /// + resize runs off the main thread.
 #[tauri::command]
@@ -470,6 +507,49 @@ pub fn mc_open_screenshot(instance_id: String, filename: String) -> Result<(), S
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
     Ok(())
+}
+
+/// Rename a screenshot while keeping its image extension and containing the
+/// operation to the instance's screenshot directory.
+#[tauri::command]
+pub fn mc_rename_screenshot(
+    instance_id: String,
+    filename: String,
+    new_name: String,
+) -> Result<String, String> {
+    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let source = safe_existing_child(&dir, &filename)
+        .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
+    if !source.is_file() {
+        return Err("Screenshot is not a regular file.".into());
+    }
+    let target_name = screenshot_rename_target(&filename, &new_name)?;
+    if target_name == filename {
+        return Ok(filename);
+    }
+    let parent = source
+        .parent()
+        .ok_or_else(|| "Screenshot directory is unavailable.".to_string())?;
+    let target = safe_child(parent, &target_name).ok_or("Screenshot name is invalid.")?;
+    if target.exists() {
+        return Err("A screenshot with that name already exists.".into());
+    }
+    fs::rename(&source, &target)
+        .map_err(|error| format!("Could not rename screenshot: {error}"))?;
+    Ok(target_name)
+}
+
+/// Delete one regular screenshot without following links or accepting nested
+/// renderer-controlled paths.
+#[tauri::command]
+pub fn mc_delete_screenshot(instance_id: String, filename: String) -> Result<(), String> {
+    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let screenshot = safe_existing_child(&dir, &filename)
+        .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
+    if !screenshot.is_file() {
+        return Err("Screenshot is not a regular file.".into());
+    }
+    fs::remove_file(screenshot).map_err(|error| format!("Could not delete screenshot: {error}"))
 }
 
 /// Full-size screenshot as a data URL (downscaled to ≤1920×1080 for the viewer).
@@ -536,7 +616,7 @@ fn zip_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::safe_child;
+    use super::{safe_child, screenshot_rename_target};
     use std::path::Path;
 
     #[test]
@@ -552,5 +632,21 @@ mod tests {
         assert!(safe_child(root, "C:\\outside").is_none());
         assert!(safe_child(root, ".").is_none());
         assert!(safe_child(root, "..").is_none());
+    }
+
+    #[test]
+    fn screenshot_renames_preserve_image_extensions_and_reject_paths() {
+        assert_eq!(
+            screenshot_rename_target("2026-09-04_12.00.00.png", "New base").unwrap(),
+            "New base.png"
+        );
+        assert_eq!(
+            screenshot_rename_target("image.JPG", "Vacation.JPG").unwrap(),
+            "Vacation.JPG"
+        );
+        assert!(screenshot_rename_target("image.png", "../outside").is_err());
+        assert!(screenshot_rename_target("image.png", "nested/name").is_err());
+        assert!(screenshot_rename_target("image.png", "name:").is_err());
+        assert!(screenshot_rename_target("image.gif", "safe-name").is_err());
     }
 }

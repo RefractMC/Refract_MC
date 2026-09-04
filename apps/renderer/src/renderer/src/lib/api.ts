@@ -519,6 +519,8 @@ function createBrowserApi(): RefractAPI {
       screenshots: async () => [],
       openScreenshot:  async () => undefined,
       screenshotFull:  async () => null,
+      renameScreenshot: async (_instanceId, filename) => filename,
+      deleteScreenshot: async () => undefined,
       servers: async (instanceId: string) => (readLinkedServers()[instanceId] ?? []).map(
         (server) => ({ ...server, linked: true, linkId: server.id }),
       ),
@@ -1242,6 +1244,8 @@ function createTauriApi(): RefractAPI {
       screenshots: ((instanceId: string) => tinvoke('mc_screenshots', { instanceId })) as RefractAPI['mc']['screenshots'],
       openScreenshot: ((instanceId: string, filename: string) => tinvoke('mc_open_screenshot', { instanceId, filename })) as RefractAPI['mc']['openScreenshot'],
       screenshotFull: ((instanceId: string, filename: string) => tinvoke('mc_screenshot_full', { instanceId, filename })) as RefractAPI['mc']['screenshotFull'],
+      renameScreenshot: ((instanceId: string, filename: string, newName: string) => tinvoke('mc_rename_screenshot', { instanceId, filename, newName })) as RefractAPI['mc']['renameScreenshot'],
+      deleteScreenshot: ((instanceId: string, filename: string) => tinvoke('mc_delete_screenshot', { instanceId, filename })) as RefractAPI['mc']['deleteScreenshot'],
       servers: ((instanceId: string) => tinvoke('mc_servers', { instanceId })) as RefractAPI['mc']['servers'],
       linkedServers: ((instanceId: string) => tinvoke('linked_servers', { instanceId })) as RefractAPI['mc']['linkedServers'],
       linkServer: ((instanceId: string, server: { id?: string; name: string; ip: string; minecraftVersion?: string }) =>

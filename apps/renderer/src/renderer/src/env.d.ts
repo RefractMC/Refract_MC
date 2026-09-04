@@ -316,6 +316,8 @@ declare global {
         screenshots: (instanceId: string) => Promise<Array<{ filename: string; sizeKb: number; timestamp: number; dataUrl: string | null }>>
         openScreenshot:  (instanceId: string, filename: string) => Promise<void>
         screenshotFull:  (instanceId: string, filename: string) => Promise<string | null>
+        renameScreenshot: (instanceId: string, filename: string, newName: string) => Promise<string>
+        deleteScreenshot: (instanceId: string, filename: string) => Promise<void>
         servers:     (instanceId: string) => Promise<Array<{ name: string; ip: string; icon?: string; linked?: boolean; linkId?: string; minecraftVersion?: string; updatedAt?: number }>>
         linkedServers: (instanceId: string) => Promise<Array<{ id: string; name: string; ip: string; minecraftVersion?: string; updatedAt: number }>>
         linkServer: (instanceId: string, server: { id?: string; name: string; ip: string; minecraftVersion?: string }) => Promise<{ id: string; name: string; ip: string; minecraftVersion?: string; updatedAt: number }>
