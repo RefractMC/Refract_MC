@@ -177,8 +177,8 @@ fn transient(status: reqwest::StatusCode) -> bool {
 /// unverified file at the final path.
 async fn attempt(task: &Task) -> Result<u64, (bool, String)> {
     let net_err = |e: reqwest::Error| (true, e.to_string());
+    net::validate_url(&task.url, task.hosts).map_err(|e| (false, e))?;
     let res = http().get(&task.url).send().await.map_err(net_err)?;
-    net::validate_url(res.url().as_str(), task.hosts).map_err(|e| (false, e))?;
     let status = res.status();
     if !status.is_success() {
         return Err((transient(status), format!("HTTP {status} for {}", task.url)));
