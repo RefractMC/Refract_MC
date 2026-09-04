@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+* Added local plain-text notes to instance settings, with notes preserved when duplicating an instance.
+
 ### Fixes
 
 * Made individual content updates hash-verified and rollback-safe, and persist the updated file, version, and repair metadata only after replacement succeeds.

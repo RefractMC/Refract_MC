@@ -49,6 +49,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const nameId   = useId()
   const verId    = useId()
   const grpId    = useId()
+  const notesId  = useId()
   const javaId   = useId()
   const argsId   = useId()
   const pinId    = useId()
@@ -65,6 +66,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const [coverImage, setCoverImage]   = useState('')
   const [pinned, setPinned]           = useState(false)
   const [groupId, setGroupId]         = useState('')
+  const [notes, setNotes]             = useState('')
   const [javaPath, setJavaPath]       = useState('')
   const [javaArgs, setJavaArgs]       = useState('')
   const [resWidth, setResWidth]       = useState('')
@@ -108,6 +110,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
       setCoverImage(instance.iconPath ?? '')
       setPinned(instance.pinned ?? false)
       setGroupId(instance.groupId ?? '')
+      setNotes(instance.notes ?? '')
       setJavaPath(instance.javaPath ?? '')
       setJavaArgs(instance.javaArgs ?? '')
       setResWidth(instance.resolutionWidth ? String(instance.resolutionWidth) : '')
@@ -171,6 +174,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
         iconPath: coverImage || undefined,
         pinned,
         groupId: groupId.trim() || undefined,
+        notes: notes.trim() || null,
         javaPath: javaPath || undefined,
         javaArgs: javaArgs.trim() || undefined,
         resolutionWidth: Number(resWidth) > 0 ? Number(resWidth) : null,
@@ -434,6 +438,34 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                   placeholder={t.editInst.groupPlaceholder}
                   autoComplete="off"
                 />
+              </div>
+
+              {/* Notes */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label
+                  htmlFor={notesId}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '.10em',
+                    textTransform: 'uppercase',
+                    color: 'var(--ink-3)',
+                  }}
+                >
+                  {t.editInst.notes}
+                </label>
+                <textarea
+                  id={notesId}
+                  className="ni-input"
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder={t.editInst.notesPlaceholder}
+                  rows={4}
+                  style={{ resize: 'vertical', minHeight: 88, lineHeight: 1.5 }}
+                />
+                <div style={{ fontSize: 10.5, color: 'var(--ink-4)', lineHeight: 1.45 }}>
+                  {t.editInst.notesHint}
+                </div>
               </div>
 
               {/* Java override */}

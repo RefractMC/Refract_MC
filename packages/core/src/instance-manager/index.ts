@@ -38,6 +38,7 @@ export interface Instance {
   postExitCommand?: string | null   // run in the game dir after the game exits
   iconPath?: string
   groupId?: string
+  notes?: string | null // optional plain-text notes shown in instance settings
   lastPlayed?: string
   totalTimePlayed: number
   createdAt: string

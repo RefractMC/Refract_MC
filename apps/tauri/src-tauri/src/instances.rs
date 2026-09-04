@@ -540,6 +540,7 @@ pub fn duplicate_instance(id: String) -> Result<Value, String> {
         "javaPath",
         "javaArgs",
         "groupId",
+        "notes",
     ] {
         if let Some(v) = src.get(k) {
             if !v.is_null() {

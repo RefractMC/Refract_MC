@@ -325,7 +325,7 @@ The shared `Instance` model includes:
 - Identity and placement: `id`, `name`, optional `folderName`, `customPath`, `externalGameDir`, and `externalSource`.
 - Minecraft selection: `minecraftVersion`, optional `modLoader`, and `modLoaderVersion`.
 - Runtime: `javaPath`, `javaArgs`, `memoryMb`, resolution, fullscreen, pre-launch command, and post-exit command.
-- Organization: `iconPath`, `groupId`, and `pinned`.
+- Organization: `iconPath`, `groupId`, `pinned`, and optional plain-text `notes`; notes are stored in `instance.json`, carried into duplicates, and edited with the rest of the instance settings.
 - State: `createdAt`, `lastPlayed`, `totalTimePlayed`, `playtimeLog`, `isInstalled`, and recorded content metadata in `mods`, including optional version names, hashes, repair URLs, and update timestamps.
 - Modpack provenance: source, project ID, and version ID, used for update detection.
 
