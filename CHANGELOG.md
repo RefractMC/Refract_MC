@@ -17,6 +17,7 @@
 * Fixed Minecraft metadata rules to honor operating-system architecture, version, and active launcher features, including architecture-correct native classifiers.
 * Added retained pre-update instance snapshots with automatic modpack rollback and restore/delete controls in Edit Instance.
 * Updated Browserslist to 4.28.7 to resolve two high-severity build-tool audit findings.
+* Updated fflate to 0.6.11 to resolve the malformed ZIP64 archive denial-of-service advisory.
 
 ## 1.4.0
 
