@@ -1858,9 +1858,9 @@ function Library() {
             setTimeout(() => setLaunchToast(null), 4000)
           })
         }}
-        onDuplicate={async (id) => {
+        onDuplicate={async (id, options) => {
           const inst = instances.find(i => i.id === id)
-          await api.instance.duplicate(id)
+          await api.instance.duplicate(id, options)
           void queryClient.invalidateQueries({ queryKey: ['instances'] })
           if (inst) void recordActivity(t.home.activityDuplicated(inst.name))
         }}

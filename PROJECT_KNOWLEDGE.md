@@ -326,6 +326,7 @@ The shared `Instance` model includes:
 - Minecraft selection: `minecraftVersion`, optional `modLoader`, and `modLoaderVersion`.
 - Runtime: `javaPath`, `javaArgs`, `memoryMb`, resolution, fullscreen, pre-launch command, and post-exit command.
 - Organization: `iconPath`, `groupId`, `pinned`, and optional plain-text `notes`; notes are stored in `instance.json`, carried into duplicates, and edited with the rest of the instance settings.
+- Duplication always carries core instance settings and can independently copy mods, configuration, resource packs, shaders, datapacks, saves, game options, servers, screenshots, and playtime. Recursive copies reject linked entries and remove incomplete destination instances on failure.
 - State: `createdAt`, `lastPlayed`, `totalTimePlayed`, `playtimeLog`, `isInstalled`, and recorded content metadata in `mods`, including optional version names, hashes, repair URLs, and update timestamps.
 - Modpack provenance: source, project ID, and version ID, used for update detection.
 

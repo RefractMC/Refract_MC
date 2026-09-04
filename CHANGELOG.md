@@ -6,6 +6,7 @@
 
 * Added local plain-text notes to instance settings, with notes preserved when duplicating an instance.
 * Added safe rename and delete controls to the per-instance screenshot viewer.
+* Added selective instance duplication for worlds, settings, content, screenshots, servers, and playtime.
 
 ### Fixes
 

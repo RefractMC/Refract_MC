@@ -54,6 +54,20 @@ export interface Instance {
   modpackVersionId?: string  // Modrinth version id / CurseForge file id / FTB version id
 }
 
+export interface DuplicateInstanceOptions {
+  name?: string
+  copyMods?: boolean
+  copyConfiguration?: boolean
+  copyResourcePacks?: boolean
+  copyShaderPacks?: boolean
+  copyDatapacks?: boolean
+  copySaves?: boolean
+  copyGameOptions?: boolean
+  copyServers?: boolean
+  copyScreenshots?: boolean
+  keepPlaytime?: boolean
+}
+
 export type CreateInstanceInput = Omit<Instance, 'id' | 'createdAt' | 'totalTimePlayed' | 'mods' | 'isInstalled'>
 
 export function createInstance(input: CreateInstanceInput): Instance {

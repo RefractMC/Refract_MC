@@ -202,7 +202,7 @@ declare global {
         browseFolder: () => Promise<string | null>
         export:       (id: string) => Promise<string | null>
         exportMrpack: (id: string, fileName?: string) => Promise<string | null>
-        duplicate:      (id: string) => Promise<import('@refract/core').Instance | null>
+        duplicate:      (id: string, options?: import('@refract/core').DuplicateInstanceOptions) => Promise<import('@refract/core').Instance | null>
         snapshots:      (instanceId: string) => Promise<import('@/lib/api').InstanceSnapshot[]>
         restoreSnapshot:(instanceId: string, snapshotId: string) => Promise<import('@refract/core').Instance>
         deleteSnapshot: (instanceId: string, snapshotId: string) => Promise<void>

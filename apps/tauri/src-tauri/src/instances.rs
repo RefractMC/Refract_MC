@@ -512,6 +512,53 @@ pub(crate) fn copy_game_directories_checked(
     Ok(())
 }
 
+fn copy_game_files_checked(
+    src_game_dir: &Path,
+    dst_game_dir: &Path,
+    files: &[&str],
+) -> Result<(), String> {
+    fs::create_dir_all(dst_game_dir).map_err(|error| {
+        format!(
+            "Could not create copy directory {}: {error}",
+            dst_game_dir.display()
+        )
+    })?;
+    for file in files {
+        let source = src_game_dir.join(file);
+        let metadata = match fs::symlink_metadata(&source) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Could not inspect copy source {}: {error}",
+                    source.display()
+                ))
+            }
+        };
+        if copy_source_is_link(&source)? {
+            return Err(format!(
+                "Refusing to copy linked filesystem entry: {}",
+                source.display()
+            ));
+        }
+        if !metadata.is_file() {
+            return Err(format!(
+                "Expected copy source to be a file: {}",
+                source.display()
+            ));
+        }
+        let destination = dst_game_dir.join(file);
+        fs::copy(&source, &destination).map_err(|error| {
+            format!(
+                "Could not copy {} to {}: {error}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
 pub(crate) fn rollback_created_instance(id: &str, operation_error: String) -> String {
     match delete_instance(id.to_string()) {
         Ok(()) => operation_error,
@@ -521,15 +568,108 @@ pub(crate) fn rollback_created_instance(id: &str, operation_error: String) -> St
     }
 }
 
-/// Duplicate an instance: a fresh instance with the same settings, with the
-/// content dirs (mods/resourcepacks/shaderpacks/datapacks/config) copied over.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DuplicateInstanceOptions {
+    name: Option<String>,
+    copy_mods: bool,
+    copy_configuration: bool,
+    copy_resource_packs: bool,
+    copy_shader_packs: bool,
+    copy_datapacks: bool,
+    copy_saves: bool,
+    copy_game_options: bool,
+    copy_servers: bool,
+    copy_screenshots: bool,
+    keep_playtime: bool,
+}
+
+impl Default for DuplicateInstanceOptions {
+    fn default() -> Self {
+        Self {
+            name: None,
+            copy_mods: true,
+            copy_configuration: true,
+            copy_resource_packs: true,
+            copy_shader_packs: true,
+            copy_datapacks: true,
+            copy_saves: false,
+            copy_game_options: false,
+            copy_servers: false,
+            copy_screenshots: false,
+            keep_playtime: false,
+        }
+    }
+}
+
+fn duplicate_content_directories(options: &DuplicateInstanceOptions) -> Vec<&'static str> {
+    let mut directories = Vec::new();
+    if options.copy_mods {
+        directories.push("mods");
+    }
+    if options.copy_configuration {
+        directories.push("config");
+    }
+    if options.copy_resource_packs {
+        directories.push("resourcepacks");
+    }
+    if options.copy_shader_packs {
+        directories.push("shaderpacks");
+    }
+    if options.copy_datapacks {
+        directories.push("datapacks");
+    }
+    if options.copy_saves {
+        directories.push("saves");
+    }
+    if options.copy_screenshots {
+        directories.push("screenshots");
+    }
+    directories
+}
+
+fn duplicate_content_metadata(src: &Value, options: &DuplicateInstanceOptions) -> Vec<Value> {
+    src.get("mods")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(
+            |entry| match entry.get("contentType").and_then(Value::as_str) {
+                Some("resourcepack") => options.copy_resource_packs,
+                Some("shader") => options.copy_shader_packs,
+                Some("datapack") => options.copy_datapacks,
+                _ => options.copy_mods,
+            },
+        )
+        .cloned()
+        .collect()
+}
+
+/// Duplicate an instance with safe, independently selectable game-data groups.
+/// Omitted options retain the original content-only duplicate behavior.
 #[tauri::command]
-pub fn duplicate_instance(id: String) -> Result<Value, String> {
+pub fn duplicate_instance(
+    id: String,
+    options: Option<DuplicateInstanceOptions>,
+) -> Result<Value, String> {
     let src = get_instance_by_id(id.clone()).ok_or(format!("Instance not found: {id}"))?;
     let src_game_dir = game_dir(&id);
+    let options = options.unwrap_or_default();
+    let default_name = format!(
+        "{} (copy)",
+        src.get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("Instance")
+    );
+    let copy_name = options
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&default_name);
 
     let mut input = json!({
-        "name": format!("{} (copy)", src.get("name").and_then(Value::as_str).unwrap_or("Instance")),
+        "name": copy_name,
         "minecraftVersion": src.get("minecraftVersion").cloned().unwrap_or(json!("")),
         "memoryMb": src.get("memoryMb").cloned().unwrap_or(json!(2048)),
     });
@@ -541,6 +681,11 @@ pub fn duplicate_instance(id: String) -> Result<Value, String> {
         "javaArgs",
         "groupId",
         "notes",
+        "resolutionWidth",
+        "resolutionHeight",
+        "fullscreen",
+        "preLaunchCommand",
+        "postExitCommand",
     ] {
         if let Some(v) = src.get(k) {
             if !v.is_null() {
@@ -555,23 +700,31 @@ pub fn duplicate_instance(id: String) -> Result<Value, String> {
         .ok_or("copy has no id")?
         .to_string();
     let dst_dir = resolve_instance_dir(&copy_id);
-    if let Err(error) = copy_game_directories_checked(
-        &src_game_dir,
-        &dst_dir.join("minecraft"),
-        &[
-            "mods",
-            "resourcepacks",
-            "shaderpacks",
-            "datapacks",
-            "config",
-        ],
-    ) {
+    let dst_game_dir = dst_dir.join("minecraft");
+    let directories = duplicate_content_directories(&options);
+    if let Err(error) = copy_game_directories_checked(&src_game_dir, &dst_game_dir, &directories) {
+        return Err(rollback_created_instance(&copy_id, error));
+    }
+    let mut files = Vec::new();
+    if options.copy_game_options {
+        files.extend(["options.txt", "optionsof.txt", "optionsshaders.txt"]);
+    }
+    if options.copy_servers {
+        files.extend(["servers.dat", "servers.dat_old"]);
+    }
+    if let Err(error) = copy_game_files_checked(&src_game_dir, &dst_game_dir, &files) {
         return Err(rollback_created_instance(&copy_id, error));
     }
 
     let mut patch = json!({
-        "mods": src.get("mods").cloned().unwrap_or(json!([])),
+        "mods": duplicate_content_metadata(&src, &options),
     });
+    if options.keep_playtime {
+        patch["totalTimePlayed"] = src.get("totalTimePlayed").cloned().unwrap_or(json!(0));
+        if let Some(playtime_log) = src.get("playtimeLog") {
+            patch["playtimeLog"] = playtime_log.clone();
+        }
+    }
     if src
         .get("isInstalled")
         .and_then(Value::as_bool)
@@ -783,7 +936,11 @@ pub fn delete_instance(id: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::copy_game_directories_checked;
+    use super::{
+        copy_game_directories_checked, copy_game_files_checked, duplicate_content_directories,
+        duplicate_content_metadata, DuplicateInstanceOptions,
+    };
+    use serde_json::json;
     use std::fs;
 
     #[test]
@@ -805,6 +962,13 @@ mod tests {
             b"mod"
         );
 
+        fs::write(source.join("options.txt"), b"options").unwrap();
+        copy_game_files_checked(&source, &destination, &["options.txt"]).unwrap();
+        assert_eq!(
+            fs::read(destination.join("options.txt")).unwrap(),
+            b"options"
+        );
+
         fs::create_dir_all(source.join("resourcepacks")).unwrap();
         fs::write(source.join("resourcepacks").join("pack.zip"), b"pack").unwrap();
         fs::write(destination.join("resourcepacks"), b"destination conflict").unwrap();
@@ -813,5 +977,27 @@ mod tests {
         assert!(error.contains("Could not create copy directory"));
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicate_options_keep_legacy_defaults_and_filter_metadata() {
+        let options: DuplicateInstanceOptions =
+            serde_json::from_value(json!({ "copySaves": true, "copyShaderPacks": false })).unwrap();
+        assert_eq!(
+            duplicate_content_directories(&options),
+            vec!["mods", "config", "resourcepacks", "datapacks", "saves"]
+        );
+
+        let instance = json!({
+            "mods": [
+                { "name": "Mod" },
+                { "name": "Resources", "contentType": "resourcepack" },
+                { "name": "Shaders", "contentType": "shader" },
+                { "name": "Data", "contentType": "datapack" }
+            ]
+        });
+        let copied = duplicate_content_metadata(&instance, &options);
+        assert_eq!(copied.len(), 3);
+        assert!(copied.iter().all(|entry| entry["name"] != "Shaders"));
     }
 }

@@ -938,7 +938,8 @@ function createTauriApi(): RefractAPI {
       update: ((id: string, patch: Partial<Instance>) => tinvoke('update_instance', { id, patch })) as RefractAPI['instance']['update'],
       delete: ((id: string) => tinvoke('delete_instance', { id })) as RefractAPI['instance']['delete'],
       openFolder: ((id: string) => tinvoke('open_instance_folder', { id })) as RefractAPI['instance']['openFolder'],
-      duplicate: ((id: string) => tinvoke('duplicate_instance', { id })) as RefractAPI['instance']['duplicate'],
+      duplicate: ((id: string, options?: import('@refract/core').DuplicateInstanceOptions) =>
+        tinvoke('duplicate_instance', { id, options })) as RefractAPI['instance']['duplicate'],
       snapshots: ((instanceId: string) =>
         tinvoke('instance_snapshots_list', { instanceId })) as RefractAPI['instance']['snapshots'],
       restoreSnapshot: ((instanceId: string, snapshotId: string) =>

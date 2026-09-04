@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useId } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type React from 'react'
-import type { Instance, ModLoader, JavaInstallation } from '@refract/core'
+import type { Instance, ModLoader, JavaInstallation, DuplicateInstanceOptions } from '@refract/core'
 import { compressImage } from '@/lib/image'
 import { McVersionSelect } from './McVersionSelect'
 import { Button } from '@/components/ui/Button'
@@ -20,6 +20,21 @@ const MOD_LOADERS: Array<{ value: ModLoader | ''; label: (t: T) => string }> = [
 
 const ALL_PRESETS = [1, 2, 4, 8, 16, 32, 64]
 
+type DuplicateFlag = Exclude<keyof DuplicateInstanceOptions, 'name'>
+
+const DEFAULT_DUPLICATE_OPTIONS: Required<Omit<DuplicateInstanceOptions, 'name'>> = {
+  copyMods: true,
+  copyConfiguration: true,
+  copyResourcePacks: true,
+  copyShaderPacks: true,
+  copyDatapacks: true,
+  copySaves: false,
+  copyGameOptions: false,
+  copyServers: false,
+  copyScreenshots: false,
+  keepPlaytime: false,
+}
+
 interface Props {
   instance: Instance | null
   open: boolean
@@ -27,7 +42,7 @@ interface Props {
   onSave: (id: string, patch: Partial<Instance>) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onRepair?: (id: string) => void
-  onDuplicate?: (id: string) => Promise<void>
+  onDuplicate?: (id: string, options: DuplicateInstanceOptions) => Promise<void>
   onSnapshotRestore?: (id: string, snapshotId: string) => Promise<void>
 }
 
@@ -50,6 +65,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const verId    = useId()
   const grpId    = useId()
   const notesId  = useId()
+  const duplicateNameId = useId()
   const javaId   = useId()
   const argsId   = useId()
   const pinId    = useId()
@@ -88,7 +104,12 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const [snapshotBusy, setSnapshotBusy] = useState(false)
   const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null)
   const [snapshotConfirm, setSnapshotConfirm] = useState<{ id: string; action: 'restore' | 'delete' } | null>(null)
+  const [showDuplicateOptions, setShowDuplicateOptions] = useState(false)
+  const [duplicateName, setDuplicateName] = useState('')
+  const [duplicateOptions, setDuplicateOptions] = useState(DEFAULT_DUPLICATE_OPTIONS)
+  const [duplicateError, setDuplicateError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const duplicatePanelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     api.config.get()
@@ -125,11 +146,23 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
       setRollbackSnapshots([])
       setSnapshotMessage(null)
       setSnapshotConfirm(null)
+      setShowDuplicateOptions(false)
+      setDuplicateName(`${instance.name} (copy)`)
+      setDuplicateOptions(DEFAULT_DUPLICATE_OPTIONS)
+      setDuplicateError(null)
       api.mc.java().then(setJavas).catch(() => setJavas([]))
       api.instance.list().then(setAllInstances).catch(() => setAllInstances([]))
       api.instance.snapshots(instance.id).then(setRollbackSnapshots).catch(() => setRollbackSnapshots([]))
     }
   }, [instance, open])
+
+  useEffect(() => {
+    if (!showDuplicateOptions) return
+    const frame = window.requestAnimationFrame(() => {
+      duplicatePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [showDuplicateOptions])
 
   useEffect(() => {
     setLoaderVersions([])
@@ -202,6 +235,26 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
     }
   }
 
+  async function handleDuplicate() {
+    if (!instance || !onDuplicate || loading || snapshotBusy) return
+    if (!showDuplicateOptions) {
+      setShowDuplicateOptions(true)
+      setDuplicateError(null)
+      return
+    }
+    if (!duplicateName.trim()) return
+    setLoading(true)
+    setDuplicateError(null)
+    try {
+      await onDuplicate(instance.id, { name: duplicateName.trim(), ...duplicateOptions })
+      onOpenChange(false)
+    } catch (error) {
+      setDuplicateError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const loaderLabel = MOD_LOADERS.find(l => l.value === modLoader)?.label(t) ?? t.editInst.vanilla
   const displayName = name.trim() || t.editInst.instanceFallback
   const snapshotReason = (reason: string) => reason === 'modpack_update'
@@ -210,6 +263,18 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const snapshotSize = (bytes: number) => bytes >= 1024 * 1024
     ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.max(1, Math.ceil(bytes / 1024))} KB`
+  const duplicateChoices: Array<{ key: DuplicateFlag; label: string }> = [
+    { key: 'copyMods', label: t.editInst.copyMods },
+    { key: 'copyConfiguration', label: t.editInst.copyConfiguration },
+    { key: 'copyResourcePacks', label: t.editInst.copyResourcePacks },
+    { key: 'copyShaderPacks', label: t.editInst.copyShaderPacks },
+    { key: 'copyDatapacks', label: t.editInst.copyDatapacks },
+    { key: 'copySaves', label: t.editInst.copySaves },
+    { key: 'copyGameOptions', label: t.editInst.copyGameOptions },
+    { key: 'copyServers', label: t.editInst.copyServers },
+    { key: 'copyScreenshots', label: t.editInst.copyScreenshots },
+    { key: 'keepPlaytime', label: t.editInst.keepPlaytime },
+  ]
 
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!loading && !snapshotBusy) onOpenChange(v) }}>
@@ -734,6 +799,45 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 </div>
               </div>
 
+              {showDuplicateOptions && onDuplicate && (
+                <div ref={duplicatePanelRef} style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14, border: '1px solid var(--border-r)', borderRadius: 'var(--radius-lg)', background: 'var(--surface-2)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.10em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+                    {t.editInst.copyOptions}
+                  </div>
+                  <label htmlFor={duplicateNameId} style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-3)' }}>
+                    {t.editInst.copyName}
+                  </label>
+                  <input
+                    id={duplicateNameId}
+                    className="ni-input"
+                    value={duplicateName}
+                    onChange={event => setDuplicateName(event.target.value)}
+                    autoComplete="off"
+                  />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '9px 14px' }}>
+                    {duplicateChoices.map(choice => (
+                      <label key={choice.key} className="ni-check">
+                        <input
+                          className="ni-check-input"
+                          type="checkbox"
+                          checked={duplicateOptions[choice.key]}
+                          onChange={event => setDuplicateOptions(current => ({
+                            ...current,
+                            [choice.key]: event.target.checked,
+                          }))}
+                        />
+                        <span className="ni-checkmark-box">
+                          <svg className="ni-checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-11"/></svg>
+                        </span>
+                        <span className="ni-check-label">{choice.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10, lineHeight: 1.5, color: 'var(--ink-4)' }}>{t.editInst.copyHint}</div>
+                  {duplicateError && <div role="alert" style={{ fontSize: 11, color: 'var(--lava)' }}>{duplicateError}</div>}
+                </div>
+              )}
+
               {/* Pin toggle */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <label htmlFor={pinId} className="ni-check" style={{ alignSelf: 'flex-start' }}>
@@ -781,16 +885,11 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
             {onDuplicate && (
               <button
                 type="button"
-                disabled={loading || snapshotBusy}
-                onClick={async () => {
-                  if (!instance) return
-                  setLoading(true)
-                  try { await onDuplicate(instance.id); onOpenChange(false) }
-                  finally { setLoading(false) }
-                }}
+                disabled={loading || snapshotBusy || (showDuplicateOptions && !duplicateName.trim())}
+                onClick={() => void handleDuplicate()}
                 className="ni-btn ni-btn-soft"
               >
-                {t.editInst.duplicate}
+                {showDuplicateOptions ? t.editInst.createCopy : t.editInst.duplicate}
               </button>
             )}
             <div style={{ flex: 1 }} />
