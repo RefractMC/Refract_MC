@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+* Renamed the application executable from `refract-tauri` to `refract` in every package: `/usr/bin/refract` in the `.deb` and `.rpm`, `refract` inside the AppImage and the macOS bundle, `refract.exe` on Windows. Desktop entries, icons, and the window class follow the new name; window rules keyed on the old `StartupWMClass` need updating.
+
 ### Added
 
 * Added local plain-text notes to instance settings, with notes preserved when duplicating an instance.
