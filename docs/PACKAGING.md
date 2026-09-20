@@ -33,6 +33,15 @@ these stable aliases:
 * `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and
   `Refract-Linux-x86_64.rpm`
 
+The executable is named `refract` on every platform (`mainBinaryName` in
+`tauri.conf.json`): `/usr/bin/refract` in the `.deb` and `.rpm`, `usr/bin/refract`
+inside the AppImage, `Refract.app/Contents/MacOS/refract`, and `refract.exe` on
+Windows. The Cargo package keeps its internal name; nothing user-facing may
+depend on it. The release workflow fails if a bundle does not contain the
+canonical name. `install.config.json` at the repository root no longer names the
+macOS executable: the installer reads it from the bundle, so the file stays valid
+across the rename.
+
 The updater’s signed `latest.json` uses separate `.app.tar.gz` aliases. Package
 manifests intentionally use the installer/DMG aliases, not updater archives.
 MSIX is not listed as a direct-download link until a trusted publisher

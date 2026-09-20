@@ -72,7 +72,7 @@ jobs:
         run: |
           $version = '${{ inputs.tag }}'.TrimStart('v') + '.0'
           ./packaging/msix/build-msix.ps1 `
-            -Executable 'apps/tauri/src-tauri/target/release/refract-tauri.exe' `
+            -Executable 'apps/tauri/src-tauri/target/release/refract.exe' `
             -Version $version `
             -Publisher $env:MSIX_PUBLISHER `
             -CertificatePath "$env:RUNNER_TEMP\refract-msix.pfx" `

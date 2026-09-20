@@ -5,7 +5,6 @@
   "manifest_url": "https://github.com/RefractMC/Refract_MC/releases/latest/download/latest.json",
   "pubkey": "RWQkukf1kBwQ/86ivJEv75SqjTY69a/ygF8HPb9ZXNwQoi+A2L/dY875",
   "macos_bundle_name": "Refract",
-  "macos_executable_name": "refract-tauri",
   "deb_package_name": "refract",
   "rpm_package_name": "refract",
   "install_dir": "$HOME/.local/bin",
