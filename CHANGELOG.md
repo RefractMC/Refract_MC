@@ -14,6 +14,7 @@
 
 ### Fixes
 
+* Switched the Linux WebKitGTK workaround to shared-memory renderer transport, retaining an override for systems that need the legacy renderer.
 * Made individual content updates hash-verified and rollback-safe, and persist the updated file, version, and repair metadata only after replacement succeeds.
 * Made Minecraft repair re-hash cached assets and re-download missing or corrupt objects instead of trusting every existing asset file.
 * Made instance duplication and external-launcher imports fail visibly and remove incomplete destinations when any selected file cannot be copied.
