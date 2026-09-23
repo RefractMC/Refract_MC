@@ -99,7 +99,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 1. Tauri creates a maximized, centered, frameless `1280 x 800` main window with a `900 x 600` minimum.
 2. The single-instance plugin focuses the existing window when a second process starts.
 3. Deep links, dialogs, updater, and process plugins are registered.
-4. Linux disables the WebKitGTK DMA-BUF renderer by default to avoid blank frames and freezes.
+4. Linux requests WebKitGTK's shared-memory renderer transport by default to avoid hardware DMA-BUF freezes while keeping accelerated compositing available where supported. Explicit `WEBKIT_DISABLE_DMABUF_RENDERER` or `WEBKIT_DMABUF_RENDERER_FORCE_SHM` environment variables take precedence.
 5. Analytics initializes, but sends nothing if the build has no `GA_API_SECRET` or the user opted out.
 6. Quick Play command-line arguments can immediately launch an instance.
 7. React initializes error logging and the persisted theme, then mounts a hash router and Query client.
