@@ -90,6 +90,8 @@ themes, Discord Rich Presence, and Java Edition license verification.
 curl -fsSL https://refractmc.net/install.sh | sh
 ````
 
+The Linux script is powered by [mget](https://github.com/modrexio/mget).
+
 ### Direct downloads
 
 <p align="center">
