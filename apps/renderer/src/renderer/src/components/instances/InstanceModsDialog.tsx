@@ -117,6 +117,11 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   const [exportPct, setExportPct]        = useState<number | null>(null)
   const [updatingAll, setUpdatingAll]    = useState(false)
   const [profiles, setProfiles]          = useState<ModProfile[]>([])
+  const [profilesError, setProfilesError] = useState<string | null>(null)
+  const [profileBusy, setProfileBusy] = useState(false)
+  const profileActionRef = useRef(false)
+  const profileSessionRef = useRef(0)
+  const profileReadRef = useRef(0)
   const [savingProfile, setSavingProfile]= useState(false)
   const [newProfileName, setNewProfileName] = useState('')
   const [selectedMods, setSelectedMods]  = useState<Set<string>>(new Set())
@@ -178,8 +183,17 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
 
   const loadProfiles = useCallback(async () => {
     if (!instance) return
-    try { setProfiles(await api.mods.profilesList(instance.id) as ModProfile[]) }
-    catch { /* ignore */ }
+    const session = profileSessionRef.current
+    const request = ++profileReadRef.current
+    try {
+      const list = await api.mods.profilesList(instance.id) as ModProfile[]
+      if (session !== profileSessionRef.current || request !== profileReadRef.current) return
+      setProfiles(list)
+      setProfilesError(null)
+    } catch (e) {
+      if (session !== profileSessionRef.current || request !== profileReadRef.current) return
+      setProfilesError(e instanceof Error ? e.message : String(e))
+    }
   }, [instance])
 
   // Audit recorded installs against the files on disk (hash + existence); with
@@ -209,9 +223,15 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   // Track which tabs have already been loaded this session — avoids re-fetching on tab revisit
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set())
 
+  useEffect(() => () => {
+    profileSessionRef.current += 1
+    profileReadRef.current += 1
+  }, [open, instance?.id])
+
   useEffect(() => {
     if (!open) return
     setItems([]); setWorlds([]); setScreenshots([]); setModUpdates([]); setServers([]); setProfiles([])
+    setProfilesError(null)
     setTab('all'); setError(null); setSelectedMods(new Set()); setLoadedTabs(new Set())
     load()
   }, [open, load])
@@ -325,26 +345,57 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
   }
 
   async function handleApplyProfile(profileId: string) {
-    if (!instance) return
-    try { await api.mods.profilesApply(instance.id, profileId); await load() }
-    catch { /* ignore */ }
+    if (!instance || profileActionRef.current) return
+    profileActionRef.current = true
+    const session = profileSessionRef.current
+    setProfileBusy(true)
+    setProfilesError(null)
+    try {
+      await api.mods.profilesApply(instance.id, profileId)
+      if (session === profileSessionRef.current) await load()
+    }
+    catch (e) {
+      if (session === profileSessionRef.current) setProfilesError(e instanceof Error ? e.message : String(e))
+    }
+    finally { profileActionRef.current = false; setProfileBusy(false) }
   }
 
   async function handleSaveProfile() {
-    if (!instance || !newProfileName.trim()) return
+    if (!instance || !newProfileName.trim() || profileActionRef.current) return
+    profileActionRef.current = true
+    const session = profileSessionRef.current
+    setProfileBusy(true)
+    setProfilesError(null)
     try {
       const enabledFiles = items.filter(i => i.type === 'mod' && i.enabled).map(i => i.filename.replace(/\.disabled$/, ''))
       const p = await api.mods.profilesSave(instance.id, newProfileName.trim(), enabledFiles) as ModProfile
+      if (session !== profileSessionRef.current) return
+      profileReadRef.current += 1
       setProfiles(prev => [...prev, p])
       setNewProfileName('')
       setSavingProfile(false)
-    } catch { /* ignore */ }
+    } catch (e) {
+      if (session === profileSessionRef.current) setProfilesError(e instanceof Error ? e.message : String(e))
+    }
+    finally { profileActionRef.current = false; setProfileBusy(false) }
   }
 
   async function handleDeleteProfile(profileId: string) {
-    if (!instance) return
-    try { await api.mods.profilesDelete(instance.id, profileId); setProfiles(prev => prev.filter(p => p.id !== profileId)) }
-    catch { /* ignore */ }
+    if (!instance || profileActionRef.current) return
+    profileActionRef.current = true
+    const session = profileSessionRef.current
+    setProfileBusy(true)
+    setProfilesError(null)
+    try {
+      await api.mods.profilesDelete(instance.id, profileId)
+      if (session !== profileSessionRef.current) return
+      profileReadRef.current += 1
+      setProfiles(prev => prev.filter(p => p.id !== profileId))
+    }
+    catch (e) {
+      if (session === profileSessionRef.current) setProfilesError(e instanceof Error ? e.message : String(e))
+    }
+    finally { profileActionRef.current = false; setProfileBusy(false) }
   }
 
   async function handleBulkToggle(enable: boolean) {
@@ -683,6 +734,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   variant="outline"
                   size="sm"
                   onClick={() => handleApplyProfile(p.id)}
+                  disabled={profileBusy || !!profilesError || isRunning}
                   title={td.applyProfileTip(p.name, p.enabledFiles.length)}
                   className="glow-hover"
                   style={{
@@ -700,6 +752,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   variant="danger"
                   size="sm"
                   onClick={() => handleDeleteProfile(p.id)}
+                  disabled={profileBusy || !!profilesError}
                   title={td.deleteProfileTip}
                   style={{
                     fontSize: 10, padding: '2px 5px',
@@ -719,6 +772,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 <input
                   autoFocus
                   value={newProfileName}
+                  disabled={profileBusy}
                   onChange={e => setNewProfileName(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter') handleSaveProfile()
@@ -735,6 +789,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                   variant="primary"
                   size="sm"
                   onClick={handleSaveProfile}
+                  disabled={profileBusy || !!profilesError || !newProfileName.trim()}
                   style={{ fontSize: 11, padding: '1px 8px' }}
                 >
                   {td.saving}
@@ -753,6 +808,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 variant="outline"
                 size="sm"
                 onClick={() => setSavingProfile(true)}
+                disabled={profileBusy || !!profilesError}
                 style={{
                   fontSize: 11, padding: '2px 8px',
                   background: 'none', border: '1px dashed var(--border-r)',
@@ -764,6 +820,15 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
                 {td.saveProfile}
               </Button>
             )}
+          </div>
+        )}
+
+        {isContentTab && (tab === 'mod' || tab === 'all') && profilesError && (
+          <div className="detail-strip" role="alert" style={{ color: 'var(--lava)', fontSize: 12 }}>
+            <span style={{ flex: 1 }}>{profilesError}</span>
+            <Button variant="outline" size="sm" onClick={() => void loadProfiles()} disabled={profileBusy}>
+              {td.retryProfiles}
+            </Button>
           </div>
         )}
 

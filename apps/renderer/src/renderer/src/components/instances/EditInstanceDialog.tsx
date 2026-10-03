@@ -259,7 +259,9 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   const displayName = name.trim() || t.editInst.instanceFallback
   const snapshotReason = (reason: string) => reason === 'modpack_update'
     ? t.editInst.snapshotReasonModpack
-    : t.editInst.snapshotReasonRestore
+    : reason === 'content_change'
+      ? t.editInst.snapshotReasonContent
+      : t.editInst.snapshotReasonRestore
   const snapshotSize = (bytes: number) => bytes >= 1024 * 1024
     ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.max(1, Math.ceil(bytes / 1024))} KB`
