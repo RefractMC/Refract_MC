@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { api, type DeviceLogin, type SafeAccount } from '@/lib/api'
+import { authErrorMessage } from '@/lib/auth-errors'
+import { startDevicePolling } from '@/lib/device-poll'
 import { SkinViewer3DLazy as SkinViewer3D } from '@/components/ui/SkinViewer3DLazy'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
@@ -53,21 +55,6 @@ function accessText(account: SafeAccount, t: T) {
   return t.account.offlineAccess
 }
 
-function isPendingDeviceLogin(message: string) {
-  const lower = message.toLowerCase()
-  return lower.includes('authorization_pending') || lower.includes('authorization is pending')
-}
-
-function isExpiredDeviceLogin(message: string) {
-  const lower = message.toLowerCase()
-  return lower.includes('expired_token') || lower.includes('expired')
-}
-
-function isDeclinedDeviceLogin(message: string) {
-  const lower = message.toLowerCase()
-  return lower.includes('authorization_declined') || lower.includes('declined')
-}
-
 function Account() {
   const t = useT()
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
@@ -82,6 +69,12 @@ function Account() {
   const [yggPassword, setYggPassword] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [validationErrors, setValidationErrors] = useState<Record<string, unknown>>({})
+  const [checkingSession, setCheckingSession] = useState<string | null>(null)
+  const mounted = useRef(false)
+  const translations = useRef(t)
+  translations.current = t
+  const poller = useRef<ReturnType<typeof startDevicePolling<SafeAccount>> | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const avatars = useAvatarStore((s) => s.avatars)
@@ -100,28 +93,54 @@ function Account() {
   const [capeUpdating, setCapeUpdating] = useState(false)
   const [capeMsg, setCapeMsg]         = useState<{ ok: boolean; text: string } | null>(null)
 
-  async function refresh() {
+  async function refresh(isCurrent = () => mounted.current) {
     const [nextAccounts, nextActive] = await Promise.all([
       api.auth.accounts(),
       api.auth.active(),
     ])
-    setAccounts(nextAccounts)
-    setActive(nextActive)
+    if (isCurrent()) {
+      setAccounts(nextAccounts)
+      setActive(nextActive)
+    }
   }
 
   useEffect(() => {
-    refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)))
-    // Proactively validate signed-in sessions (silently refreshing tokens where
-    // possible) so an expired account shows its re-login prompt right away
-    // instead of failing at the next launch.
+    let alive = true
+    mounted.current = true
     void (async () => {
-      const accs = await api.auth.accounts().catch(() => [])
-      const authed = accs.filter(a => a.type === 'microsoft' || a.type === 'yggdrasil')
-      if (authed.length === 0) return
-      await Promise.all(authed.map(a => api.auth.validate(a.uuid).catch(() => false)))
-      await refresh().catch(() => {})
+      try {
+        const [accs, selected] = await Promise.all([api.auth.accounts(), api.auth.active()])
+        if (!alive) return
+        setAccounts(accs)
+        setActive(selected)
+        const authed = accs.filter(a => a.type === 'microsoft' || a.type === 'yggdrasil')
+        await Promise.all(authed.map(async account => {
+          try { await api.auth.validate(account.uuid) }
+          catch (err) {
+            if (alive) setValidationErrors(prev => ({ ...prev, [account.uuid]: err }))
+          }
+        }))
+        if (alive) await refresh(() => alive)
+      } catch (err) {
+        if (alive) setError(authErrorMessage(err, translations.current.authErrors, translations.current.home.unknownError))
+      }
     })()
+    return () => { alive = false; mounted.current = false }
   }, [])
+
+  async function retryValidation(uuid: string) {
+    setCheckingSession(uuid)
+    try {
+      await api.auth.validate(uuid)
+      if (!mounted.current) return
+      setValidationErrors(prev => { const next = { ...prev }; delete next[uuid]; return next })
+      await refresh()
+    } catch (err) {
+      if (mounted.current) setValidationErrors(prev => ({ ...prev, [uuid]: err }))
+    } finally {
+      if (mounted.current) setCheckingSession(null)
+    }
+  }
 
   async function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -148,54 +167,36 @@ function Account() {
   }, [loginExpiresAt])
 
   useEffect(() => {
-    if (!device) return
-
-    let cancelled = false
-    // Completing a poll runs the full token chain (several seconds). Guard against
-    // overlapping interval ticks — a second poll would re-send the already-redeemed
-    // device code and Microsoft answers `invalid_grant`.
-    let inFlight = false
-    const currentDevice = device
-    const intervalMs = Math.max(currentDevice.interval, 5) * 1000
-
-    async function poll() {
-      if (inFlight) return
-      inFlight = true
-      try {
-        const account = await api.auth.microsoftComplete(currentDevice.deviceCode)
-        if (cancelled) return
+    if (!device || !loginExpiresAt) return
+    const current = startDevicePolling({
+      interval: device.interval,
+      expiresAt: loginExpiresAt,
+      complete: () => api.auth.microsoftComplete(device.deviceCode),
+      success: account => {
+        setValidationErrors(prev => { const next = { ...prev }; delete next[account.uuid]; return next })
         setDevice(null)
         setLoginExpiresAt(null)
-        setLoginMessage(t.account.signedInAs(account.username))
-        await refresh()
-      } catch (err) {
-        if (cancelled) return
-        const message = err instanceof Error ? err.message : String(err)
-        if (isPendingDeviceLogin(message)) {
-          setLoginMessage(t.account.waitingForMicrosoft)
-          return
-        }
+        setLoginMessage(translations.current.account.signedInAs(account.username))
+        void refresh().catch(err => {
+          if (mounted.current) setError(authErrorMessage(err, translations.current.authErrors, translations.current.home.unknownError))
+        })
+      },
+      pending: slowDown => setLoginMessage(slowDown
+        ? translations.current.authErrors.slowDown
+        : translations.current.account.waitingForMicrosoft),
+      failure: err => {
         setDevice(null)
         setLoginExpiresAt(null)
         setLoginMessage(null)
-        setError(
-          isExpiredDeviceLogin(message)
-            ? t.account.signInCodeExpired
-            : isDeclinedDeviceLogin(message)
-              ? t.account.signInDeclined
-              : message
-        )
-      } finally {
-        inFlight = false
-      }
-    }
-
-    const id = window.setInterval(poll, intervalMs)
+        setError(authErrorMessage(err, translations.current.authErrors, translations.current.home.unknownError))
+      },
+    })
+    poller.current = current
     return () => {
-      cancelled = true
-      window.clearInterval(id)
+      current.dispose()
+      if (poller.current === current) poller.current = null
     }
-  }, [device, t])
+  }, [device, loginExpiresAt])
 
   async function run<T>(label: string, action: () => Promise<T>) {
     setBusy(label)
@@ -203,7 +204,7 @@ function Account() {
     try {
       return await action()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (mounted.current) setError(authErrorMessage(err, t.authErrors, t.home.unknownError))
       return null
     } finally {
       setBusy(null)
@@ -212,7 +213,7 @@ function Account() {
 
   async function startMicrosoft() {
     const result = await run('microsoft-begin', () => api.auth.microsoftBegin())
-    if (result) {
+    if (result && mounted.current) {
       setDevice(result)
       setLoginExpiresAt(Date.now() + result.expiresIn * 1000)
       await openMicrosoftVerification(result.verificationUri)
@@ -229,29 +230,14 @@ function Account() {
     }
   }
 
-  async function completeMicrosoft() {
-    if (!device) return
-    setBusy('microsoft-complete')
+  function completeMicrosoft() {
     setError(null)
-    try {
-      const account = await api.auth.microsoftComplete(device.deviceCode)
-      setDevice(null)
-      setLoginExpiresAt(null)
-      setLoginMessage(t.account.signedInAs(account.username))
-      await refresh()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (isPendingDeviceLogin(message)) {
-        setLoginMessage(t.account.signInNotConfirmed)
-      } else {
-        setError(message)
-      }
-    } finally {
-      setBusy(null)
-    }
+    setLoginMessage(t.account.waitingForMicrosoft)
+    void poller.current?.check()
   }
 
   function cancelMicrosoft() {
+    poller.current?.dispose()
     setDevice(null)
     setLoginExpiresAt(null)
     setLoginMessage(null)
@@ -272,6 +258,7 @@ function Account() {
     const account = await run('yggdrasil-login', () => api.auth.yggdrasilLogin(yggServer, yggUsername, yggPassword))
     if (account) {
       setYggPassword('')
+      setValidationErrors(prev => { const next = { ...prev }; delete next[account.uuid]; return next })
       await refresh()
     }
   }
@@ -288,7 +275,7 @@ function Account() {
       setSkinTarget(null)
       setSkinPath(null)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = authErrorMessage(e, t.authErrors, t.home.unknownError)
       if (msg === 'OFFLINE_ONLY') {
         // For offline accounts treat as local avatar change
         setSkinMsg({ ok: true, text: t.skins.savedAsAvatar })
@@ -309,7 +296,7 @@ function Account() {
       setCapes(prev => prev.map(c => ({ ...c, state: c.id === capeId ? 'ACTIVE' : 'INACTIVE' })))
       setCapeMsg({ ok: true, text: capeId ? t.account.capeActivated : t.account.capeHidden })
     } catch (e) {
-      setCapeMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
+      setCapeMsg({ ok: false, text: authErrorMessage(e, t.authErrors, t.home.unknownError) })
     } finally {
       setCapeUpdating(false)
     }
@@ -594,6 +581,16 @@ function Account() {
                           <div style={{ marginTop:6, fontSize:11, color:'var(--lava)', fontWeight:600 }}>⚠ {t.account.sessionExpired}</div>
                         )
                       )}
+                      {validationErrors[account.uuid] != null && (
+                        <div role="status" style={{ marginTop: 6, fontSize: 12, color: 'var(--lava)' }}>
+                          <p>{authErrorMessage(validationErrors[account.uuid], t.authErrors, t.home.unknownError)}</p>
+                          <Button variant="secondary" size="sm" type="button"
+                            disabled={!!checkingSession || !!busy}
+                            onClick={() => { void retryValidation(account.uuid) }}>
+                            {checkingSession === account.uuid ? t.authErrors.checking : t.authErrors.retryCheck}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {isActive && <div style={{ color:'var(--accent)', fontSize:12, fontWeight:600, flexShrink:0 }}>{t.account.activeLabel}</div>}
@@ -637,7 +634,10 @@ function Account() {
                         try {
                           const list = await api.auth.fetchCapes(account.uuid)
                           setCapes(list)
-                        } catch { setCapes([]) }
+                        } catch (err) {
+                          setCapes([])
+                          setCapeMsg({ ok: false, text: authErrorMessage(err, t.authErrors, t.home.unknownError) })
+                        }
                         finally { setCapesLoading(false) }
                       }}
                       style={{ height:30, fontSize:12 }}

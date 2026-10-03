@@ -5,6 +5,7 @@ import { SkinViewer3DLazy as SkinViewer3D } from '@/components/ui/SkinViewer3DLa
 import { Button } from '@/components/ui/Button'
 import { invalidateSkinFaceCache, primeSkinFaceCacheFromSkinUrl } from '@/lib/skin-face'
 import { useT } from '@/i18n'
+import { authErrorMessage } from '@/lib/auth-errors'
 
 export const Route = createFileRoute('/skins/')({ component: SkinsPage })
 
@@ -104,7 +105,7 @@ function SkinsPage_() {
       else invalidateSkinFaceCache(msAccount.uuid)
       setMsg({ ok: true, text: t.skins.skinApplied(msAccount.username) })
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
+      setMsg({ ok: false, text: authErrorMessage(e, t.authErrors, t.home.unknownError) })
     } finally { setApplying(false) }
   }
 
