@@ -9,7 +9,7 @@ tags:
   - architecture
 status: living
 created: 2026-07-19
-updated: 2026-08-31
+updated: 2026-09-30
 project_version: 1.4.0
 repository: https://github.com/RefractMC/Refract_MC
 ---
@@ -28,7 +28,7 @@ repository: https://github.com/RefractMC/Refract_MC
 | --- | --- |
 | Product | Refract, an open-source Minecraft Java Edition launcher |
 | Primary runtime | Tauri 2 desktop shell with a Rust backend |
-| UI | React 18, TypeScript, Vite 8, Tailwind CSS 4 |
+| UI | React 19, TypeScript, Vite 8, Tailwind CSS 4 |
 | Routing and server state | TanStack Router and TanStack Query |
 | Local UI state | Zustand with localStorage persistence |
 | Monorepo | pnpm workspaces |
@@ -40,6 +40,28 @@ repository: https://github.com/RefractMC/Refract_MC
 | Website | https://refractmc.net |
 
 The product goal is a focused launcher that owns instance organization, Minecraft installation and launch, accounts, Java runtimes, community content, worlds, screenshots, servers, skins, themes, updates, and diagnostics.
+
+### Official website source
+
+The website is maintained separately in [RefractMC/Refract_net](https://github.com/RefractMC/Refract_net).
+The local `website/` directory is an independent checkout with its own Git history, pnpm workspace,
+and GitHub Pages workflow. Run website commands from that directory; do not add it as a launcher
+workspace package. Its Astro static pages share a normalized GitHub data layer for release assets,
+repository statistics, and contributors, with browser revalidation and server-only optional tokens.
+The home page progressively loads an original Three.js voxel scene; documentation remains static
+with a local search index. See `website/README.md` for development and deployment details.
+
+### Storage and operation guarantees
+
+Portable pack path checks, instance identity/ownership checks, fail-closed vault
+initialization, checked override copies and asynchronous event cleanup are now implemented.
+Exact loader profiles and shared JSON persistence with recovery backups are also
+implemented. Shared artifact ownership, verified replacement and staged Java
+provisioning are implemented too. Planned modpack snapshots and interrupted-update
+recovery are now implemented. Authentication uses typed recovery errors and per-account
+refresh ownership. Remaining gaps include provider/native rollback verification,
+multi-file metadata transactions, secondary JSON stores, operation ownership across
+all native mutations, cancellation through every provider stage and native verification.
 
 ## Mental model
 
@@ -97,19 +119,64 @@ The most important architectural rule is: UI components call the stable `api.*` 
 ### Startup
 
 1. Tauri creates a maximized, centered, frameless `1280 x 800` main window with a `900 x 600` minimum.
+   The window starts hidden while native initialization creates a localized Show/Quit tray menu.
+   It stays in the tray only when both `startMinimized` and `minimizeToTray` are enabled;
+   otherwise it is shown. A missing tray uses taskbar minimization for background startup.
 2. The single-instance plugin focuses the existing window when a second process starts.
 3. Deep links, dialogs, updater, and process plugins are registered.
 4. Linux disables the WebKitGTK DMA-BUF renderer by default to avoid blank frames and freezes.
 5. Analytics initializes, but sends nothing if the build has no `GA_API_SECRET` or the user opted out.
-6. Quick Play command-line arguments can immediately launch an instance.
+6. A blocking worker attempts recovery of interrupted instance updates/restores before Quick Play launches. Pending recovery blocks guarded mutations and launches, including alternate instance IDs that share the affected folders. Failed recovery can be retried from the global recovery notice.
 7. React initializes error logging and the persisted theme, then mounts a hash router and Query client.
 8. The renderer updater checks GitHub Releases, rechecks every 30 minutes while the app stays open, and exposes a manual check in Settings. Download and install failures are returned to the UI for retry instead of being log-only.
+
+Native `window_lifecycle.rs` handles main-window close requests. With `minimizeToTray`
+enabled, it hides to an available tray or minimizes to the taskbar. Linux checks for a
+StatusNotifier tray host before hiding. A successful game spawn applies
+`launchMinimizesToTray`; the last tracked game exit applies `reopenOnGameExit`.
+Queued actions verify their operation identity on the main thread so a delayed hide
+does not override an already-finished game. Tray and Settings expose an explicit Quit.
+Tray labels follow the renderer language, and window failures have a global notice.
+
+A real window/tray/settings quit first acquires exclusive maintenance and emits
+`window://quit-requested` with a request ID and `skipUpdate` flag. Active shared work
+rejects quit or update installation with a global notice. The process-wide renderer
+listener acknowledges the ID before installing a downloaded update or finalizing quit.
+Hiding does not run the installer. A WebView that never acknowledges allows a five-second
+fallback; claiming that exit is atomic with respect to acknowledgement and installation.
+Manual and quit-driven installs share one renderer job. A single `updater_install`
+command acquires or transfers the quit owner and moves it into a blocking native worker
+that retains exclusive maintenance, the resource and its operation lock through installation
+and restart. Dropping the IPC waiter cannot release them. Native failure cleanup releases
+only that worker's matching request and keeps the app open for retry or Quit without updating.
+An installed resource retries restart without reinstalling. Renderer cancellation can clear
+only a waiting/ready handshake, never an installer. An acknowledged handshake that never
+starts installation or finishes quit expires after 30 seconds and reports recovery; an active
+installer never loses ownership merely because time elapsed.
+OS-level ExitRequested uses the same handshake; approved final exit and restart pass through.
+`app_updates.rs` creates update resources using the configured release endpoint and public
+key, with shared maintenance ownership for checks and downloads. It preserves Tauri resources during the Windows
+pre-launch hook so a rejected installer launch can still return to a usable window/tray.
+The Rust updater is 2.13.1 (checked Windows launch), and the required Tauri runtime/direct
+JS API are 2.12.0. All renderer updater-plugin permissions, direct restart and window-destroy
+permissions are removed. The facade calls only Refract's native updater commands. Each native
+resource owns its SDK handle, verified bytes and installed state; download/install attempts
+on the same resource cannot overlap. Download completion and installable bytes are published
+only after SDK signature verification returns successfully, not from its earlier transfer-finished
+callback. IPC exposes resource ID/display versions and channel progress, never installer bytes
+or renderer-controlled endpoints. The facade validates metadata before constructing its handle.
+Checks have a 20-second total timeout; downloads have a 30-minute total
+timeout, with 20-second connect and 30-second read limits. Native checks also honor the
+build-time `REFRACT_UPDATER_ENABLED=false` used by Nix.
+Installer-stall diagnostics/recovery, reconnecting UI state after renderer loss, exhaustive
+operation coverage and native/cross-platform verification
+remain unfinished. Dependency/source checks do not prove real Windows installer recovery.
 
 ### Create, install, and launch
 
 1. Creating an instance writes `instance.json`, assigns a UUID, creates a safe folder name, and initializes playtime and mod metadata.
 2. Installing Minecraft downloads the version JSON, client jar, allowed libraries, natives, and assets. Required download and native extraction failures abort the install, and `isInstalled` is cleared before work begins and set only after the full pipeline succeeds. Fabric/Quilt use loader overlays; Forge/NeoForge run their installer processors.
-3. Downloads use a shared Rust engine with connection pooling, bounded concurrency, retries, `.part` files, hash/size verification, and atomic rename.
+3. Minecraft, content and Java artifact downloads use the shared Rust engine with connection pooling, bounded concurrency, retries, unique owned `.part` files, and hash/size verification. Canonical destination locks serialize competing writers and revalidate existing files after acquisition. Publication replaces the final file without deleting its predecessor first. The shared client validates each redirect before requesting it, bounds header/body/total time, and polls cancellation during requests, streams, ownership waits and retry backoff. Other metadata/provider callers still need migration and operation cancellation wiring.
 4. Launch resolves the active account, refreshes authenticated tokens inside Rust, chooses or downloads a compatible Java runtime, merges loader metadata, builds JVM/game arguments, runs optional pre-launch hooks, and starts Minecraft. Automatic Java selection uses loader metadata plus legacy Forge constraints, never falls back to an incompatible installed major, and treats a configured per-instance Java path as an explicit override.
 5. Output streams over `mc://log`; exit state streams over `mc://exit`. Playtime is added to lifetime and local-calendar-day totals.
 6. Optional Quick Play targets open a saved world or server directly. Optional offline launch skips token refresh.
@@ -124,9 +191,32 @@ Forge and NeoForge installation fail when required library downloads, embedded M
 
 Minecraft repair rebuilds the required artifact plan from current Mojang and loader metadata. It verifies cached libraries and every content-addressed asset against its declared hash, re-downloads missing or corrupt files, refreshes the client and native archives, reruns loader installation, and only restores `isInstalled` after the full pipeline succeeds. Ordinary installs may trust existing content-addressed assets for faster shared-cache reuse; the explicit repair path does not.
 
+`minecraft_metadata.rs` validates the required client, library, native and asset-index
+records before artifact downloads. Modern artifacts require allowed HTTPS URLs,
+portable contained paths, SHA-1 hashes and unsigned byte sizes. Explicit legacy Maven
+records remain supported without inventing modern download fields; native-only records
+produce native archives rather than classpath JARs. The asset index is bounded to 64 MiB,
+verified against its original bytes and checked for a valid objects map before publication.
+Conflicting destinations, malformed rules, hashes, sizes or required records stop installation.
+Version and index JSON are published after required artifacts, asset copies and loader
+installation succeed. Forge receives the validated Java requirement directly.
+Legacy virtual assets and pre-1.6 resources are copied from verified objects to checked
+destinations with atomic file replacement and cancellation checkpoints. Native extraction
+runs on owned blocking workers, honors exclusions and writes into the resolved game root.
+This does not make the entire shared cache one transaction or replace native launch testing.
+
 Renderer-controlled content filenames are restricted to a single safe path component before mod toggle/delete operations; traversal and absolute paths are rejected.
 
 World delete/backup and screenshot open/read/rename/delete commands canonicalize direct children and reject symlinks and Windows reparse points. Screenshot renames preserve the original image extension and reject nested, reserved-character, empty, and overlong names. World backups also reject linked entries found during recursive traversal.
+
+World imports validate archive paths before creating the destination, extract into a
+private stage beside `saves`, and publish a complete world under a new name. Failed extraction
+or cancellation removes that stage. Backups stream required files into a synced temporary
+archive and replace the chosen destination only after successful completion; unreadable
+files fail the backup. A backup destination inside the world is rejected. These guarantees
+do not yet provide automatic backup retention or recovery of staging left by process crashes.
+World size enumeration runs on a blocking worker and uses an iterative traversal that
+does not follow symlinks or Windows reparse points.
 
 ### Content installation
 
@@ -137,7 +227,10 @@ World delete/backup and screenshot open/read/rename/delete commands canonicalize
 - Required dependencies are resolved recursively; optional dependencies can be selected by the user.
 - CurseForge files with API distribution disabled use the supported manual flow: Refract opens the official download page and watches the Downloads directory for the expected file/hash. It does not bypass author restrictions.
 - Modpacks support Modrinth `.mrpack`, CurseForge manifests, FTB packs, and local archive imports.
-- Modpack updates reuse the instance through a persistent snapshot guard and refuse to start while Minecraft is active. Before mutation, Refract copies mods, configuration, resource packs, shaders, options, servers, and instance metadata to internal snapshot storage without following symlinks or Windows reparse points. Any required-stage failure restores that snapshot; success retains it as a user-visible rollback point. Manual restore first captures the current state, also refuses to run while Minecraft is active, preserves the live instance's internal storage locators, and keeps at most five snapshots per instance.
+- Each pack import owns unique archive/extraction storage. Native operation ownership starts before preparation, then attaches private staging and newly created instances before publishing their metadata. Modrinth/FTB/Mojang pack metadata and shared artifact downloads use the operation's cancellation token; other provider and loader stages still require migration.
+- Modpack updates validate archive manifests and override paths before mutation. The write plan includes the replaced mod set, extracted natives and every manifest/override game root, including arbitrary configuration files and folders. Packs cannot override saves, screenshots, logs or reserved recovery paths. Linked external updates remain unsupported.
+- Before an update, Refract copies the planned roots and instance metadata into synced snapshot storage, then publishes a transaction journal. Version 2 snapshots include SHA-256 payload and metadata checks; version 1 snapshots remain readable. Normal failures await rollback, while interrupted processes leave a journal for recovery. Recovery validates the instance's storage identity, stages and verifies every saved payload before replacing live roots, and restores the metadata document while preserving current identity/storage locators. Missing-before-update roots are removed. Recovery can resume after a partial restore; failed recovery keeps mutations blocked and the backup available.
+- Manual snapshot restore uses the requested snapshot's exact path inventory for its safety snapshot and journal. Retention targets five complete snapshots, protects the active rollback point, and reports failures. Pack success is emitted only after metadata and journal finalization; nested Minecraft installation does not independently emit success. Shared override copies publish synced files atomically and report required-copy errors. Native provider flows, power-loss behavior and cross-platform recovery verification remain audit work.
 
 ## User-facing areas
 
@@ -176,8 +269,9 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 `lib/api.ts` chooses its implementation by checking `window.__TAURI_INTERNALS__`:
 
 - Tauri mode maps typed `api.*` methods to native `invoke` commands, dialogs, window APIs, updater APIs, and event listeners.
+- Native event wrappers use `ownSubscription` to suppress callbacks immediately on cleanup and detach registrations that resolve later. Registration and detach failures go to the renderer logger.
 - Browser-preview mode uses browser APIs and localStorage for a limited preview experience. It is useful for UI work but is not proof that native install, launch, auth, filesystem, or updater behavior works.
-- `tinvoke` normalizes both legacy Rust string errors and structured IPC errors into JavaScript `Error` objects so the UI can display them consistently. Structured payloads become `RefractError` instances with a stable code, retryability, and safe context; Minecraft install and repair are the first migrated commands.
+- `tinvoke` normalizes both legacy Rust string errors and structured IPC errors into JavaScript `Error` objects so the UI can display them consistently. Structured payloads become `RefractError` instances with a stable code, retryability, and safe context. Minecraft install/repair, authenticated launch, sign-in/validation/logout and authenticated skin/cape commands preserve these errors. The renderer uses authentication codes for localized recovery actions instead of matching English provider text.
 
 ### Internationalization
 
@@ -195,6 +289,86 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 - The persisted accent override is reapplied to built-in themes.
 - Global tokens and compatibility styles live in `styles/globals.css`.
 
+### Log privacy and sharing
+
+Game and shell-hook stdout/stderr use one native filter before `mc://log` emission.
+It censors the session token, account identifiers and instance/home paths, plus common
+credential patterns. Whole lines over 16 KiB are omitted rather than split into potentially
+sensitive fragments. Each stream limits ordinary output to 100 entries and 64 KiB of
+filtered text per second, plus omission markers and framing. Hook output drains through pipes instead of collecting
+the whole process output in memory; hook cancellation/deadlines still need F11 work.
+
+Native authentication remembers up to 128 recently used secret values solely for filtering.
+Those bounded copies use zeroizing storage and expire after 30 minutes on the next cache
+access; active session censors retain their own values until their output readers finish.
+Logging does not unlock or enumerate the vault. Pattern filtering also covers older logs,
+but unknown, encoded or arbitrarily formatted sensitive content still requires user review.
+Minecraft's original log files are not rewritten.
+
+Launcher log writes/clear/rotation serialize on one lock. Rotation publishes through the
+shared atomic writer; reads seek into at most 2 MiB and return at most 1,000 shaped entries.
+Crash reports use bounded, filtered reads on a blocking worker. Renderer storage is capped
+at 200 entries/256 Ki characters, native forwarding at eight pending writes, and console
+history at ten recently active instances with 256 Ki characters each (128 Ki pending).
+The API facade explicitly connects renderer logging to the native writer.
+
+`mc.previewLog` prepares filtered text locally and returns a one-use preview ID, text and
+truncation flag. The dialog requires an explicit upload action; `mc.uploadLog(previewId)`
+sends that exact immutable text, never a fresh read of the original file. Closing discards
+the preview; delayed preview responses are discarded after cleanup. Native storage holds
+at most four previews for ten minutes, with two simultaneous reads/uploads. Upload transport
+rejects redirects, bounds time and response size, and accepts only HTTPS mclo.gs share links.
+The original instance-config dump and local Java paths are excluded from copied diagnostics.
+Successful reset clears in-memory log previews, remembered privacy-filter secrets,
+operation history, Java detection results and storage recovery notices while it still
+owns exclusive maintenance.
+
+### Destructive reset
+
+Settings opens a localized review dialog before `launcher_delete_all({ options })`.
+Both `deleteAccounts` and `unlinkExternalInstances` are required booleans, initially
+unchecked. The command now lives in `reset.rs`; the browser preview refuses it.
+
+Reset removes managed instance payloads, managed Java, themes/plugins, shared assets,
+libraries/versions, cache, logs, snapshots and saved skins. It removes linked-server,
+running-session, skin-manifest, friends, activity and analytics JSON plus recovery
+siblings. It resets preferences, including the user-configured CurseForge key, while
+preserving the existing analytics choice. Accounts and connected-service credentials
+are kept unless selected for deletion. Unknown top-level files are preserved.
+
+Custom instance and linked game files are never reset targets. Their registrations and
+managed linked-instance wrappers remain unless unlinking is selected. Reset checks
+canonical overlaps, refuses links/reparse points in deletion trees, rejects unsupported
+instance schemas and stops before deletion when instance ownership cannot be read.
+External metadata is inspected without invoking recovery writes. Retained instances
+may need repair or Java reconfiguration after the shared cache/runtime reset.
+
+`maintenance.rs` provides shared leases for native operations, Java/runtime ownership,
+auth/vault, independent mutations, persistence, downloads and their blocking workers.
+Reset acquires exclusive ownership before any data access and keeps it in its worker
+even if IPC stops awaiting the result. New shared work is rejected during maintenance.
+Native quit and manual-update handshakes now retain exclusive ownership through final exit
+or reported failure. They exclude reset and guarded shared work in either direction.
+This coordinates the running process, not games surviving a prior launcher exit or
+untracked external programs. Raw updater plugin calls remain permitted for the facade;
+this is not a claim of protection against a compromised renderer bypassing the facade.
+
+File failures are reported and retain account/registry metadata. Managed instance
+identity is deleted after its payload so a locked game file permits a later retry.
+Selected account removal clears the in-memory Stronghold, deletes the snapshot before
+its OS key, and reports either failure; a failed snapshot deletion preserves the key.
+Successful config/registry reset publishes the new state to primary and backup copies,
+then removes corruption copies. These steps are not a cross-file crash-atomic transaction;
+durable partial-reset recovery remains part of F04/F11.
+
+After native success the dialog cancels queries, removes `refract.`/`refract-` local and
+session storage, clears the query cache and reloads the renderer into first-run setup.
+Storage failure keeps a completion retry visible and never repeats native deletion.
+The review prevents dismissal while working, returns focus on cancellation and waits
+for queued/debounced Settings saves. Native desktop, real keyring, cross-platform and
+visual/keyboard/zoom verification remain required; automated reset tests use temporary
+roots and a mock vault, never personal launcher data.
+
 ## Native backend module map
 
 | Module | Responsibility |
@@ -202,6 +376,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 | `activity.rs` | Persistent recent activity entries. |
 | `analytics.rs` | Opt-out Google Analytics Measurement Protocol events with a generated anonymous client ID. |
 | `auth.rs` | Microsoft device-code OAuth, Xbox/XSTS/Minecraft token chain, refresh, offline accounts, Yggdrasil, and safe account records. |
+| `auth_session.rs` | Child of `auth`: bounded authentication transport, typed failure classification, per-account ownership and refresh-token persistence. |
 | `cf.rs` | CurseForge file metadata/downloads and manual blocked-file resolution. |
 | `config.rs` | Defaults, forward-compatible config merge, and generic config get/set. |
 | `content.rs` | FTB and CurseForge API proxy plus Fabric/Quilt version lookup. |
@@ -215,18 +390,25 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 | `gamedata.rs` | Worlds, backups/import, crash reports, logs, screenshots, and option copying. |
 | `instances.rs` | Instance CRUD, safe folder naming, registry, exports, duplication, deletion, and playtime. |
 | `java.rs` | Java detection, version requirements, managed/custom runtimes, and Adoptium downloads. |
-| `launch.rs` | Authenticated launch arguments, loader overlays, hooks, processes, logs, exit events, and Quick Play. |
+| `launch.rs` | Authenticated launch arguments, loader overlays, hooks, owned process watchers, checked stop/exit, logs, and Quick Play. |
 | `links.rs` | HTTPS host allowlist for external links. |
-| `log.rs` | Persistent structured launcher log and rotation. |
+| `log.rs` | Serialized bounded launcher log writes, shaped reads and atomic rotation. |
+| `log_privacy.rs` | Native credential/path filtering, bounded line/tail readers and output throttling. |
+| `log_share.rs` | Safe log selection, immutable expiring previews and checked mclo.gs uploads. |
+| `maintenance.rs` | Shared native-work leases and exclusive destructive-maintenance ownership. |
+| `app_updates.rs` | Native update-resource creation, safe pre-launch hook, metadata contract and network deadlines. |
 | `mc_install.rs` | Vanilla and loader installation, repair, cancellation, and progress. |
 | `modpack.rs` | Modrinth, CurseForge, FTB, and local archive modpack install/update/import. |
 | `mods.rs` | Per-instance content listing, install, toggle, delete, verify/repair, updates, profiles, and `.mrpack` export. |
 | `net.rs` | Network helper layered on the shared downloader. |
+| `operations.rs` | Per-instance native operation IDs, scoped ownership, cancellation, events and bounded in-memory history. |
 | `news.rs` | Official Minecraft news API/scrape fallback, sanitization, and URL validation. |
 | `paths.rs` | Stable data directory and shared assets/libraries/versions paths. |
 | `procutil.rs` | Platform process helpers such as hiding Windows console windows. |
+| `reset.rs` | Explicit reset policy, external-data protection, checked deletion and completion. |
 | `rules.rs` | Shared Mojang operating-system, architecture, version, feature-rule, and native-classifier evaluation. |
 | `secrets.rs` | Stronghold vault protected by a random master key stored in the OS keyring. |
+| `window_lifecycle.rs` | Native tray, close/start/game window behavior, localized menu and acknowledged quit handling. |
 | `servers.rs` | `servers.dat` NBT parsing, linked-server persistence/validation, and Minecraft server-list ping. |
 | `shortcuts.rs` | Desktop Quick Play shortcuts and command-line parsing. |
 | `skins.rs` | Local skin library plus Minecraft skin/cape APIs. |
@@ -251,6 +433,7 @@ The full TypeScript contract is in `env.d.ts`; this table is the working index.
 | `creator` | Import a Modrinth token into Stronghold, report safe connection state, publish projects/versions, and stream progress. |
 | `mc` | Versions, loaders, Java scan, install/repair, launch/stop, worlds, logs, screenshots, servers, shortcuts. |
 | `java` | Managed runtimes, requirements, ensure/download/delete, and custom runtime paths. |
+| `operations` | List/get/cancel native operation records and subscribe to their changes. |
 | `window`, `updater` | Frameless window controls and application update lifecycle. |
 
 Important native event channels:
@@ -260,7 +443,8 @@ Important native event channels:
 | `mc://progress` | Minecraft/loader install step and percentage. |
 | `mc://log` | Per-instance stdout/stderr lines. |
 | `mc://exit` | Process exit code or launch error. |
-| `java://progress` | Managed Java download/extraction. |
+| `java://progress` | Managed Java preparation with major, step, percent and running/succeeded/failed state. |
+| `operations://changed` | Operation ID, nullable primary instance ID, all attached public instance IDs, kind, state, cancellation request and timestamps; no account credentials or file paths. |
 | `modpack://progress` | Modpack installation phase. |
 | `modpack://done` | Installed instance ID, error, and measured statistics. |
 | `cf://blocked` | Manual CurseForge blocked-file wait/cancel status. |
@@ -297,11 +481,15 @@ Refract/
         screenshots/
         logs/
   versions/
+    refract-loaders/<minecraft>/<loader>/<version>/profile.json
   libraries/
   assets/
   java/
     managed.json
     jre-<major>/
+    jre-<major>-<uuid>/
+      .refract-runtime.json
+    .staging-<uuid>/
   skins/
   skins-manifest.json
   themes/
@@ -309,6 +497,7 @@ Refract/
     refract.log
   snapshots/
     <instance id>/
+      transaction.json
       <snapshot id>/
         manifest.json
         instance.json
@@ -318,7 +507,109 @@ Refract/
 
 Custom-path and linked external instances are indexed through `instance-registry.json`; their game directory may be outside the Refract root. Their protected pre-change files are still copied into Refract's internal snapshot directory. The destructive launcher reset and instance deletion remove the applicable snapshots.
 
+`snapshots/<instance id>/transaction.json` records the protected snapshot ID, private
+canonical storage/game locations and a `pending`, `recovering`, `committed` or
+`rolled_back` phase. It is replaced atomically and retained as one bounded record
+per instance. Recovery APIs expose affected instance IDs, not the stored paths.
+Completed records do not trigger restoration. Pending records protect aliased
+folders; a damaged journal preserves files and requires recovery attention.
+Restore staging uses the reserved `.refract-snapshot-restore-<snapshot id>` game
+folder so a retry cleans the previous interrupted stage. Reset includes the snapshot
+subtree under exclusive maintenance; reset crash recovery remains unfinished.
+
+`persistence.rs` writes unique sibling temporary files, syncs them and replaces the
+destination without deleting the old file first. Config, instance registry, Java registry and instance JSON
+keep a `.bak` containing the previous committed document. Recovery preserves damaged
+bytes in `.corrupt-<uuid>` files, restores a valid backup and reports local diagnostics;
+unrecoverable corruption returns an error. Config/account updates are serialized per
+store; instance settings, content record changes and playtime share a metadata mutation
+lock. Cross-file creation/rename/deletion journaling and secondary JSON stores remain
+part of the audit work. Reset removes the corresponding recovery siblings too.
+
+Java provisioning owns a per-major slot before preparation, downloads a package with
+required SHA-256/size and matching release metadata, extracts off the async worker,
+and requires a successful 10-second, bounded-output executable probe with the expected
+major and architecture. It publishes a new generation and changes `managed.json`
+atomically instead of deleting the old runtime. Legacy runtime paths remain valid;
+the previous generation and any verified unregistered generation are retained until
+explicit removal. Java registry entries accept optional `architecture` and `custom`
+fields for compatibility. Game exit watchers and Forge processors own runtime leases
+that block Java removal while in use. Incomplete staging after crashes, process
+ownership after launcher restart and deletion journaling remain open audit work.
+Runtime and provisioning leases now exclude reset, whose policy includes the complete
+`java/` subtree.
+
+Loader profiles now use a path keyed by Minecraft, loader and exact loader version,
+with a recorded identity checked before launch. They are published only after required
+libraries/processors succeed. Legacy profiles migrate without deleting the source only
+when their Minecraft inheritance and loader coordinates match; ambiguous or damaged
+profiles require repair instead of silently selecting a different loader.
+
 ### Instance record
+
+Native operation ownership is acquired before launch, Minecraft install/repair,
+new and existing modpack installs, local/external imports, instance creation/duplication,
+guarded content mutations, instance patch/delete, world/screenshot mutations,
+linked-server changes, exports and snapshot restore/delete. New imports initially
+have no primary instance ID. Creation attaches each destination before publishing
+its metadata; duplication and settings copy retain both source and destination.
+Internal nested writes use a Rust task/thread scope;
+the renderer cannot pass an ownership token. Operation history retains 100 completed
+records in memory. Tracked blocking workers keep their slot until they finish even
+if the awaiting future is dropped. The process watcher owns its Child and Java lease,
+acknowledges stop only after observed exit, and checks the operation generation before
+clearing session state. Failed stop keeps the session tracked. Windows tree termination
+and Unix SIGTERM are preserved. Ownership also reserves canonical storage/game roots
+before preparation awaits. Another ID cannot acquire the same root or an overlapping
+parent/child root through a linked instance, junction/symlink ancestor or Windows case
+alias. Creators, renames and source/destination copies acquire their additional roots
+before mutation. These locks coordinate Refract operations, not external programs.
+Java, reset, quit and updater installation now share maintenance ownership. Remaining work
+includes an exhaustive entry-point audit, global operation UI, complete cancellation,
+installer failures/stalls and launcher-close/restart recovery.
+
+New custom locations and destructive deletion compare canonical paths with launcher
+data, registered instance storage and known linked game roots. Overlapping storage is
+refused instead of allowing one instance to remove or overwrite another's data.
+Filesystem races with changes made outside Refract still need further hardening.
+
+Linked-server JSON now uses the shared serialized persistence transaction and
+recovery backups. Concurrent changes for different instances cannot replace each
+other's records; unreadable or unrecoverable storage returns an error instead of
+silently resetting the store.
+
+Resource-pack, shader and datapack replacement downloads into a unique private file
+in the instance metadata folder before changing live content. The selected content
+folder and instance metadata receive a `content_change` snapshot and the same recovery
+journal used by modpack updates. Publication, obsolete-file removal, metadata and
+journal finalization run on an owned blocking worker; disabled state is preserved.
+Mod-profile application and exact enabled/disabled mod uninstall also use content
+snapshots. Recovery failure retains the journal and backup and requires recovery
+before further guarded mutations. Missing mod files can be reconciled by removing
+their exact record; other content records sharing a project ID are preserved.
+
+`mod-profiles.json` retains its existing `{ "profiles": [...] }` format and unknown
+top-level fields. Reads and complete mutations use shared serialized persistence and
+last-good backups; semantic corruption is reported without resetting the file.
+The content dialog displays profile errors and offers reload. The existing snapshot
+limit of five applies to content-change snapshots too. Full-folder backup cost,
+interrupted staging cleanup, native UI behavior and platform durability remain open.
+Reset removes these files with their existing owned instance/snapshot storage.
+
+Modrinth pack export selects direct enabled archives and disabled files under mods,
+resourcepacks, shaderpacks and datapacks, recursive config, options.txt and servers.dat.
+It rejects linked/unsupported entries, propagates enumeration/read errors and checks
+the selected files' SHA-512 hashes and complete inventory before publishing a synced
+sibling archive. Traversal is limited to 100,000 entries, depth 64 and 64 GiB of selected
+files. Temporary downloads and unrelated nested content remain outside selection.
+The optional hash lookup uses batches of 500, a 16 MiB response cap, cancellation,
+30-second requests and a two-minute overall lookup limit; a lookup failure embeds
+unresolved files. Completion progress is emitted after archive publication. Existing
+ancestor/check-use races and native/cross-platform export verification remain open.
+
+Friend lookup uses the bounded metadata transport, checks requested/returned usernames,
+and parses compact or hyphenated UUIDs with the UUID library before persistence.
+Friend-store serialization and corruption handling still need migration.
 
 The shared `Instance` model includes:
 
@@ -332,11 +623,26 @@ The shared `Instance` model includes:
 
 Managed folder names are human-readable, ASCII-safe, limited to 64 characters, and made unique. Cyrillic names are transliterated for disk paths while the original display name is preserved.
 
+Instance commands resolve a known identity through the custom registry, managed directory
+records or private import-stage registration. Unknown IDs have no fallback path. Updates
+cannot change storage locators, and deletion verifies the matching instance record at its
+single resolved metadata root. Linked instance game files remain owned by the external
+launcher; in-place linked modpack updates are refused before mutation. Local pack imports
+use a temporary recorded instance that is not added to the user-visible registry.
+
 ### Configuration
 
-Core defaults are active account `null`, dark theme, `1280 x 800` window bounds, 2048 MB default memory, onboarding incomplete, analytics enabled, migration notices unseen, and no accounts.
+Core defaults are active account `null`, dark theme, `1280 x 800` window bounds, recommended memory derived from detected system RAM, onboarding incomplete, analytics enabled, migration notices unseen, and no accounts.
 
-Additional optional settings used by the UI include minimize/start behavior, reopening after game exit, pixel cat visibility, CurseForge API key, analytics consent, and system RAM. `config_get` adds computed `systemRamGb` and `curseforgeApiKeyConfigured` values.
+The four window-behavior flags default to false when absent; native writes require
+boolean values. `config.set` returns the configuration snapshot committed by that
+write, including computed public fields, instead of rereading unrelated concurrent
+changes. Settings serializes its writes, updates the shared query cache from successful
+results and surfaces failures without selecting an unsaved toggle. Memory changes retain
+their debounce and roll back only a failed latest input. Preview config writes also
+reject localStorage failures.
+
+Additional optional settings used by the UI include minimize/start behavior, reopening after game exit, pixel cat visibility, CurseForge API key, analytics consent, and system RAM. `config_get` adds computed `systemRamGb`, `curseforgeApiKeyConfigured` and `storageRecoveryWarnings` values. The shell displays configuration read errors and recovery notices. Config and instance objects carry schema version 1; missing versions remain compatible, while newer unsupported versions fail without being overwritten.
 
 ### Secret handling
 
@@ -345,12 +651,17 @@ Additional optional settings used by the UI include minimize/start behavior, reo
 - Modrinth Creator tokens are imported from a user-selected text file directly in Rust, validated, stored in Stronghold, and removed from the source file after a successful import. Token bytes never cross into the WebView.
 - Tokens live in `refract.stronghold`.
 - A random 32-byte vault master key is stored in Windows Credential Manager, macOS Keychain, or Linux Secret Service under service `com.refract` and user `stronghold-master-key`.
+- New master keys are generated only for a genuinely missing credential when no vault snapshot exists. Locked/unavailable keyrings, malformed credentials and missing keys for an existing snapshot return distinct errors without replacing credentials or vault data.
 - The native process lazily opens and serializes one Stronghold handle. Potentially expensive first access runs on a blocking worker instead of the Tauri UI thread. Snapshots use work factor 0 because their OS-keyring master key is 256 bits of cryptographic randomness rather than a human password; older high-work-factor snapshots are rewritten after their one-time unlock.
+- Authentication requests reject redirects, cap response bodies at 64 KiB and use 10-second connection and 30-second request deadlines. Account ownership and vault-worker waits are bounded and inherit launch cancellation. A cancelled or timed-out waiter leaves ownership with any still-running blocking worker until it finishes.
+- Refresh rereads credentials after acquiring per-account ownership. Concurrent callers reuse a completed refresh; login persistence and logout use the same ownership. Microsoft refresh-token rotation is saved before the Xbox chain, and token/config write failures are returned. Logout clears both token keys in one committed vault write before removing account metadata. Vault and config remain separate stores, so a config failure after a vault write is surfaced and may require retry or renewed sign-in.
+- Only unusable/rejected credentials mark `needsReauth`. Temporary service/network errors, vault errors, malformed responses and Xbox account restrictions remain distinct. Xbox user hashes are checked for consistency. Provider error descriptions and bodies do not become renderer error messages. Account validation returns false for expiration and rejects other failures with a typed error.
+- Accounts shows session-check failures with a retry action. Microsoft device polling has one owner for manual and automatic checks, honors `slow_down`, stops at code expiry and suppresses callbacks after cleanup. Native sign-in, OS keyring behavior and cross-platform UI verification remain required.
 - Deleting ordinary config data is not the same as clearing the OS keyring entry. Treat account migration and reset work carefully.
 
 ## Security and privacy invariants
 
-- Keep the Tauri capability list minimal. Current permissions cover window controls, dialogs, updater, restart, events, and deep links.
+- Keep the Tauri capability list minimal. Current permissions cover window controls, dialogs, updater, events, and deep links. Direct renderer restart and window destruction are disabled; guarded Rust commands own update restart.
 - The CSP blocks arbitrary scripts/frames/objects. Images may use self, Tauri assets, data/blob, and HTTPS; network connections permit HTTPS and local dev endpoints.
 - External links must be HTTPS and match the allowlist in `links.rs`.
 - Minecraft news accepts only official article/API/image hosts and strips markup.
@@ -388,8 +699,8 @@ The exact active ignores live in `.github/workflows/security-audit.yml`; revisit
 
 ### Requirements
 
-- Node.js 20 or newer
-- pnpm 9 or newer
+- Node.js 24 LTS, matching CI
+- pnpm 11, matching CI
 - Stable Rust toolchain
 - Tauri 2 platform prerequisites
 - Windows packaging additionally needs WebView2 and Microsoft C++ build tools
@@ -458,14 +769,23 @@ authenticated accounts.
 | Locale | JSON validity, renderer typecheck, key parity/fallback, and visual check for overflow. |
 | Release automation | Validate YAML and reason through tag/draft/asset naming before pushing a tag. |
 
-There is no dedicated JavaScript test suite in package scripts. Rust has embedded unit tests in modules including downloader, Forge, Java, launch, and modpack. CI runs `cargo check`, renderer typecheck, and dependency audits, but not all unit tests, so run relevant `cargo test` locally.
+`pnpm --filter @refract/renderer test` compiles isolated TypeScript regression tests into
+a temporary directory and runs Node's built-in test runner, then removes the output.
+The initial suite covers native subscription lifecycle races. Rust has embedded unit
+tests in modules including downloader, Forge, Java, launch, modpack, filesystem safety,
+instance ownership and vault initialization. `pnpm check:contracts` validates locale
+types, array lengths and interpolation with English fallbacks, plus registered IPC
+command names and explicit argument objects. Dynamic payloads and event/result shapes
+still need integration coverage. The regression workflow runs these checks, scoped lint,
+renderer build, Rust formatting/check/tests on all four supported platform runners.
 
 ## CI and release automation
 
 | Workflow | Trigger | Result |
 | --- | --- | --- |
 | `development-builds.yml` | Push to `main` or manual | Unsigned Windows, macOS ARM/Intel, and Linux artifacts retained for 14 days. |
-| `security-audit.yml` | PR and push to `main` | pnpm audit, cargo audit with documented ignores, cargo check, and renderer typecheck. |
+| `regression.yml` | PR, push to `main`, manual | Windows, Linux, macOS ARM/Intel renderer and native regression checks. |
+| `security-audit.yml` | PR, push to `main`, weekly, manual | pnpm audit, cargo audit with documented ignores, cargo check, and renderer typecheck. |
 | `release-tauri.yml` | `v*.*.*` tag or manual | Multi-platform draft GitHub release, updater artifacts, stable filenames, and rewritten `latest.json`. |
 | `publish-aur.yml` | Published stable release or manual | Downloads the stable RPM, updates PKGBUILD/checksum and `.SRCINFO`, then pushes `refract-launcher-bin` to AUR. |
 | `update-package-manifests.yml` | Published stable release or manual | Refreshes package hashes and opens a pull request; it never pushes package metadata directly to `main`. |
@@ -528,7 +848,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 - Large route files (`routes/index.tsx`, `browse/index.tsx`, and `modpacks/index.tsx`) contain substantial page logic. Refactors should preserve query invalidation, event cleanup, modal scroll locking, localization, and install state.
 - Browser preview fallbacks can hide native integration defects. Always test meaningful native work in Tauri.
 - `latest.json` must be UTF-8 without a byte-order mark. A BOM prevents installed Tauri clients from parsing the updater response.
-- Destructive Settings reset removes most Refract data folders and config/registry files. It is intentionally broad; any extension to persisted data should decide whether reset must include it.
+- Destructive Settings reset follows the explicit policy above; new persisted data must be assigned a reset policy. Never test it against personal launcher data.
 
 ## Where to make a change
 

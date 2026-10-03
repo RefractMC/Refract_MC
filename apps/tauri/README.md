@@ -27,8 +27,8 @@ so UI components do not call Tauri commands directly.
 
 ## Requirements
 
-- Node.js 20 or newer.
-- pnpm 9 or newer.
+- Node.js 24 LTS, matching CI.
+- pnpm 11, matching CI.
 - Rust stable.
 - Platform Tauri prerequisites for your OS.
 
@@ -60,6 +60,8 @@ uses the production updater configuration and requires
 
 ```sh
 pnpm --filter @refract/renderer typecheck
+pnpm --filter @refract/renderer test
+pnpm check:contracts
 pnpm --filter @refract/tauri-poc build:real
 ```
 
@@ -67,8 +69,9 @@ Rust checks:
 
 ```sh
 cd apps/tauri/src-tauri
-cargo fmt
-cargo check
+cargo fmt --check
+cargo check --locked
+cargo test --locked
 ```
 
 ## NixOS

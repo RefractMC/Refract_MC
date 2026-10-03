@@ -20,3 +20,6 @@ apps/tauri/src-tauri/gen
 # Nix build output
 result
 result-*
+
+# Local review notes are not part of the published project documentation.
+.local-notes/

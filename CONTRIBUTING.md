@@ -12,8 +12,8 @@ Thanks for helping improve Refract. This guide explains how to set up the projec
 
 ## Requirements
 
-- Node.js 20 or newer.
-- pnpm 9 or newer.
+- Node.js 24 LTS, matching CI.
+- pnpm 11, matching CI and dependency installation checks.
 - Rust stable for Tauri work.
 - Platform build tools required by Tauri.
 
@@ -59,6 +59,8 @@ Run the checks that match your change.
 
 ```bash
 pnpm --filter @refract/renderer typecheck
+pnpm --filter @refract/renderer test
+pnpm check:contracts
 pnpm --filter @refract/tauri-poc build:real
 pnpm audit --prod
 ```
@@ -67,8 +69,9 @@ For Rust changes:
 
 ```bash
 cd apps/tauri/src-tauri
-cargo fmt
-cargo check
+cargo fmt --check
+cargo check --locked
+cargo test --locked
 ```
 
 For packaging changes:

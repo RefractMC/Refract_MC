@@ -162,8 +162,8 @@ platform integration.
 
 ### Requirements
 
-* [Node.js](https://nodejs.org/) 20 or newer
-* [pnpm](https://pnpm.io/) 9 or newer
+* [Node.js](https://nodejs.org/) 24 LTS, matching CI
+* [pnpm](https://pnpm.io/) 11, matching CI
 * [Rust](https://www.rust-lang.org/tools/install) stable
 * The [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
 

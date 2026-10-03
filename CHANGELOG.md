@@ -4,20 +4,32 @@
 
 ### Added
 
-* Added local plain-text notes to instance settings, with notes preserved when duplicating an instance.
-* Added safe rename and delete controls to the per-instance screenshot viewer.
-* Added selective instance duplication for worlds, settings, content, screenshots, servers, and playtime.
+* Local instance notes, preserved when duplicating an instance.
+* Screenshot rename and delete controls.
+* Selective instance duplication for worlds, settings, content, screenshots, servers, and playtime.
+* Recovery notices and restore controls for interrupted modpack changes.
+* A private log preview so you can review the text before sharing it.
+* A reset review that lets you choose whether to remove accounts and unlink external instances.
 
 ### Fixes
 
-* Made individual content updates hash-verified and rollback-safe, and persist the updated file, version, and repair metadata only after replacement succeeds.
-* Made Minecraft repair re-hash cached assets and re-download missing or corrupt objects instead of trusting every existing asset file.
-* Made instance duplication and external-launcher imports fail visibly and remove incomplete destinations when any selected file cannot be copied.
-* Added structured error codes, retryability, and safe operation context for Minecraft install and repair failures while preserving existing user-facing messages.
-* Fixed Minecraft metadata rules to honor operating-system architecture, version, and active launcher features, including architecture-correct native classifiers.
-* Added retained pre-update instance snapshots with automatic modpack rollback and restore/delete controls in Edit Instance.
-* Updated Browserslist to 4.28.7 to resolve two high-severity build-tool audit findings.
-* Updated fflate to 0.6.11 to resolve the malformed ZIP64 archive denial-of-service advisory.
+* Preserve installed mods, resource packs, shaders, and datapacks when replacements fail, including disabled files.
+* Make saved mod profiles and mod removal report failures clearly and recover interrupted changes.
+* Stop incomplete Minecraft and modpack installs from being marked as successful; report missing or invalid required files.
+* Repair missing or corrupt cached Minecraft assets and restore the asset layouts used by older versions.
+* Reject unsafe archives and show errors when required import, export, or backup files cannot be copied.
+* Keep the correct loader version for each instance and verify downloaded Java before using it.
+* Prevent conflicting changes to the same instance or shared game folder, and keep games tracked until they actually exit.
+* Protect saved settings, accounts, and instance records from failed writes and concurrent changes.
+* Preserve sign-in credentials when credential storage is unavailable, and explain when to retry or sign in again.
+* Honor startup, tray, launch-minimize, and reopen-on-exit preferences, with a taskbar fallback when a tray is unavailable.
+* Improve update download, installation, and restart recovery; offer retry or quit without updating after failures.
+* Fix invalid friend profile handling and event listeners that remained active after leaving a page.
+
+### Security
+
+* Remove sensitive information from shared logs and keep account tokens inside native credential storage.
+* Update dependencies to address reported security vulnerabilities.
 
 ## 1.4.0
 
