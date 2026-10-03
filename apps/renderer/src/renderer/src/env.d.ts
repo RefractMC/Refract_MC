@@ -1,6 +1,18 @@
 /// <reference types="vite/client" />
 
 import type { Instance, CreateInstanceInput } from '@refract/core'
+import type { UpdateStatus } from './lib/update-status'
+
+export interface NativeOperation {
+  id: string
+  instanceId: string | null
+  instanceIds: string[]
+  kind: 'launch' | 'install' | 'repair' | 'modpack' | 'mutation' | 'snapshot' | 'restore'
+  state: 'preparing' | 'installing' | 'running' | 'stopping' | 'recovering' | 'succeeded' | 'failed' | 'cancelled'
+  cancelRequested: boolean
+  startedAt: string
+  updatedAt: string
+}
 
 export interface ExternalInstance {
   source: 'prism' | 'multimc' | 'modrinth' | 'atlauncher' | 'curseforge' | 'gdlauncher'
@@ -18,6 +30,14 @@ declare global {
   const __APP_UPDATER_ENABLED__: boolean
   interface Window {
     api: {
+      operations: {
+        list: () => Promise<NativeOperation[]>
+        get: (operationId: string) => Promise<NativeOperation | null>
+        cancel: (operationId: string) => Promise<void>
+        recoveries: () => Promise<string[]>
+        recover: (instanceId: string) => Promise<void>
+        onChanged: (callback: (operation: NativeOperation) => void) => () => void
+      }
       skins: {
         list:    () => Promise<Array<{ id: string; name: string; filename: string; variant: 'classic' | 'slim'; addedAt: string }>>
         browse:  () => Promise<string | null>
@@ -36,6 +56,7 @@ declare global {
         fontFamilies: () => Promise<string[]>
       }
       config: {
+        onRecovery: (callback: () => void) => () => void
         get: () => Promise<{
           activeAccountId: string | null
           activeThemeId: string
@@ -54,6 +75,7 @@ declare global {
           systemRamGb?: number
           curseforgeApiKey?: string
           curseforgeApiKeyConfigured?: boolean
+          storageRecoveryWarnings?: string[]
           accounts: Array<{
             uuid: string
             username: string
@@ -66,7 +88,8 @@ declare global {
             needsReauth?: boolean
           }>
         }>
-        set: (key: string, value: unknown) => Promise<void>
+        /** Resolves with the committed configuration; a failed write rejects. */
+        set: (key: string, value: unknown) => ReturnType<Window['api']['config']['get']>
       }
       analytics: {
         track: (name: string, params?: Record<string, string | number>) => void
@@ -93,6 +116,7 @@ declare global {
           licenseStatus: 'verified' | 'guest'
           needsReauth?: boolean
         }>>
+        /** False only for expired credentials; other failures reject with a typed RefractError. */
         validate: (uuid: string) => Promise<boolean>
         active: () => Promise<{
           uuid: string
@@ -182,15 +206,21 @@ declare global {
         browseBackgroundImage: () => Promise<string | null>
       }
       updater: {
+        status: () => Promise<UpdateStatus>
+        onChanged: (cb: (status: UpdateStatus) => void) => () => void
         check:        () => Promise<{ available: boolean; version?: string }>
         onAvailable:  (cb: (v: { version: string }) => void) => () => void
         onProgress:   (cb: (v: { percent: number }) => void) => () => void
         onDownloaded: (cb: () => void) => () => void
+        // Native installation owns restart and cleanup even if this renderer disconnects.
         install:      () => Promise<void>
         download:     () => Promise<void>
       }
       launcher: {
-        deleteAll: () => Promise<void>
+        deleteAll: (options: {
+          deleteAccounts: boolean
+          unlinkExternalInstances: boolean
+        }) => Promise<{ retainedInstances: number; accountsRemoved: boolean }>
       }
       instance: {
         list:       () => Promise<Instance[]>
@@ -213,6 +243,9 @@ declare global {
         importExternal: (ext: ExternalInstance) => Promise<import('@refract/core').Instance>
       }
       window: {
+        quit: (skipUpdate?: boolean) => Promise<void>
+        setLanguage: (language: 'en' | 'uk' | 'zh-CN') => Promise<void>
+        onError: (callback: (kind: 'window' | 'tray' | 'settings' | 'busy' | 'updater') => void) => () => void
         minimize: () => void
         maximize: () => void
         close: () => void
@@ -285,7 +318,7 @@ declare global {
         browseExe:    () => Promise<string | null>
         addCustom:    (javaPath: string) => Promise<import('@refract/core').JavaInstallation>
         removeCustom: (javaPath: string) => Promise<void>
-        onProgress:   (cb: (data: { major: number; step: string; percent: number }) => void) => () => void
+        onProgress:   (cb: (data: { major: number; step: string; percent: number; state: 'running' | 'succeeded' | 'failed' }) => void) => () => void
       }
       friends: {
         list:       () => Promise<Array<{ uuid: string; username: string; addedAt: number; note?: string }>>
@@ -307,7 +340,9 @@ declare global {
         launch: (instanceId: string, quickPlay?: { kind: 'server'; address: string } | { kind: 'world'; name: string }, offline?: boolean) => Promise<void>
         stop: (instanceId: string) => Promise<void>
         crashReport: (instanceId: string) => Promise<{ text: string; filename: string; path: string; modifiedAt: number } | null>
-        uploadLog: (instanceId: string, source: 'latest' | 'crash' | 'launcher') => Promise<string>
+        previewLog: (instanceId: string, source: 'latest' | 'crash' | 'launcher') => Promise<{ previewId: string; text: string; truncated: boolean }>
+        discardLogPreview: (previewId: string) => Promise<void>
+        uploadLog: (previewId: string) => Promise<string>
         importWorld: (instanceId: string) => Promise<string | null>
         createShortcut: (instanceId: string, label: string, quickPlay?: { kind: 'server'; address: string } | { kind: 'world'; name: string }) => Promise<string>
         copyGameOptions: (fromId: string, toId: string, includeServers?: boolean) => Promise<string[]>

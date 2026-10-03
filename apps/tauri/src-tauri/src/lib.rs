@@ -1,5 +1,6 @@
 mod activity;
 mod analytics;
+mod app_updates;
 mod auth;
 mod cf;
 mod config;
@@ -17,16 +18,22 @@ mod instances;
 mod java;
 mod launch;
 mod links;
+mod loader_profiles;
 mod log;
+mod log_privacy;
+mod log_share;
 mod maintenance;
 mod mc_install;
+mod minecraft_metadata;
 mod modpack;
 mod mods;
 mod net;
 mod news;
+mod operations;
 mod paths;
 mod persistence;
 mod procutil;
+mod reset;
 mod rules;
 mod secrets;
 mod servers;
@@ -35,6 +42,7 @@ mod skins;
 mod snapshots;
 mod system;
 mod theme;
+mod window_lifecycle;
 
 /// Tauri entry point. Native app handlers are exposed as `#[tauri::command]`
 /// registered here; the renderer calls them via `invoke(...)`.
@@ -60,6 +68,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .on_window_event(|window, event| {
+            use tauri::Manager as _;
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    window_lifecycle::close_requested(window.app_handle());
+                }
+            }
+        })
         .setup(|app| {
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
             {
@@ -67,6 +84,8 @@ pub fn run() {
                 app.deep_link().register_all()?;
             }
 
+            persistence::init(app.handle().clone());
+            operations::init(app.handle().clone());
             analytics::init();
             // Some Linux WMs (notably Wayland compositors) ignore the initial
             // state of frameless windows and open them at minimum content
@@ -80,19 +99,39 @@ pub fn run() {
                     }
                 }
             }
+            window_lifecycle::init(app.handle());
             // Quick Play desktop shortcut: relaunched with --play-instance,
             // start that instance right away (the UI comes up alongside it).
-            if let Some((id, quick_play)) = shortcuts::parse_play_args() {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let recovery =
+                    tauri::async_runtime::spawn_blocking(snapshots::recover_interrupted).await;
+                match recovery {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => log::log_line("warn", "instance-recovery", &error),
+                    Err(error) => log::log_line("warn", "instance-recovery", &error.to_string()),
+                }
+                if let Some((id, quick_play)) = shortcuts::parse_play_args() {
                     if let Err(e) = launch::launch_minecraft(handle, id, quick_play, None).await {
-                        log::log_line("warn", "quickplay-shortcut", &e);
+                        log::log_line("warn", "quickplay-shortcut", &e.to_string());
                     }
-                });
-            }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_updates::updater_check,
+            app_updates::updater_status,
+            app_updates::updater_download,
+            app_updates::updater_install,
+            window_lifecycle::window_request_quit,
+            window_lifecycle::window_quit_ack,
+            window_lifecycle::window_quit_finish,
+            window_lifecycle::window_cancel_exit,
+            window_lifecycle::window_set_language,
+            operations::operations_list,
+            operations::operations_get,
+            operations::operations_cancel,
             analytics::analytics_track,
             activity::activity_list,
             activity::activity_add,
@@ -119,6 +158,8 @@ pub fn run() {
             instances::duplicate_instance,
             instances::export_instance,
             snapshots::instance_snapshots_list,
+            snapshots::instance_recoveries_list,
+            snapshots::instance_recovery_retry,
             snapshots::instance_snapshot_restore,
             snapshots::instance_snapshot_delete,
             external::scan_external_instances,
@@ -194,7 +235,7 @@ pub fn run() {
             mc_install::install_minecraft,
             mc_install::cancel_install,
             mc_install::mc_repair,
-            instances::launcher_delete_all,
+            reset::launcher_delete_all,
             java::mc_java,
             java::java_managed_list,
             java::java_required_for,
@@ -209,7 +250,9 @@ pub fn run() {
             gamedata::mc_worlds,
             gamedata::mc_delete_world,
             gamedata::mc_crash_report,
-            gamedata::mc_upload_log,
+            log_share::mc_preview_log,
+            log_share::mc_discard_log_preview,
+            log_share::mc_upload_log,
             gamedata::mc_import_world,
             gamedata::copy_game_options,
             shortcuts::create_play_shortcut,
@@ -225,6 +268,13 @@ pub fn run() {
             servers::unlink_server,
             servers::ping_server,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if !window_lifecycle::exit_requested(app, code) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

@@ -1,3 +1,6 @@
+import { UploadLogButton } from '@/components/sharing/UploadLogButton'
+import { appendConsoleLines } from '@/lib/log-buffer'
+import { safeLogDocument } from '@/lib/log-safety'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useRef } from 'react'
@@ -18,6 +21,7 @@ import { CornerCat } from '@/components/ui/CornerCat'
 import { useInstances, useCreateInstance, useUpdateInstance, useDeleteInstance } from '@/hooks/use-instances'
 import { analyticsAvailable, api, type AppConfig, type QuickPlayTarget } from '@/lib/api'
 import { logger } from '@/lib/logger'
+import { authErrorMessage, authRecoveryAction } from '@/lib/auth-errors'
 import { useThemeStore } from '@/stores/theme'
 import { useLanguageStore } from '@/stores/language'
 import { consumeSocialJoin, createSocialInvite, createSocialInviteLink, findE4mcAddress, onSocialJoin, prepareE4mc, type SocialJoinTarget } from '@/lib/social-invites'
@@ -81,7 +85,7 @@ function buildCrashDiagnosticBundle({
 }) {
   const configuredJava = instance?.javaPath?.trim() || 'Auto-select'
   const javaCandidates = javas.length
-    ? javas.map(java => `- Java ${java.version} (${java.vendor}): ${java.path}`).join('\n')
+    ? javas.slice(0, 50).map(java => `- Java ${java.version} (${java.vendor})`).join('\n')
     : 'No Java installations were detected by the launcher scan.'
   const loader = instance?.modLoader
     ? `${instance.modLoader}${instance.modLoaderVersion ? ` ${instance.modLoaderVersion}` : ''}`
@@ -91,7 +95,7 @@ function buildCrashDiagnosticBundle({
     : 'none'
   const orderedLogs = [...launcherLogs].reverse()
 
-  return [
+  return safeLogDocument([
     'Refract crash diagnostic bundle',
     `Generated: ${new Date().toISOString()}`,
     '',
@@ -109,12 +113,12 @@ function buildCrashDiagnosticBundle({
     `Modpack: ${modpack}`,
     '',
     'Java',
-    `Configured Java: ${configuredJava}`,
+    `Configured Java: ${configuredJava === 'Auto-select' ? 'Auto-select' : 'Custom runtime'}`,
     'Detected Java installations:',
     javaCandidates,
     '',
     'Instance config',
-    JSON.stringify(instance ?? { id: instanceId }, null, 2),
+    JSON.stringify({ memoryMb: instance?.memoryMb, resolutionWidth: instance?.resolutionWidth, resolutionHeight: instance?.resolutionHeight, isInstalled: instance?.isInstalled }, null, 2),
     '',
     'Last game output',
     lastLines.length > 0 ? lastLines.join('\n') : 'No recent game output was captured.',
@@ -124,7 +128,7 @@ function buildCrashDiagnosticBundle({
     '',
     'Crash report',
     report?.text ?? 'No crash report file was found.',
-  ].join('\n')
+  ].join('\n'))
 }
 
 type ActiveAccount = Awaited<ReturnType<typeof api.auth.active>>
@@ -196,50 +200,6 @@ function sameSet(a: Set<string>, b: Set<string>) {
   return true
 }
 
-
-/// Uploads a log to mclo.gs, copies the share link and opens it. A second click
-/// after a successful upload just re-opens the link.
-function UploadLogButton({ instanceId, source, style }: { instanceId: string; source: 'latest' | 'crash'; style?: React.CSSProperties }) {
-  const t = useT()
-  const [state, setState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
-  const [url, setUrl] = useState<string | null>(null)
-  async function upload() {
-    if (state === 'uploading') return
-    if (url) { void api.external.open(url); return }
-    setState('uploading')
-    try {
-      const link = await api.mc.uploadLog(instanceId, source)
-      setUrl(link)
-      navigator.clipboard?.writeText(link).catch(() => {})
-      setState('done')
-      void api.external.open(link)
-    } catch {
-      setState('error')
-      setTimeout(() => setState('idle'), 3000)
-    }
-  }
-  const label = state === 'uploading' ? t.home.uploading
-    : state === 'done' ? t.home.linkCopied
-    : state === 'error' ? t.home.uploadFailed
-    : t.home.uploadLog
-  return (
-    <button
-      onClick={upload}
-      disabled={state === 'uploading'}
-      title={t.home.uploadLogTip}
-      style={{
-        height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700,
-        background: state === 'done' ? 'var(--grass)' : 'var(--surface-2)',
-        color: state === 'done' ? '#fff' : state === 'error' ? 'var(--lava, #d93b3b)' : 'var(--ink)',
-        border: '1px solid var(--border-r)', borderRadius: 3,
-        cursor: state === 'uploading' ? 'default' : 'pointer', transition: 'background .15s',
-        ...style,
-      }}
-    >
-      {label}
-    </button>
-  )
-}
 
 function CrashReportModal({
   instanceId,
@@ -1103,21 +1063,22 @@ function Library() {
     } catch (e) {
       activeLaunchIds.delete(instance.id)
       setRunningIds(prev => { const n = new Set(prev); n.delete(instance.id); return n })
-      const msg = e instanceof Error ? e.message : t.home.unknownError
+      const msg = authErrorMessage(e, t.authErrors, t.home.unknownError)
       // A failed launch must leave a trace the user can find later — the toast
       // is transient, and a pre-spawn failure produces no game log at all.
       logger.error('launch', `Launch failed for "${instance.name}": ${msg}`)
       // Expired sign-in: show the friendly message and send them to Accounts
       // to re-authenticate, instead of dumping the raw AADSTS error.
-      if (msg.includes('AUTH_EXPIRED')) {
-        setLaunchToast(t.home.sessionExpired)
+      const recovery = authRecoveryAction(e)
+      if (recovery === 'signIn' || recovery === 'accounts') {
+        setLaunchToast(msg)
         setTimeout(() => setLaunchToast(null), 4000)
         navigate({ to: '/account' })
         return false
       }
       // Auth failed for connectivity reasons (not a rejected refresh token):
       // offer to start the game without signing in.
-      if (!opts?.offline && /request|network|connect|timed out|dns|resolve/i.test(msg)) {
+      if (!opts?.offline && recovery === 'offline') {
         setOfflineOffer({ instance, quickPlay: opts?.quickPlay })
         return false
       }
@@ -1252,10 +1213,8 @@ function Library() {
       setConsoleLogs(prev => {
         const next = new Map(prev)
         for (const [instanceId, lines] of pending) {
-          const existing = next.get(instanceId) ?? []
-          const updated = [...existing, ...lines].slice(-2000)
-          next.set(instanceId, updated)
-          consoleLogCache.set(instanceId, updated)
+          appendConsoleLines(next, instanceId, lines)
+          appendConsoleLines(consoleLogCache, instanceId, lines)
         }
         return next
       })
@@ -1279,7 +1238,7 @@ function Library() {
       if (lines.length === 0) return
 
       const pending = pendingConsoleLinesRef.current
-      pending.set(instanceId, [...(pending.get(instanceId) ?? []), ...lines])
+      appendConsoleLines(pending, instanceId, lines, 128 * 1024)
       if (consoleFlushTimerRef.current === null) {
         consoleFlushTimerRef.current = window.setTimeout(flushPendingLines, 100)
       }

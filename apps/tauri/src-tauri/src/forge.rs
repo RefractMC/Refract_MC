@@ -231,13 +231,6 @@ pub async fn mc_neoforge_versions(mc_version: String) -> Result<Vec<String>, Str
     Ok(neoforge_versions_from_xml(&mc_version, &xml))
 }
 
-fn loader_json_path(mc: &str, loader: &str, ver: &str) -> PathBuf {
-    let tag = format!("{loader}-{ver}");
-    paths::versions_dir()
-        .join(format!("{mc}-{tag}"))
-        .join(format!("{mc}-{tag}.json"))
-}
-
 // ── library + token helpers (port of resolveLibPath / resolveForgeData) ───────
 
 /// Maven coord ("[group:artifact:version[:classifier][@ext]]") → libraries path.
@@ -707,6 +700,7 @@ pub async fn install_forge(
     mc: &str,
     forge_version: &str,
     is_neo: bool,
+    required_java: u32,
 ) -> Result<(), String> {
     let forge_id = forge_maven_id(mc, forge_version);
     let installer_url = if is_neo {
@@ -730,6 +724,7 @@ pub async fn install_forge(
         &installer_url,
         &installer,
         &extract,
+        required_java,
     )
     .await;
     let _ = fs::remove_file(&installer);
@@ -747,6 +742,7 @@ async fn install_forge_inner(
     installer_url: &str,
     installer: &Path,
     extract: &Path,
+    required_java: u32,
 ) -> Result<(), String> {
     emit(app, iid, "Downloading Forge installer", 0.0);
     download_to(installer_url, installer, None).await?;
@@ -766,7 +762,6 @@ async fn install_forge_inner(
         )?;
 
     let loader = if is_neo { "neoforge" } else { "forge" };
-    let json_path = loader_json_path(mc, loader, forge_version);
 
     // Make installer-bundled artifacts available before resolving network
     // libraries. Some legacy profiles omit a repository URL because the JAR is
@@ -797,15 +792,11 @@ async fn install_forge_inner(
             validate_libraries(libs, "tools")?;
         }
 
-        // Processors must run on a Java that satisfies the MC version. Use the
-        // vanilla version JSON (already saved by install_minecraft) for the major.
+        // The caller supplies the validated version requirement. A failed
+        // install must not have to publish its vanilla JSON for this lookup.
         emit(app, iid, "Preparing Java for Forge processors", 68.0);
-        let required = fs::read_to_string(paths::versions_dir().join(mc).join(format!("{mc}.json")))
-            .ok()
-            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-            .and_then(|v| v["javaVersion"]["majorVersion"].as_u64())
-            .unwrap_or(8) as u32;
-        let java_exe = java::resolve_or_provision(app, required, None).await?;
+        let java_runtime = java::resolve_or_provision(app, required_java, None).await?;
+        let java_exe = &java_runtime.executable;
         validate_java_executable(&java_exe)?;
 
         emit(app, iid, "Running Forge processors", 70.0);
@@ -823,14 +814,7 @@ async fn install_forge_inner(
     // Publish loader metadata only after every required download, copy, and
     // processor has completed successfully. A failed reinstall keeps the last
     // known-good profile instead of exposing a partial install to the launcher.
-    if let Some(parent) = json_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    fs::write(
-        &json_path,
-        serde_json::to_vec_pretty(&version_json).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+    crate::loader_profiles::publish(mc, loader, forge_version, &version_json)?;
 
     emit(app, iid, "Forge installed", 100.0);
     Ok(())

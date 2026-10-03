@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "visible": false,
         "title": "Refract",
         "width": 1280,
         "height": 800,

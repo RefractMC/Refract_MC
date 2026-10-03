@@ -4,92 +4,41 @@
 //! separate step. Progress streams to the renderer over `mc://progress`,
 //! matching the renderer `mc:progress` payload shape.
 
-use crate::{downloader, error::IpcError, instances, net, paths, rules};
+use crate::{
+    downloader, error::IpcError, fs_safety, instances, minecraft_metadata, net, operations, paths,
+};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
-const RESOURCES: &str = "https://resources.download.minecraft.net";
 const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
 const QUILT_META: &str = "https://meta.quiltmc.org/v3";
-const INSTALL_CANCELLED: &str = "Install cancelled";
 
 #[derive(Clone, Copy, PartialEq)]
 enum InstallMode {
     Install,
     Repair,
+    Pack,
 }
 
 fn asset_existing_policy(mode: InstallMode) -> downloader::Existing {
     match mode {
-        InstallMode::Install => downloader::Existing::SkipIfExists,
+        InstallMode::Install | InstallMode::Pack => downloader::Existing::SkipIfExists,
         InstallMode::Repair => downloader::Existing::ReuseIfValid,
     }
 }
 
-#[derive(Default)]
-struct CancelState {
-    active: HashSet<String>,
-    cancelled: HashSet<String>,
-}
-
-fn cancel_state() -> &'static Mutex<CancelState> {
-    static STATE: OnceLock<Mutex<CancelState>> = OnceLock::new();
-    STATE.get_or_init(|| Mutex::new(CancelState::default()))
-}
-
-struct InstallGuard {
-    instance_id: String,
-}
-
-impl InstallGuard {
-    fn new(instance_id: &str) -> Result<Self, String> {
-        let mut state = cancel_state()
-            .lock()
-            .map_err(|_| "Install cancellation state is unavailable.".to_string())?;
-        state.active.insert(instance_id.to_string());
-        state.cancelled.remove(instance_id);
-        Ok(Self {
-            instance_id: instance_id.to_string(),
-        })
-    }
-}
-
-impl Drop for InstallGuard {
-    fn drop(&mut self) {
-        if let Ok(mut state) = cancel_state().lock() {
-            state.active.remove(&self.instance_id);
-            state.cancelled.remove(&self.instance_id);
-        }
-    }
-}
-
 fn check_cancelled(instance_id: &str) -> Result<(), String> {
-    let state = cancel_state()
-        .lock()
-        .map_err(|_| "Install cancellation state is unavailable.".to_string())?;
-    if state.cancelled.contains(instance_id) {
-        Err(INSTALL_CANCELLED.into())
-    } else {
-        Ok(())
-    }
+    operations::check(instance_id)
 }
 
 #[tauri::command]
 pub fn cancel_install(instance_id: Option<String>) {
-    let Ok(mut state) = cancel_state().lock() else {
-        return;
-    };
-    if let Some(id) = instance_id.filter(|id| !id.is_empty()) {
-        state.cancelled.insert(id);
-    } else {
-        let active: Vec<String> = state.active.iter().cloned().collect();
-        state.cancelled.extend(active);
-    }
+    operations::cancel_installs(instance_id.as_deref().filter(|id| !id.is_empty()));
 }
 
 #[derive(Clone, Serialize)]
@@ -120,19 +69,15 @@ fn emit(app: &AppHandle, instance_id: &str, step: &str, current: u64, total: u64
     );
 }
 
-async fn download_to(iid: &str, url: &str, dest: &Path, sha1: Option<&str>) -> Result<u64, String> {
+async fn download_task(iid: &str, task: &downloader::Task) -> Result<u64, String> {
     check_cancelled(iid)?;
-    let expected = sha1.filter(|s| !s.is_empty()).map(net::ExpectedHash::Sha1);
-    let result = net::download_to(url, dest, net::MINECRAFT_HOSTS, expected).await;
-    check_cancelled(iid)?;
-    result?;
-    Ok(fs::metadata(dest).map(|m| m.len()).unwrap_or(0))
+    let result = downloader::fetch_with_cancel(task, Some(cancel_check_for(iid))).await?;
+    Ok(result.bytes)
 }
 
 /// Cancel check shaped for the download engine's batch runner.
 fn cancel_check_for(iid: &str) -> downloader::CancelCheck {
-    let iid = iid.to_string();
-    Arc::new(move || check_cancelled(&iid))
+    operations::cancellation_check(iid)
 }
 
 /// Batch progress that re-emits over `mc://progress` under a fixed step label.
@@ -146,23 +91,32 @@ fn require_batch_success(batch: &downloader::BatchResult, what: &str) -> Result<
     batch.error_summary(what).map_or(Ok(()), Err)
 }
 
-async fn get_json(url: &str) -> Result<Value, String> {
-    net::validate_url(url, net::MINECRAFT_HOSTS)?;
-    let res = reqwest::get(url).await.map_err(|e| e.to_string())?;
-    net::validate_url(res.url().as_str(), net::MINECRAFT_HOSTS)?;
-    if !res.status().is_success() {
-        return Err(format!("HTTP {} for {url}", res.status()));
-    }
-    res.json().await.map_err(|e| e.to_string())
+async fn get_json(url: &str, instance_id: Option<&str>) -> Result<Value, String> {
+    downloader::get_json(url, net::MINECRAFT_HOSTS, instance_id.map(cancel_check_for)).await
 }
 
-fn extract_natives(jar: &Path, dest: &Path) -> Result<(), String> {
+fn extract_natives(
+    jar: &Path,
+    game: &Path,
+    excludes: &[String],
+    cancel: &downloader::CancelCheck,
+) -> Result<(), String> {
+    const MAX_NATIVE_BYTES: u64 = 512 * 1024 * 1024;
     let file = File::open(jar).map_err(|e| e.to_string())?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    if archive.len() > 10_000 {
+        return Err("Native archive contains too many entries.".into());
+    }
+    let mut total = 0u64;
+    let mut names = std::collections::BTreeSet::new();
     for i in 0..archive.len() {
+        cancel()?;
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().to_string();
-        if name.starts_with("META-INF/") || name.ends_with('/') {
+        let name = entry.name().replace('\\', "/");
+        if name.starts_with("META-INF/")
+            || name.ends_with('/')
+            || excludes.iter().any(|prefix| name.starts_with(prefix))
+        {
             continue;
         }
         if !(name.ends_with(".dll")
@@ -172,35 +126,100 @@ fn extract_natives(jar: &Path, dest: &Path) -> Result<(), String> {
         {
             continue;
         }
-        let file_name = Path::new(&name).file_name().unwrap_or_default();
-        let mut out = File::create(dest.join(file_name)).map_err(|e| e.to_string())?;
-        std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+        let relative = fs_safety::relative_path(&name)?;
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err("Native archive contains a linked entry.".into());
+        }
+        let file_name = relative
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("Invalid native filename.")?;
+        if !names.insert(file_name.to_ascii_lowercase()) {
+            return Err("Native archive contains conflicting filenames.".into());
+        }
+        total = total
+            .checked_add(entry.size())
+            .filter(|n| *n <= MAX_NATIVE_BYTES)
+            .ok_or("Native archive exceeds the extraction size limit.")?;
+        let destination = fs_safety::checked_join(game, &format!("natives/{file_name}"))?;
+        crate::persistence::atomic_write_with(&destination, |out| -> Result<(), String> {
+            let expected = entry.size();
+            let mut written = 0u64;
+            let mut buffer = [0u8; 64 * 1024];
+            loop {
+                cancel()?;
+                let count = entry.read(&mut buffer).map_err(|e| e.to_string())?;
+                if count == 0 {
+                    break;
+                }
+                written = written
+                    .checked_add(count as u64)
+                    .filter(|n| *n <= expected)
+                    .ok_or("Native entry exceeds its declared size.")?;
+                out.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
+            }
+            if written != expected {
+                return Err("Native entry does not match its declared size.".into());
+            }
+            cancel()
+        })?;
     }
     Ok(())
 }
 
-/// "group:artifact:version[:classifier@ext]" → relative jar path (for maven libs
-/// declared with a `url` base, as Fabric/Quilt loader libraries are).
-fn maven_to_path(name: &str) -> String {
-    let parts: Vec<&str> = name.split(':').collect();
-    let group = parts.first().copied().unwrap_or("");
-    let artifact = parts.get(1).copied().unwrap_or("");
-    let version = parts.get(2).copied().unwrap_or("");
-    let group_path = group.replace('.', "/");
-    let fname = if let Some(ce) = parts.get(3) {
-        let mut it = ce.split('@');
-        let classifier = it.next().unwrap_or("");
-        let ext = it.next().unwrap_or("jar");
-        format!("{artifact}-{version}-{classifier}.{ext}")
-    } else {
-        format!("{artifact}-{version}.jar")
-    };
-    format!("{group_path}/{artifact}/{version}/{fname}")
+fn materialize_assets(
+    assets: &Path,
+    copies: &[minecraft_metadata::AssetCopy],
+    cancel: &downloader::CancelCheck,
+) -> Result<(), String> {
+    use sha1::{Digest, Sha1};
+    for copy in copies {
+        cancel()?;
+        let relative = copy
+            .source
+            .strip_prefix(assets)
+            .map_err(|_| "Invalid asset source.")?;
+        let source = fs_safety::checked_join(assets, &relative.to_string_lossy())?;
+        let relative = copy
+            .destination
+            .strip_prefix(&copy.destination_root)
+            .map_err(|_| "Invalid mapped asset destination.")?;
+        let destination =
+            fs_safety::checked_join(&copy.destination_root, &relative.to_string_lossy())?;
+        let mut input =
+            File::open(&source).map_err(|e| format!("Could not read required asset: {e}"))?;
+        crate::persistence::atomic_write_with(&destination, |out| -> Result<(), String> {
+            let mut hasher = Sha1::new();
+            let mut bytes = 0u64;
+            let mut buffer = [0u8; 64 * 1024];
+            loop {
+                cancel()?;
+                let count = input.read(&mut buffer).map_err(|e| e.to_string())?;
+                if count == 0 {
+                    break;
+                }
+                bytes = bytes
+                    .checked_add(count as u64)
+                    .filter(|n| *n <= copy.size)
+                    .ok_or("Mapped asset exceeds its declared size.")?;
+                hasher.update(&buffer[..count]);
+                out.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
+            }
+            if bytes != copy.size || hex::encode(hasher.finalize()) != copy.hash {
+                return Err("Required mapped asset failed size or SHA-1 verification.".into());
+            }
+            cancel()
+        })?;
+    }
+    Ok(())
 }
 
 /// Install a Fabric/Quilt loader overlay: resolve the loader version (newest if
-/// none requested), fetch the profile JSON, save it to `versions/<mc>-<loader>/`,
-/// and download its (maven) libraries. Returns the concrete version installed.
+/// none requested), fetch the profile JSON, download every required library,
+/// then publish the exact Minecraft/loader/version profile.
 async fn install_loader(
     app: &AppHandle,
     iid: &str,
@@ -225,7 +244,7 @@ async fn install_loader(
     let version = match requested {
         Some(v) if !v.is_empty() => v.to_string(),
         _ => {
-            let list = get_json(&format!("{meta}/versions/loader/{mc}")).await?;
+            let list = get_json(&format!("{meta}/versions/loader/{mc}"), Some(iid)).await?;
             list.as_array()
                 .and_then(|a| a.first())
                 .and_then(|e| e["loader"]["version"].as_str())
@@ -234,57 +253,31 @@ async fn install_loader(
         }
     };
 
-    let profile = get_json(&format!(
-        "{meta}/versions/loader/{mc}/{version}/profile/json"
-    ))
+    let profile = get_json(
+        &format!("{meta}/versions/loader/{mc}/{version}/profile/json"),
+        Some(iid),
+    )
     .await?;
     check_cancelled(iid)?;
-    let vdir = paths::versions_dir().join(format!("{mc}-{loader}"));
-    fs::create_dir_all(&vdir).map_err(|e| e.to_string())?;
-    fs::write(
-        vdir.join(format!("{mc}-{loader}.json")),
-        serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-
-    let libs: Vec<Value> = profile["libraries"].as_array().cloned().unwrap_or_default();
+    fs_safety::safe_component(&version)?;
+    if profile
+        .get("inheritsFrom")
+        .is_some_and(|value| value.as_str() != Some(mc))
+    {
+        return Err("Loader profile targets a different Minecraft version.".into());
+    }
+    if profile["mainClass"]
+        .as_str()
+        .is_none_or(|name| name.is_empty())
+    {
+        return Err("Loader profile has no valid main class.".into());
+    }
     let libs_dir = paths::libraries_dir();
-    let tasks: Vec<downloader::Task> = libs
-        .iter()
-        .filter(|l| rules::library_allowed(l))
-        .filter_map(|lib| {
-            if let (Some(path), Some(url)) = (
-                lib["downloads"]["artifact"]["path"].as_str(),
-                lib["downloads"]["artifact"]["url"].as_str(),
-            ) {
-                if url.is_empty() {
-                    return None;
-                }
-                let hash = lib["downloads"]["artifact"]["sha1"]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| downloader::OwnedHash::Sha1(s.to_string()));
-                Some(
-                    downloader::Task::new(url, libs_dir.join(path), net::MINECRAFT_HOSTS)
-                        .hash(hash)
-                        .existing(downloader::Existing::ReuseIfValid),
-                )
-            } else if let (Some(name), Some(base)) = (lib["name"].as_str(), lib["url"].as_str()) {
-                let rel = maven_to_path(name);
-                let base = if base.ends_with('/') {
-                    base.to_string()
-                } else {
-                    format!("{base}/")
-                };
-                Some(downloader::Task::new(
-                    format!("{base}{rel}"),
-                    libs_dir.join(&rel),
-                    net::MINECRAFT_HOSTS,
-                ))
-            } else {
-                None
-            }
-        })
+    let plan = minecraft_metadata::libraries(&profile["libraries"], &libs_dir)?;
+    let tasks = plan
+        .artifacts
+        .into_iter()
+        .chain(plan.natives.iter().map(|native| native.task.clone()))
         .collect();
     let batch = downloader::run(
         tasks,
@@ -296,13 +289,26 @@ async fn install_loader(
     timer.add_batch(&batch);
     check_cancelled(iid)?;
     require_batch_success(&batch, "loader libraries")?;
+    let game = instances::game_dir(iid)?;
+    let cancel = cancel_check_for(iid);
+    operations::blocking(move || {
+        for native in plan.natives {
+            extract_natives(&native.task.dest, &game, &native.excludes, &cancel)?;
+        }
+        Ok::<_, String>(())
+    })
+    .await??;
+    crate::loader_profiles::publish(mc, loader, &version, &profile)?;
     emit(app, iid, label, 1, 1);
     Ok(version)
 }
 
-async fn mojang_version_url(mc: &str) -> Result<String, String> {
-    let manifest =
-        get_json("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json").await?;
+async fn mojang_version_url(mc: &str, instance_id: &str) -> Result<String, String> {
+    let manifest = get_json(
+        "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json",
+        Some(instance_id),
+    )
+    .await?;
     manifest["versions"]
         .as_array()
         .and_then(|a| a.iter().find(|v| v["id"].as_str() == Some(mc)))
@@ -317,13 +323,17 @@ async fn mojang_version_url(mc: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn mc_repair(app: AppHandle, instance_id: String) -> Result<Value, IpcError> {
     let context_id = instance_id.clone();
-    repair_minecraft_inner(app, instance_id)
-        .await
-        .map_err(|error| IpcError::minecraft("repair", &context_id, error))
+    operations::run(
+        &context_id,
+        operations::Kind::Repair,
+        repair_minecraft_inner(app, instance_id),
+    )
+    .await
+    .map_err(|error| IpcError::minecraft("repair", &context_id, error))
 }
 
 async fn repair_minecraft_inner(app: AppHandle, instance_id: String) -> Result<Value, String> {
-    let inst = instances::get_instance_by_id(instance_id.clone())
+    let inst = instances::get_instance_by_id(instance_id.clone())?
         .ok_or(format!("Instance not found: {instance_id}"))?;
     let mc = inst
         .get("minecraftVersion")
@@ -339,7 +349,7 @@ async fn repair_minecraft_inner(app: AppHandle, instance_id: String) -> Result<V
         .get("modLoaderVersion")
         .and_then(Value::as_str)
         .map(String::from);
-    let url = mojang_version_url(&mc).await?;
+    let url = mojang_version_url(&mc, &instance_id).await?;
     install_minecraft_inner(app, instance_id, mc, url, loader, lv, InstallMode::Repair).await
 }
 
@@ -376,7 +386,7 @@ pub(crate) async fn install_minecraft_internal(
     mod_loader: Option<String>,
     mod_loader_version: Option<String>,
 ) -> Result<Value, String> {
-    install_minecraft_inner(
+    install_with_mode(
         app,
         instance_id,
         version_id,
@@ -384,6 +394,53 @@ pub(crate) async fn install_minecraft_internal(
         mod_loader,
         mod_loader_version,
         InstallMode::Install,
+    )
+    .await
+}
+
+/// A pack owns final metadata and completion after its durable transaction.
+pub(crate) async fn install_minecraft_for_pack(
+    app: AppHandle,
+    instance_id: String,
+    version_id: String,
+    version_url: String,
+    mod_loader: Option<String>,
+    mod_loader_version: Option<String>,
+) -> Result<Value, String> {
+    install_with_mode(
+        app,
+        instance_id,
+        version_id,
+        version_url,
+        mod_loader,
+        mod_loader_version,
+        InstallMode::Pack,
+    )
+    .await
+}
+
+async fn install_with_mode(
+    app: AppHandle,
+    instance_id: String,
+    version_id: String,
+    version_url: String,
+    mod_loader: Option<String>,
+    mod_loader_version: Option<String>,
+    mode: InstallMode,
+) -> Result<Value, String> {
+    let context_id = instance_id.clone();
+    operations::run(
+        &context_id,
+        operations::Kind::Install,
+        install_minecraft_inner(
+            app,
+            instance_id,
+            version_id,
+            version_url,
+            mod_loader,
+            mod_loader_version,
+            mode,
+        ),
     )
     .await
 }
@@ -398,7 +455,24 @@ async fn install_minecraft_inner(
     mode: InstallMode,
 ) -> Result<Value, String> {
     let iid = instance_id.as_str();
-    let _guard = InstallGuard::new(iid)?;
+    crate::fs_safety::safe_component(&version_id)?;
+    if let Some(loader) = mod_loader.as_deref() {
+        if !matches!(
+            loader,
+            "vanilla" | "fabric" | "quilt" | "forge" | "neoforge"
+        ) {
+            return Err("Unsupported mod loader.".into());
+        }
+    }
+    if let Some(version) = mod_loader_version
+        .as_deref()
+        .filter(|version| !version.is_empty())
+    {
+        crate::fs_safety::safe_component(version)?;
+    }
+    let operation = operations::Operation::begin(iid, operations::Kind::Install)?;
+    operation.state(operations::State::Installing);
+    operation.check()?;
     let timer = downloader::InstallTimer::start();
 
     // An interrupted repair must not leave a previously installed instance
@@ -412,59 +486,43 @@ async fn install_minecraft_inner(
     // 1. Version JSON
     emit(&app, iid, "Fetching version data", 0, 1);
     check_cancelled(iid)?;
-    let vjson = get_json(&version_url).await?;
+    let vjson = get_json(&version_url, Some(iid)).await?;
     check_cancelled(iid)?;
-    let vdir = paths::versions_dir().join(&version_id);
-    fs::create_dir_all(&vdir).map_err(|e| e.to_string())?;
-    fs::write(
-        vdir.join(format!("{version_id}.json")),
-        serde_json::to_vec_pretty(&vjson).map_err(|e| e.to_string())?,
+    let assets_dir = paths::assets_dir();
+    let game_dir = instances::game_dir(iid)?;
+    let plan = minecraft_metadata::minecraft(
+        &vjson,
+        &version_id,
+        &paths::versions_dir(),
+        &paths::libraries_dir(),
+        &assets_dir,
+    )?;
+    // Validate the complete required plan, including the verified asset index,
+    // before publishing artifacts or replacing a previously usable profile.
+    let (index, index_bytes) = downloader::get_verified_json(
+        &plan.index,
+        Some(cancel_check_for(iid)),
+        minecraft_metadata::MAX_INDEX_BYTES as usize,
     )
-    .map_err(|e| e.to_string())?;
+    .await?;
+    let asset_plan = minecraft_metadata::assets(
+        &index,
+        &plan.index_id,
+        &assets_dir,
+        &game_dir,
+        asset_existing_policy(mode),
+    )?;
     emit(&app, iid, "Fetching version data", 1, 1);
 
     // 2. Client jar
     emit(&app, iid, "Downloading client", 0, 1);
-    let client_url = vjson["downloads"]["client"]["url"]
-        .as_str()
-        .filter(|url| !url.is_empty())
-        .ok_or("Minecraft version metadata has no client download.")?;
-    let bytes = download_to(
-        iid,
-        client_url,
-        &vdir.join(format!("{version_id}.jar")),
-        vjson["downloads"]["client"]["sha1"].as_str(),
-    )
-    .await?;
+    let bytes = download_task(iid, &plan.client).await?;
     timer.add(bytes, 1);
     emit(&app, iid, "Downloading client", 1, 1);
 
-    // 3. Libraries (OS-filtered), through the parallel engine; existing jars
-    // with a matching hash are reused. Per-lib failures stay non-fatal.
-    let libs: Vec<Value> = vjson["libraries"].as_array().cloned().unwrap_or_default();
-    let allowed: Vec<&Value> = libs.iter().filter(|l| rules::library_allowed(l)).collect();
-    let libs_dir = paths::libraries_dir();
-    let lib_tasks: Vec<downloader::Task> = allowed
-        .iter()
-        .filter_map(|lib| {
-            let path = lib["downloads"]["artifact"]["path"].as_str()?;
-            let url = lib["downloads"]["artifact"]["url"].as_str()?;
-            if url.is_empty() {
-                return None;
-            }
-            let hash = lib["downloads"]["artifact"]["sha1"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(|s| downloader::OwnedHash::Sha1(s.to_string()));
-            Some(
-                downloader::Task::new(url, libs_dir.join(path), net::MINECRAFT_HOSTS)
-                    .hash(hash)
-                    .existing(downloader::Existing::ReuseIfValid),
-            )
-        })
-        .collect();
+    // 3. Every allowed regular library must be represented by a valid task.
     let batch = downloader::run(
-        lib_tasks,
+        plan.libraries.artifacts,
         downloader::LIBRARY_CONCURRENCY,
         Some(cancel_check_for(iid)),
         Some(batch_progress(&app, iid, "Downloading libraries")),
@@ -477,97 +535,34 @@ async fn install_minecraft_inner(
     // 4. Natives
     emit(&app, iid, "Extracting natives", 0, 1);
     check_cancelled(iid)?;
-    let natives_dir = instances::resolve_instance_dir(iid)
-        .join("minecraft")
-        .join("natives");
-    fs::create_dir_all(&natives_dir).map_err(|e| e.to_string())?;
-    for lib in &allowed {
-        if let Some(classifier) = rules::native_classifier(lib) {
-            let library_name = lib["name"].as_str().unwrap_or("unnamed library");
-            let art = lib["downloads"]["classifiers"]
-                .get(&classifier)
-                .ok_or_else(|| {
-                    format!("Minecraft metadata has no {classifier} native for {library_name}.")
-                })?;
-            let path = art["path"]
-                .as_str()
-                .filter(|path| !path.is_empty())
-                .ok_or_else(|| {
-                    format!("Minecraft native {classifier} for {library_name} has no path.")
-                })?;
-            let url = art["url"]
-                .as_str()
-                .filter(|url| !url.is_empty())
-                .ok_or_else(|| {
-                    format!("Minecraft native {classifier} for {library_name} has no download URL.")
-                })?;
-            let jar = libs_dir.join(path);
-            let bytes = download_to(iid, url, &jar, art["sha1"].as_str()).await?;
-            timer.add(bytes, 1);
-            extract_natives(&jar, &natives_dir)?;
-        }
+    for native in plan.libraries.natives {
+        let bytes = download_task(iid, &native.task).await?;
+        timer.add(bytes, 1);
+        let game = game_dir.clone();
+        let cancel = cancel_check_for(iid);
+        operations::blocking(move || {
+            extract_natives(&native.task.dest, &game, &native.excludes, &cancel)
+        })
+        .await??;
     }
     emit(&app, iid, "Extracting natives", 1, 1);
 
     // 5. Assets
     emit(&app, iid, "Downloading assets", 0, 1);
     check_cancelled(iid)?;
-    if let Some(idx_url) = vjson["assetIndex"]["url"].as_str() {
-        let idx_id = vjson["assetIndex"]["id"]
-            .as_str()
-            .unwrap_or("legacy")
-            .to_string();
-        let idx_path = paths::assets_dir()
-            .join("indexes")
-            .join(format!("{idx_id}.json"));
-        download_to(
-            iid,
-            idx_url,
-            &idx_path,
-            vjson["assetIndex"]["sha1"].as_str(),
-        )
-        .await?;
-        let index: Value = fs::read_to_string(&idx_path)
-            .map_err(|e| e.to_string())
-            .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))?;
-
-        // Assets are content-addressed (path = its own SHA-1). Ordinary installs
-        // trust an existing object for speed, while repair hashes every object and
-        // re-downloads anything missing or corrupt.
-        let obj_dir = paths::assets_dir().join("objects");
-        let existing_policy = asset_existing_policy(mode);
-        let asset_tasks: Vec<downloader::Task> = index["objects"]
-            .as_object()
-            .map(|m| {
-                m.values()
-                    .filter_map(|o| {
-                        let hash = o["hash"].as_str()?;
-                        let prefix = hash.get(..2)?;
-                        Some(
-                            downloader::Task::new(
-                                format!("{RESOURCES}/{prefix}/{hash}"),
-                                obj_dir.join(prefix).join(hash),
-                                net::MINECRAFT_HOSTS,
-                            )
-                            .hash(Some(downloader::OwnedHash::Sha1(hash.to_string())))
-                            .size(o["size"].as_u64())
-                            .existing(existing_policy),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let batch = downloader::run(
-            asset_tasks,
-            downloader::ASSET_CONCURRENCY,
-            Some(cancel_check_for(iid)),
-            Some(batch_progress(&app, iid, "Downloading assets")),
-        )
-        .await;
-        timer.add_batch(&batch);
-        check_cancelled(iid)?;
-        require_batch_success(&batch, "Minecraft assets")?;
-    }
+    let batch = downloader::run(
+        asset_plan.downloads,
+        downloader::ASSET_CONCURRENCY,
+        Some(cancel_check_for(iid)),
+        Some(batch_progress(&app, iid, "Downloading assets")),
+    )
+    .await;
+    timer.add_batch(&batch);
+    check_cancelled(iid)?;
+    require_batch_success(&batch, "Minecraft assets")?;
+    let cancel = cancel_check_for(iid);
+    operations::blocking(move || materialize_assets(&assets_dir, &asset_plan.copies, &cancel))
+        .await??;
 
     // 6. Mod loader overlay. Forge/NeoForge use their installer processor runner.
     let mut resolved_loader = mod_loader_version.clone();
@@ -607,24 +602,37 @@ async fn install_minecraft_inner(
                 Some(v) => v,
                 None => crate::forge::fetch_latest(&version_id, is_neo).await?,
             };
-            crate::forge::install_forge(&app, iid, &version_id, &ver, is_neo).await?;
+            crate::forge::install_forge(&app, iid, &version_id, &ver, is_neo, plan.java_major)
+                .await?;
             check_cancelled(iid)?;
             resolved_loader = Some(ver);
         }
         _ => {}
     }
 
+    check_cancelled(iid)?;
+    crate::persistence::atomic_write(&plan.index.dest, &index_bytes)?;
+    crate::persistence::atomic_write(
+        &plan.version_path,
+        &serde_json::to_vec_pretty(&vjson).map_err(|e| e.to_string())?,
+    )?;
     // Persist installed state after the install command finishes,
     // and the renderer refetches instances when the "Done" progress event fires.
-    let mut patch = serde_json::json!({ "isInstalled": true });
+    let mut patch = serde_json::json!({ "isInstalled": mode != InstallMode::Pack });
     if let Some(v) = &resolved_loader {
         patch["modLoaderVersion"] = serde_json::json!(v);
     }
-    let _ = instances::update_instance(instance_id.clone(), patch);
+    instances::update_instance(instance_id.clone(), patch)?;
 
-    emit(&app, iid, "Done", 1, 1);
+    if mode != InstallMode::Pack {
+        emit(&app, iid, "Done", 1, 1);
+    }
     Ok(timer.to_json())
 }
+
+#[cfg(test)]
+#[path = "mc_install_file_tests.rs"]
+mod file_tests;
 
 #[cfg(test)]
 mod tests {

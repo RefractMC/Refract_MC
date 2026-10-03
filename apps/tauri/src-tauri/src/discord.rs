@@ -237,9 +237,12 @@ pub fn set_game_activity(
     mod_loader: Option<&str>,
 ) {
     if crate::config::read()
-        .get("disableDiscordPresence")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+        .map(|cfg| {
+            cfg.get("disableDiscordPresence")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .unwrap_or(true)
     {
         return;
     }

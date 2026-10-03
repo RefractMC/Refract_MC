@@ -52,28 +52,23 @@ fn host_allowed(host: &str, allowed: &[&str]) -> bool {
 }
 
 pub fn validate_url(url: &str, allowed_hosts: &[&str]) -> Result<(), String> {
-    let parsed = reqwest::Url::parse(url).map_err(|e| format!("Invalid URL {url}: {e}"))?;
+    let parsed = reqwest::Url::parse(url).map_err(|_| "Invalid download URL.".to_string())?;
     if parsed.scheme() != "https" {
-        return Err(format!("Refusing non-HTTPS download: {url}"));
+        return Err("Refusing non-HTTPS download.".into());
+    }
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some_and(|port| port != 443)
+    {
+        return Err("Download URLs cannot include credentials or a nonstandard HTTPS port.".into());
     }
     let host = parsed
         .host_str()
-        .ok_or_else(|| format!("URL has no host: {url}"))?;
+        .ok_or_else(|| "Download URL has no host.".to_string())?;
     if !host_allowed(host, allowed_hosts) {
         return Err(format!("Refusing download from untrusted host: {host}"));
     }
     Ok(())
-}
-
-pub fn validate_url_any(url: &str, allowed_host_groups: &[&[&str]]) -> Result<(), String> {
-    let mut last = None;
-    for allowed_hosts in allowed_host_groups {
-        match validate_url(url, allowed_hosts) {
-            Ok(()) => return Ok(()),
-            Err(e) => last = Some(e),
-        }
-    }
-    Err(last.unwrap_or_else(|| format!("No trusted hosts configured for {url}")))
 }
 
 /// Download `url` to `dest` through the shared engine: pooled client, streamed
@@ -88,7 +83,10 @@ pub async fn download_to(
         ExpectedHash::Sha1(want) => downloader::OwnedHash::Sha1(want.to_string()),
         ExpectedHash::Sha512(want) => downloader::OwnedHash::Sha512(want.to_string()),
     });
-    downloader::fetch(&downloader::Task::new(url, dest.to_path_buf(), allowed_hosts).hash(hash))
-        .await
-        .map(|_| ())
+    downloader::fetch_with_cancel(
+        &downloader::Task::new(url, dest.to_path_buf(), allowed_hosts).hash(hash),
+        crate::operations::current_cancellation_check(),
+    )
+    .await
+    .map(|_| ())
 }

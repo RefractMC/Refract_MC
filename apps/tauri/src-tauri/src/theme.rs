@@ -85,6 +85,7 @@ pub fn theme_list() -> Result<Vec<Value>, String> {
 
 #[tauri::command]
 pub fn theme_install(source_path: String) -> Result<Value, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let source = PathBuf::from(source_path);
     if !source.is_file() {
         return Err("Theme file does not exist.".into());
@@ -105,6 +106,7 @@ pub fn theme_install(source_path: String) -> Result<Value, String> {
 
 #[tauri::command]
 pub fn theme_delete(file_name: String) -> Result<(), String> {
+    let _maintenance = crate::maintenance::shared()?;
     let mut target = safe_theme_path(&file_name).ok();
 
     if target.as_ref().is_none_or(|path| !path.exists()) {

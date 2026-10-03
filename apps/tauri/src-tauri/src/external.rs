@@ -524,17 +524,25 @@ fn input_from_external(ext: &ExternalInstance, imported: bool) -> Value {
 
 #[tauri::command]
 pub fn link_external_instance(ext: ExternalInstance) -> Result<Value, String> {
-    instances::create_instance(input_from_external(&ext, false))
+    instances::create_linked_instance(input_from_external(&ext, false))
 }
 
 #[tauri::command]
 pub fn import_external_instance(ext: ExternalInstance) -> Result<Value, String> {
+    crate::operations::run_new_sync(crate::operations::Kind::Mutation, || {
+        import_external_instance_owned(ext)
+    })
+}
+
+fn import_external_instance_owned(ext: ExternalInstance) -> Result<Value, String> {
+    crate::fs_safety::absolute_directory(Path::new(&ext.game_dir))?;
+    crate::operations::claim_paths(&[PathBuf::from(&ext.game_dir)])?;
     let instance = instances::create_instance(input_from_external(&ext, true))?;
     let id = instance
         .get("id")
         .and_then(Value::as_str)
         .ok_or("created instance has no id")?;
-    let dest = instances::resolve_instance_dir(id).join("minecraft");
+    let dest = instances::resolve_instance_dir(id)?.join("minecraft");
     if let Err(error) = instances::copy_game_directories_checked(
         Path::new(&ext.game_dir),
         &dest,

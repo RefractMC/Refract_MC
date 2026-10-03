@@ -3,12 +3,13 @@
 //! as the launcher, with identical folder sanitisation (incl. the
 //! Cyrillic→Latin transliteration) so the two stay interchangeable.
 
-use crate::{paths, snapshots};
+use crate::{fs_safety, paths, persistence, snapshots};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -21,23 +22,44 @@ fn registry_path() -> PathBuf {
     paths::data_dir().join("instance-registry.json")
 }
 
-fn read_registry() -> Vec<RegistryEntry> {
-    fs::read_to_string(registry_path())
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+fn read_registry() -> Result<Vec<RegistryEntry>, String> {
+    persistence::read_json(&registry_path(), Vec::new)
 }
 
 fn write_registry(entries: &[RegistryEntry]) -> Result<(), String> {
-    fs::create_dir_all(paths::data_dir()).map_err(|e| e.to_string())?;
-    let text = serde_json::to_string_pretty(entries).map_err(|e| e.to_string())?;
-    fs::write(registry_path(), text).map_err(|e| e.to_string())
+    persistence::write_json(&registry_path(), entries)
 }
 
-fn read_instance(json_path: &Path) -> Option<Value> {
-    fs::read_to_string(json_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+fn read_instance(json_path: &Path) -> Result<Option<Value>, String> {
+    let value: Option<Value> = persistence::read_json(json_path, || None)?;
+    if value.is_none() && json_path.try_exists().map_err(|error| error.to_string())? {
+        return Err(format!(
+            "Instance metadata is empty: {}. The file was preserved.",
+            json_path.display()
+        ));
+    }
+    if let Some(value) = &value {
+        let id = value["id"]
+            .as_str()
+            .ok_or_else(|| format!("Instance metadata has no identity: {}", json_path.display()))?;
+        fs_safety::identifier(id)?;
+        if value
+            .get("schemaVersion")
+            .is_some_and(|version| version.as_u64().is_none_or(|version| version > 1))
+        {
+            return Err("This instance requires a newer version of Refract.".into());
+        }
+    }
+    Ok(value)
+}
+
+// One short-lived metadata transaction also covers registry/name changes. Never
+// hold this lock during network work, filesystem content copying, or an await.
+fn mutation_lock() -> Result<MutexGuard<'static, ()>, String> {
+    static MUTATIONS: Mutex<()> = Mutex::new(());
+    MUTATIONS
+        .lock()
+        .map_err(|_| "Instance metadata transaction is unavailable.".into())
 }
 
 fn sort_key(inst: &Value) -> String {
@@ -149,95 +171,199 @@ fn unique_folder_name(desired: &str, current: Option<&str>) -> String {
 
 // ── Resolve / save ──────────────────────────────────────────────────────────
 
-/// Wipe all launcher data (the "delete everything" action): instances, content
-/// caches and the config/registry.
-#[tauri::command]
-pub fn launcher_delete_all() -> Result<(), String> {
-    let data = paths::data_dir();
-    for sub in [
-        "instances",
-        "themes",
-        "plugins",
-        "java",
-        "assets",
-        "libraries",
-        "versions",
-        "cache",
-        "logs",
-        "snapshots",
-    ] {
-        let p = data.join(sub);
-        if p.exists() {
-            let _ = fs::remove_dir_all(&p);
-        }
+/// The game directory for an instance: its external dir if set, else
+/// `<instance>/minecraft`. Shared by the mods/worlds/screenshots commands.
+pub fn game_dir(id: &str) -> Result<PathBuf, String> {
+    let directory = resolve_instance_dir(id)?;
+    let instance = read_instance(&fs_safety::checked_join(&directory, "instance.json")?)?
+        .ok_or("Instance metadata could not be read.")?;
+    game_dir_at(&directory, &instance)
+}
+
+fn game_dir_at(directory: &Path, instance: &Value) -> Result<PathBuf, String> {
+    if let Some(external) = instance
+        .get("externalGameDir")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+    {
+        let external = PathBuf::from(external);
+        fs_safety::absolute_directory(&external)?;
+        return Ok(external);
     }
-    for f in [
-        "config.json",
-        "instance-registry.json",
-        "linked-servers.json",
-        "running.json",
-    ] {
-        let p = data.join(f);
-        if p.exists() {
-            let _ = fs::remove_file(&p);
-        }
+    fs_safety::checked_join(directory, "minecraft")
+}
+
+pub(crate) fn operation_paths(id: &str) -> Result<Vec<PathBuf>, String> {
+    let directory = resolve_instance_dir(id)?;
+    let instance = read_instance(&fs_safety::checked_join(&directory, "instance.json")?)?
+        .ok_or("Instance metadata could not be read.")?;
+    let game = game_dir_at(&directory, &instance)?;
+    Ok(vec![directory, game])
+}
+
+fn verify_instance_directory(directory: &Path, id: &str) -> Result<(), String> {
+    fs_safety::absolute_directory(directory)?;
+    let record_path = fs_safety::checked_join(directory, "instance.json")?;
+    let record =
+        read_instance(&record_path)?.ok_or("Instance metadata is missing or unreadable.")?;
+    if record["id"].as_str() != Some(id) {
+        return Err("Instance folder does not belong to the requested instance.".into());
     }
     Ok(())
 }
 
-/// The game directory for an instance: its external dir if set, else
-/// `<instance>/minecraft`. Shared by the mods/worlds/screenshots commands.
-pub fn game_dir(id: &str) -> PathBuf {
-    if let Some(inst) = get_instance_by_id(id.to_string()) {
-        if let Some(ext) = inst.get("externalGameDir").and_then(Value::as_str) {
-            if !ext.is_empty() {
-                return PathBuf::from(ext);
-            }
+fn resolve_at(root: &Path, registry: &[RegistryEntry], id: &str) -> Result<PathBuf, String> {
+    fs_safety::identifier(id)?;
+    fs_safety::directory_root(root)?;
+    if let Some(entry) = registry.iter().find(|entry| entry.id == id) {
+        let directory = PathBuf::from(&entry.path);
+        if directory.try_exists().map_err(|error| error.to_string())? {
+            verify_instance_directory(&directory, id)?;
+            return Ok(directory);
         }
     }
-    resolve_instance_dir(id).join("minecraft")
-}
-
-pub fn resolve_instance_dir(id: &str) -> PathBuf {
-    if let Some(entry) = read_registry().into_iter().find(|r| r.id == id) {
-        let p = PathBuf::from(&entry.path);
-        if p.exists() {
-            return p;
-        }
-    }
-    let dir = paths::instances_dir();
-    if dir.exists() {
-        if let Ok(entries) = fs::read_dir(&dir) {
+    if root.exists() {
+        if let Ok(entries) = fs::read_dir(root) {
             for entry in entries.flatten() {
-                if !entry.path().is_dir() {
+                let metadata = entry.file_type().map_err(|error| error.to_string())?;
+                if !metadata.is_dir() {
                     continue;
                 }
-                if let Some(inst) = read_instance(&entry.path().join("instance.json")) {
+                if let Some(inst) = read_instance(&entry.path().join("instance.json"))? {
                     if inst.get("id").and_then(Value::as_str) == Some(id) {
-                        return entry.path();
+                        verify_instance_directory(&entry.path(), id)?;
+                        return Ok(entry.path());
                     }
                 }
             }
         }
     }
-    dir.join(id)
+    Err(format!("Instance not found: {id}"))
 }
 
-fn save_instance(inst: &Value) -> Result<(), String> {
-    let id = inst
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or("instance has no id")?;
-    let dir = match inst.get("customPath").and_then(Value::as_str) {
-        Some(p) => PathBuf::from(p),
-        None => {
-            let folder = inst.get("folderName").and_then(Value::as_str).unwrap_or(id);
-            paths::instances_dir().join(folder)
+fn import_stages() -> &'static Mutex<HashMap<String, PathBuf>> {
+    static STAGES: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
+    STAGES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Test-only known instances use the private resolver table and disposable
+/// storage. Native command tests never need the user's real instance registry.
+#[cfg(test)]
+pub(crate) struct TestInstance {
+    pub id: String,
+    pub directory: PathBuf,
+}
+
+#[cfg(test)]
+impl TestInstance {
+    pub fn new() -> Self {
+        Self::with_game(None)
+    }
+
+    pub fn with_game(game: Option<&Path>) -> Self {
+        let id = uuid::Uuid::new_v4().to_string();
+        let directory = std::env::temp_dir().join(format!("refract-instance-fixture-{id}"));
+        fs::create_dir(&directory).unwrap();
+        let mut value = json!({"id": id, "name": "Fixture", "isInstalled": false});
+        if let Some(game) = game {
+            value["externalGameDir"] = json!(game);
         }
-    };
-    fs::create_dir_all(dir.join("minecraft").join("mods")).map_err(|e| e.to_string())?;
-    let text = serde_json::to_string_pretty(inst).map_err(|e| e.to_string())?;
-    fs::write(dir.join("instance.json"), text).map_err(|e| e.to_string())
+        save_instance_at(&value, &directory).unwrap();
+        import_stages()
+            .lock()
+            .unwrap()
+            .insert(id.clone(), directory.clone());
+        Self { id, directory }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestInstance {
+    fn drop(&mut self) {
+        import_stages().lock().unwrap().remove(&self.id);
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
+pub fn resolve_instance_dir(id: &str) -> Result<PathBuf, String> {
+    fs_safety::identifier(id)?;
+    if let Some(directory) = import_stages()
+        .lock()
+        .map_err(|_| "Import stage registry is unavailable.")?
+        .get(id)
+        .cloned()
+    {
+        verify_instance_directory(&directory, id)?;
+        return Ok(directory);
+    }
+    resolve_at(&paths::instances_dir(), &read_registry()?, id)
+}
+
+/// A private, known instance used by the ordinary installer during imports.
+/// It is never published to the user's instance registry or Library.
+pub(crate) struct ImportStage {
+    pub id: String,
+    pub directory: PathBuf,
+}
+
+impl ImportStage {
+    pub fn create() -> Result<Self, String> {
+        let id = format!("import-stage-{}", uuid::Uuid::new_v4());
+        crate::operations::attach_import_stage(&id)?;
+        let directory = fs_safety::checked_join(&paths::data_dir(), &format!("cache/{id}"))?;
+        crate::operations::claim_paths(std::slice::from_ref(&directory))?;
+        save_instance_at(
+            &json!({ "id": id, "name": "Import staging", "isInstalled": false }),
+            &directory,
+        )?;
+        import_stages()
+            .lock()
+            .map_err(|_| "Import stage registry is unavailable.")?
+            .insert(id.clone(), directory.clone());
+        Ok(Self { id, directory })
+    }
+}
+
+impl Drop for ImportStage {
+    fn drop(&mut self) {
+        if let Ok(mut stages) = import_stages().lock() {
+            stages.remove(&self.id);
+        }
+        if verify_instance_directory(&self.directory, &self.id).is_ok() {
+            let _ = force_remove_dir(&self.directory);
+        }
+    }
+}
+
+fn save_instance_at(inst: &Value, dir: &Path) -> Result<(), String> {
+    fs_safety::directory_root(dir)?;
+    fs::create_dir_all(fs_safety::checked_join(dir, "minecraft/mods")?)
+        .map_err(|e| e.to_string())?;
+    let mut inst = inst.clone();
+    inst["schemaVersion"] = json!(1);
+    persistence::write_json(&fs_safety::checked_join(dir, "instance.json")?, &inst)
+}
+
+fn validate_storage_patch(
+    existing: &Value,
+    patch: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    for field in [
+        "folderName",
+        "customPath",
+        "externalGameDir",
+        "externalSource",
+    ] {
+        if patch
+            .get(field)
+            .is_some_and(|value| existing.get(field) != Some(value))
+        {
+            return Err(format!(
+                "Instance storage field {field} cannot be changed through settings."
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -254,7 +380,7 @@ pub fn instances_list() -> Result<Vec<Value>, String> {
                 if !entry.path().is_dir() {
                     continue;
                 }
-                if let Some(inst) = read_instance(&entry.path().join("instance.json")) {
+                if let Some(inst) = read_instance(&entry.path().join("instance.json"))? {
                     if let Some(id) = inst.get("id").and_then(Value::as_str) {
                         seen.insert(id.to_string());
                         out.push(inst);
@@ -263,11 +389,11 @@ pub fn instances_list() -> Result<Vec<Value>, String> {
             }
         }
     }
-    for e in read_registry() {
+    for e in read_registry()? {
         if seen.contains(&e.id) {
             continue;
         }
-        if let Some(inst) = read_instance(&Path::new(&e.path).join("instance.json")) {
+        if let Some(inst) = read_instance(&Path::new(&e.path).join("instance.json"))? {
             seen.insert(
                 inst.get("id")
                     .and_then(Value::as_str)
@@ -282,12 +408,63 @@ pub fn instances_list() -> Result<Vec<Value>, String> {
 }
 
 #[tauri::command]
-pub fn get_instance_by_id(id: String) -> Option<Value> {
-    read_instance(&resolve_instance_dir(&id).join("instance.json"))
+pub fn get_instance_by_id(id: String) -> Result<Option<Value>, String> {
+    read_instance(&fs_safety::checked_join(
+        &resolve_instance_dir(&id)?,
+        "instance.json",
+    )?)
 }
 
 #[tauri::command]
 pub fn create_instance(input: Value) -> Result<Value, String> {
+    if input.get("externalGameDir").is_some() || input.get("externalSource").is_some() {
+        return Err(
+            "Use the external-instance linking operation to link an existing game folder.".into(),
+        );
+    }
+    create_instance_inner(input)
+}
+
+pub(crate) fn create_linked_instance(input: Value) -> Result<Value, String> {
+    let external = input["externalGameDir"]
+        .as_str()
+        .ok_or("External instance has no game folder.")?;
+    fs_safety::absolute_directory(Path::new(external))?;
+    if !Path::new(external).is_dir() {
+        return Err("External game folder does not exist.".into());
+    }
+    create_instance_inner(input)
+}
+
+fn create_instance_inner(input: Value) -> Result<Value, String> {
+    crate::operations::run_new_sync(crate::operations::Kind::Mutation, || {
+        create_instance_owned(input)
+    })
+}
+
+fn validate_custom_location(
+    directory: &Path,
+    data: &Path,
+    registered: &[PathBuf],
+) -> Result<(), String> {
+    fs_safety::absolute_directory(directory)?;
+    let proposed = fs_safety::canonical_path(directory)?;
+    let data = fs_safety::canonical_path(data)?;
+    if proposed.starts_with(&data) || data.starts_with(&proposed) {
+        return Err("Custom instance location overlaps launcher-managed data.".into());
+    }
+    for other in registered {
+        fs_safety::absolute_directory(other)?;
+        let other = fs_safety::canonical_path(other)?;
+        if proposed.starts_with(&other) || other.starts_with(&proposed) {
+            return Err("Custom instance location overlaps another registered instance.".into());
+        }
+    }
+    Ok(())
+}
+
+fn create_instance_owned(input: Value) -> Result<Value, String> {
+    let _guard = mutation_lock()?;
     let mut inst = input.clone();
     let obj = inst.as_object_mut().ok_or("input is not an object")?;
     obj.insert("id".into(), json!(uuid::Uuid::new_v4().to_string()));
@@ -304,49 +481,103 @@ pub fn create_instance(input: Value) -> Result<Value, String> {
         .and_then(Value::as_str)
         .ok_or("instance has no id")?
         .to_string();
+    crate::operations::attach_instance(&id)?;
+    let directory;
     if let Some(custom) = inst.get("customPath").and_then(Value::as_str) {
-        let mut reg = read_registry();
-        reg.retain(|r| r.id != id);
-        reg.push(RegistryEntry {
-            id: id.clone(),
-            path: custom.to_string(),
-        });
-        write_registry(&reg)?;
+        directory = PathBuf::from(custom);
+        fs_safety::absolute_directory(&directory)?;
+        if directory.exists()
+            && fs::read_dir(&directory)
+                .map_err(|error| error.to_string())?
+                .next()
+                .is_some()
+        {
+            return Err("Choose a new or empty folder for the instance. Import or link an existing game folder instead.".into());
+        }
+        let mut occupied: Vec<_> = read_registry()?
+            .into_iter()
+            .map(|entry| PathBuf::from(entry.path))
+            .collect();
+        occupied.extend(instances_list()?.into_iter().filter_map(|instance| {
+            instance["externalGameDir"]
+                .as_str()
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        }));
+        validate_custom_location(&directory, &paths::data_dir(), &occupied)?;
+        inst.as_object_mut()
+            .ok_or("input is not an object")?
+            .remove("folderName");
     } else {
         let name = inst
             .get("name")
             .and_then(Value::as_str)
             .unwrap_or("instance");
         let folder = unique_folder_name(name, None);
+        fs_safety::safe_component(&folder)?;
+        directory = fs_safety::checked_join(&paths::instances_dir(), &folder)?;
+        crate::operations::claim_paths(&[directory.clone(), game_dir_at(&directory, &inst)?])?;
+        fs::create_dir_all(paths::instances_dir()).map_err(|error| error.to_string())?;
+        // Reserve a new directory. A concurrent creator cannot reuse our name.
+        fs::create_dir(&directory)
+            .map_err(|error| format!("Could not reserve instance folder: {error}"))?;
         inst.as_object_mut()
             .ok_or("input is not an object")?
             .insert("folderName".into(), json!(folder));
     }
-    save_instance(&inst)?;
+    crate::operations::claim_paths(&[directory.clone(), game_dir_at(&directory, &inst)?])?;
+    save_instance_at(&inst, &directory)?;
+    if inst.get("customPath").and_then(Value::as_str).is_some() {
+        let mut registry = read_registry()?;
+        registry.push(RegistryEntry {
+            id,
+            path: directory.to_string_lossy().to_string(),
+        });
+        write_registry(&registry)?;
+    }
     Ok(inst)
 }
 
 #[tauri::command]
 pub fn update_instance(id: String, patch: Value) -> Result<Value, String> {
-    let mut existing = get_instance_by_id(id.clone()).ok_or(format!("Instance not found: {id}"))?;
-    let patch_obj = patch.as_object().cloned().unwrap_or_default();
+    let owner = id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        update_instance_owned(id, patch)
+    })
+}
+
+fn update_instance_owned(id: String, patch: Value) -> Result<Value, String> {
+    let _guard = mutation_lock()?;
+    let mut directory = resolve_instance_dir(&id)?;
+    let mut existing =
+        get_instance_by_id(id.clone())?.ok_or(format!("Instance not found: {id}"))?;
+    let patch_obj = patch
+        .as_object()
+        .cloned()
+        .ok_or("Instance patch must be an object.")?;
+    validate_storage_patch(&existing, &patch_obj)?;
 
     // Rename the on-disk folder when the name changes (managed instances only).
     if existing.get("customPath").and_then(Value::as_str).is_none() {
-        let current_folder = existing
-            .get("folderName")
-            .and_then(Value::as_str)
-            .unwrap_or(&id)
+        let current_folder = directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("Instance folder name is invalid.")?
             .to_string();
         if let Some(new_name) = patch_obj.get("name").and_then(Value::as_str) {
             if Some(new_name) != existing.get("name").and_then(Value::as_str) {
+                if crate::launch::is_running(id.clone()) {
+                    return Err("Stop Minecraft before renaming this instance.".into());
+                }
                 let new_folder = unique_folder_name(new_name, Some(&current_folder));
                 if new_folder != current_folder {
-                    let old_dir = paths::instances_dir().join(&current_folder);
-                    let new_dir = paths::instances_dir().join(&new_folder);
+                    let old_dir = directory.clone();
+                    let new_dir = fs_safety::checked_join(&paths::instances_dir(), &new_folder)?;
+                    crate::operations::claim_paths(std::slice::from_ref(&new_dir))?;
                     if old_dir.exists() {
                         fs::rename(&old_dir, &new_dir).map_err(|e| e.to_string())?;
                     }
+                    directory = new_dir;
                     existing
                         .as_object_mut()
                         .ok_or("stored instance is not an object")?
@@ -360,12 +591,20 @@ pub fn update_instance(id: String, patch: Value) -> Result<Value, String> {
         .as_object_mut()
         .ok_or("stored instance is not an object")?;
     for (k, v) in patch_obj {
-        if k == "id" || k == "createdAt" {
+        if matches!(
+            k.as_str(),
+            "id" | "createdAt"
+                | "schemaVersion"
+                | "folderName"
+                | "customPath"
+                | "externalGameDir"
+                | "externalSource"
+        ) {
             continue;
         }
         obj.insert(k, v);
     }
-    save_instance(&existing)?;
+    save_instance_at(&existing, &directory)?;
     Ok(existing)
 }
 
@@ -373,43 +612,52 @@ pub fn update_instance(id: String, patch: Value) -> Result<Value, String> {
 /// per-day playtime log. The day key uses **local** time to match the streak
 /// computation in the renderer (`localDateKey`), so a late-evening session is
 /// logged on the right calendar day. Called from the launch exit watcher.
-pub fn record_playtime(id: String, seconds: u64) {
+pub fn record_playtime(id: String, seconds: u64) -> Result<(), String> {
     if seconds == 0 {
-        return;
+        return Ok(());
     }
-    let Some(mut inst) = get_instance_by_id(id.clone()) else {
-        return;
-    };
-    let Some(obj) = inst.as_object_mut() else {
-        return;
-    };
+    mutate_instance(&id, |inst| {
+        let obj = inst.as_object_mut().ok_or("Invalid instance metadata.")?;
 
-    let prev_total = obj
-        .get("totalTimePlayed")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    obj.insert("totalTimePlayed".into(), json!(prev_total + seconds));
+        let prev_total = obj
+            .get("totalTimePlayed")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        obj.insert(
+            "totalTimePlayed".into(),
+            json!(prev_total.saturating_add(seconds)),
+        );
 
-    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let log = obj.entry("playtimeLog").or_insert_with(|| json!({}));
-    if let Some(log_obj) = log.as_object_mut() {
-        let prev_day = log_obj.get(&day).and_then(Value::as_u64).unwrap_or(0);
-        log_obj.insert(day, json!(prev_day + seconds));
-    }
+        let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let log = obj.entry("playtimeLog").or_insert_with(|| json!({}));
+        if let Some(log_obj) = log.as_object_mut() {
+            let prev_day = log_obj.get(&day).and_then(Value::as_u64).unwrap_or(0);
+            log_obj.insert(day, json!(prev_day.saturating_add(seconds)));
+        }
 
-    let _ = save_instance(&inst);
+        Ok(())
+    })
+}
+
+/// Mutate current metadata under the same lock as settings, playtime and deletion.
+pub(crate) fn mutate_instance<R>(
+    id: &str,
+    change: impl FnOnce(&mut Value) -> Result<R, String>,
+) -> Result<R, String> {
+    let _guard = mutation_lock()?;
+    let directory = resolve_instance_dir(id)?;
+    let mut instance = read_instance(&fs_safety::checked_join(&directory, "instance.json")?)?
+        .ok_or("Instance not found.")?;
+    let result = change(&mut instance)?;
+    save_instance_at(&instance, &directory)?;
+    Ok(result)
 }
 
 /// Open the instance's game directory in the OS file manager.
 /// shell.openPath). Creates it first if missing.
 #[tauri::command]
 pub fn open_instance_folder(id: String) -> Result<(), String> {
-    let dir = get_instance_by_id(id.clone())
-        .as_ref()
-        .and_then(|i| i.get("externalGameDir").and_then(Value::as_str))
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| resolve_instance_dir(&id).join("minecraft"));
+    let dir = game_dir(&id)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     #[cfg(target_os = "windows")]
     let _ = std::process::Command::new("explorer").arg(&dir).spawn();
@@ -652,8 +900,18 @@ pub fn duplicate_instance(
     id: String,
     options: Option<DuplicateInstanceOptions>,
 ) -> Result<Value, String> {
-    let src = get_instance_by_id(id.clone()).ok_or(format!("Instance not found: {id}"))?;
-    let src_game_dir = game_dir(&id);
+    let owner = id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        duplicate_instance_owned(id, options)
+    })
+}
+
+fn duplicate_instance_owned(
+    id: String,
+    options: Option<DuplicateInstanceOptions>,
+) -> Result<Value, String> {
+    let src = get_instance_by_id(id.clone())?.ok_or(format!("Instance not found: {id}"))?;
+    let src_game_dir = game_dir(&id)?;
     let options = options.unwrap_or_default();
     let default_name = format!(
         "{} (copy)",
@@ -699,7 +957,7 @@ pub fn duplicate_instance(
         .and_then(Value::as_str)
         .ok_or("copy has no id")?
         .to_string();
-    let dst_dir = resolve_instance_dir(&copy_id);
+    let dst_dir = resolve_instance_dir(&copy_id)?;
     let dst_game_dir = dst_dir.join("minecraft");
     let directories = duplicate_content_directories(&options);
     if let Err(error) = copy_game_directories_checked(&src_game_dir, &dst_game_dir, &directories) {
@@ -735,7 +993,7 @@ pub fn duplicate_instance(
     if let Err(error) = update_instance(copy_id.clone(), patch) {
         return Err(rollback_created_instance(&copy_id, error));
     }
-    match get_instance_by_id(copy_id.clone()) {
+    match get_instance_by_id(copy_id.clone())? {
         Some(instance) => Ok(instance),
         None => Err(rollback_created_instance(
             &copy_id,
@@ -831,11 +1089,23 @@ pub async fn export_instance(
     id: String,
     dest_path: String,
 ) -> Result<String, String> {
-    let dir = resolve_instance_dir(&id);
+    let owner = id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Snapshot, async move {
+        export_instance_owned(app, id, dest_path).await
+    })
+    .await
+}
+
+async fn export_instance_owned(
+    app: AppHandle,
+    id: String,
+    dest_path: String,
+) -> Result<String, String> {
+    let dir = resolve_instance_dir(&id)?;
     if !dir.exists() {
         return Err("Instance folder not found.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+    crate::operations::blocking(move || -> Result<String, String> {
         let total = count_files(&dir);
         let _ = app.emit("instance://export-progress", ExportProgress { id: id.clone(), current: 0, total, percent: 0.0 });
 
@@ -864,74 +1134,108 @@ pub async fn export_instance(
 /// On Windows `remove_dir_all` fails on read-only files (some mod jars ship
 /// read-only). Clear the attribute recursively first.
 #[cfg(target_os = "windows")]
-fn clear_readonly(dir: &Path) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for e in entries.flatten() {
-            let p = e.path();
-            if let Ok(meta) = e.metadata() {
-                let mut perms = meta.permissions();
-                if perms.readonly() {
-                    perms.set_readonly(false);
-                    let _ = fs::set_permissions(&p, perms);
-                }
-            }
-            if p.is_dir() {
-                clear_readonly(&p);
-            }
+fn clear_readonly(dir: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        if fs_safety::is_link(&metadata) {
+            continue;
+        }
+        let mut permissions = metadata.permissions();
+        if permissions.readonly() {
+            permissions.set_readonly(false);
+            fs::set_permissions(&path, permissions)?;
+        }
+        if metadata.is_dir() {
+            clear_readonly(&path)?;
         }
     }
+    Ok(())
 }
 
 fn force_remove_dir(dir: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
-    clear_readonly(dir);
+    clear_readonly(dir)?;
     fs::remove_dir_all(dir)
+}
+
+fn remove_owned_directory(directory: &Path, id: &str) -> Result<(), String> {
+    verify_instance_directory(directory, id)?;
+    force_remove_dir(directory).map_err(|error| {
+        format!(
+            "Could not delete instance folder: {error}. The instance registration was retained."
+        )
+    })
+}
+
+fn validate_deletion_location(
+    directory: &Path,
+    data: &Path,
+    managed: &Path,
+    other_roots: &[PathBuf],
+) -> Result<(), String> {
+    let target = fs_safety::canonical_path(directory)?;
+    let data = fs_safety::canonical_path(data)?;
+    let managed = fs_safety::canonical_path(managed)?;
+    if target.parent().is_none()
+        || data.starts_with(&target)
+        || (target.starts_with(&data) && target.parent() != Some(managed.as_path()))
+    {
+        return Err(
+            "Refusing to delete an instance root that overlaps launcher-managed data.".into(),
+        );
+    }
+    for other in other_roots {
+        let other = fs_safety::canonical_path(other)?;
+        if target.starts_with(&other) || other.starts_with(&target) {
+            return Err("This folder overlaps another registered instance or linked game folder. Move or unlink that instance first.".into());
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn delete_instance(id: String) -> Result<(), String> {
-    // Collect every on-disk location this instance could occupy — the resolver
-    // can disagree with the folderName if the registry/scan is stale, so try the
-    // instance's own folderName/customPath too. Deleting must actually free disk.
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(inst) = get_instance_by_id(id.clone()) {
-        if let Some(custom) = inst
-            .get("customPath")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-        {
-            candidates.push(PathBuf::from(custom));
-        }
-        if let Some(folder) = inst.get("folderName").and_then(Value::as_str) {
-            candidates.push(paths::instances_dir().join(folder));
+    let owner = id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        delete_instance_owned(id)
+    })
+}
+
+fn delete_instance_owned(id: String) -> Result<(), String> {
+    let _guard = mutation_lock()?;
+    let directory = resolve_instance_dir(&id)?;
+    if crate::launch::is_running(id.clone()) {
+        return Err("Stop Minecraft before deleting this instance.".into());
+    }
+    let registry = read_registry()?;
+    let mut other_roots: Vec<_> = registry
+        .iter()
+        .filter(|entry| entry.id != id)
+        .map(|entry| PathBuf::from(&entry.path))
+        .collect();
+    for instance in instances_list()? {
+        if let Some(other_id) = instance["id"].as_str().filter(|other_id| *other_id != id) {
+            other_roots.extend(operation_paths(other_id)?);
         }
     }
-    candidates.push(resolve_instance_dir(&id));
-    candidates.push(paths::instances_dir().join(&id));
-
-    let mut seen: HashSet<PathBuf> = HashSet::new();
-    let mut last_err: Option<String> = None;
-    for dir in candidates {
-        if !seen.insert(dir.clone()) {
-            continue;
-        }
-        if dir.exists() {
-            if let Err(e) = force_remove_dir(&dir) {
-                last_err = Some(format!(
-                    "Could not delete {}: {e}. Is the game still running?",
-                    dir.display()
-                ));
-            }
-        }
-    }
-
-    let reg: Vec<RegistryEntry> = read_registry().into_iter().filter(|r| r.id != id).collect();
-    write_registry(&reg)?;
-
-    match last_err {
-        Some(e) => Err(e),
-        None => snapshots::delete_instance_snapshots(&id),
-    }
+    validate_deletion_location(
+        &directory,
+        &paths::data_dir(),
+        &paths::instances_dir(),
+        &other_roots,
+    )?;
+    // Resolve once from the registry or a matching managed record. Stored
+    // folderName/customPath fields never add extra destructive targets. A linked
+    // instance loses only its Refract wrapper; its external game folder survives.
+    remove_owned_directory(&directory, &id)?;
+    write_registry(
+        &registry
+            .into_iter()
+            .filter(|entry| entry.id != id)
+            .collect::<Vec<_>>(),
+    )?;
+    snapshots::delete_instance_snapshots(&id)
 }
 
 #[cfg(test)]
@@ -942,6 +1246,138 @@ mod tests {
     };
     use serde_json::json;
     use std::fs;
+
+    #[test]
+    fn canonical_instance_locations_reject_data_and_registered_root_overlap() {
+        let fixture = super::TestInstance::new();
+        let root = &fixture.directory;
+        let data = root.join("launcher");
+        let managed = data.join("instances");
+        let custom = root.join("custom");
+        fs::create_dir_all(&managed).unwrap();
+        fs::create_dir_all(&custom).unwrap();
+        let occupied = vec![custom.clone()];
+        for proposed in [
+            &data,
+            &data.join("cache/new"),
+            &root.to_path_buf(),
+            &custom,
+            &custom.join("new"),
+        ] {
+            assert!(super::validate_custom_location(proposed, &data, &occupied).is_err());
+        }
+        assert!(
+            super::validate_custom_location(&root.join("independent"), &data, &occupied).is_ok()
+        );
+        for target in [&data, &data.join("cache"), &managed, &root.to_path_buf()] {
+            assert!(super::validate_deletion_location(target, &data, &managed, &[]).is_err());
+        }
+        assert!(
+            super::validate_deletion_location(&managed.join("owned"), &data, &managed, &[]).is_ok()
+        );
+        assert!(super::validate_deletion_location(
+            &custom,
+            &data,
+            &managed,
+            &[custom.join("child")]
+        )
+        .is_err());
+        assert!(super::validate_deletion_location(
+            &custom.join("child"),
+            &data,
+            &managed,
+            &occupied
+        )
+        .is_err());
+        let alias = root.join("alias");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&custom, &alias).unwrap();
+        #[cfg(windows)]
+        {
+            let mut command = std::process::Command::new("cmd");
+            crate::procutil::hide_window(&mut command);
+            let output = command
+                .args(["/C", "mklink", "/J"])
+                .arg(&alias)
+                .arg(&custom)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "junction fixture creation failed");
+        }
+        assert!(super::validate_custom_location(&alias.join("new"), &data, &occupied).is_err());
+        assert!(super::validate_deletion_location(
+            &alias.join("child"),
+            &data,
+            &managed,
+            &occupied
+        )
+        .is_err());
+        #[cfg(windows)]
+        assert!(super::validate_custom_location(
+            &std::path::PathBuf::from(custom.to_string_lossy().to_uppercase()),
+            &data,
+            &occupied
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn instance_resolution_requires_known_identity_and_ignores_untrusted_locators() {
+        let root =
+            std::env::temp_dir().join(format!("refract-resolver-test-{}", uuid::Uuid::new_v4()));
+        let managed = root.join("instances");
+        let directory = managed.join("Known Instance");
+        let outside = root.join("outside");
+        fs::create_dir_all(&directory).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep.txt"), b"user-owned").unwrap();
+        fs::write(
+            directory.join("instance.json"),
+            serde_json::to_vec(&json!({
+                "id": "known-id", "folderName": "../../outside", "customPath": outside,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        for id in ["../outside", "C:\\outside", "", "missing-id"] {
+            assert!(super::resolve_at(&managed, &[], id).is_err());
+        }
+        assert_eq!(
+            super::resolve_at(&managed, &[], "known-id").unwrap(),
+            directory
+        );
+        assert!(super::remove_owned_directory(&directory, "wrong-id").is_err());
+        assert!(directory.exists());
+        super::remove_owned_directory(&directory, "known-id").unwrap();
+        assert_eq!(fs::read(outside.join("keep.txt")).unwrap(), b"user-owned");
+        let registry = [super::RegistryEntry {
+            id: "known-id".into(),
+            path: outside.to_string_lossy().to_string(),
+        }];
+        assert!(super::resolve_at(&managed, &registry, "known-id").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ordinary_patches_cannot_move_instance_storage() {
+        let existing =
+            json!({ "id": "known-id", "folderName": "Known", "externalGameDir": "external" });
+        assert!(super::validate_storage_patch(
+            &existing,
+            json!({ "name": "New", "folderName": "Known" })
+                .as_object()
+                .unwrap()
+        )
+        .is_ok());
+        for patch in [
+            json!({ "folderName": "../escape" }),
+            json!({ "customPath": "C:\\" }),
+            json!({ "externalGameDir": "elsewhere" }),
+            json!({ "externalGameDir": null }),
+        ] {
+            assert!(super::validate_storage_patch(&existing, patch.as_object().unwrap()).is_err());
+        }
+    }
 
     #[test]
     fn checked_game_copy_is_recursive_and_propagates_destination_errors() {

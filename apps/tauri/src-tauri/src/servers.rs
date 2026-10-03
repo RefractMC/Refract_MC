@@ -2,11 +2,10 @@
 //! Ping). Port of the mc.servers / mc.pingServer IPC handlers.
 
 use crate::instances;
-use crate::paths;
+use crate::{paths, persistence};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
@@ -51,28 +50,21 @@ fn linked_servers_path() -> PathBuf {
     paths::data_dir().join("linked-servers.json")
 }
 
-fn load_linked_store() -> LinkedServerStore {
-    fs::read_to_string(linked_servers_path())
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_else(|| LinkedServerStore {
-            version: store_version(),
-            ..LinkedServerStore::default()
-        })
+fn empty_linked_store() -> LinkedServerStore {
+    LinkedServerStore {
+        version: store_version(),
+        ..LinkedServerStore::default()
+    }
 }
 
-fn persist_linked_store(store: &LinkedServerStore) -> Result<(), String> {
-    fs::create_dir_all(paths::data_dir()).map_err(|e| e.to_string())?;
-    let text = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
-    fs::write(linked_servers_path(), text).map_err(|e| e.to_string())
-}
-
-fn linked_for_instance(instance_id: &str) -> Vec<LinkedServer> {
+fn linked_for_instance(instance_id: &str) -> Result<Vec<LinkedServer>, String> {
     // Linked records are kept outside Minecraft's NBT file.
-    load_linked_store()
-        .instances
-        .remove(instance_id)
-        .unwrap_or_default()
+    Ok(
+        persistence::read_json(&linked_servers_path(), empty_linked_store)?
+            .instances
+            .remove(instance_id)
+            .unwrap_or_default(),
+    )
 }
 
 fn normalize_server_address(raw: &str) -> Result<String, String> {
@@ -181,8 +173,8 @@ fn merge_linked_servers(mut servers: Vec<Value>, linked_servers: Vec<LinkedServe
 
 /// list. Returns `[{ name, ip, icon? }]`.
 #[tauri::command]
-pub fn mc_servers(instance_id: String) -> Vec<Value> {
-    let path = instances::game_dir(&instance_id).join("servers.dat");
+pub fn mc_servers(instance_id: String) -> Result<Vec<Value>, String> {
+    let path = instances::game_dir(&instance_id)?.join("servers.dat");
     let parsed = std::fs::read(&path)
         .ok()
         .and_then(|bytes| fastnbt::from_bytes::<ServersDat>(&bytes).ok());
@@ -202,15 +194,18 @@ pub fn mc_servers(instance_id: String) -> Vec<Value> {
         })
         .collect();
 
-    merge_linked_servers(servers, linked_for_instance(&instance_id))
+    Ok(merge_linked_servers(
+        servers,
+        linked_for_instance(&instance_id)?,
+    ))
 }
 
 #[tauri::command]
 pub fn linked_servers(instance_id: String) -> Result<Vec<LinkedServer>, String> {
-    if instances::get_instance_by_id(instance_id.clone()).is_none() {
+    if instances::get_instance_by_id(instance_id.clone())?.is_none() {
         return Err(format!("Instance not found: {instance_id}"));
     }
-    Ok(linked_for_instance(&instance_id))
+    linked_for_instance(&instance_id)
 }
 
 #[tauri::command]
@@ -221,7 +216,20 @@ pub fn link_server(
     ip: String,
     minecraft_version: Option<String>,
 ) -> Result<LinkedServer, String> {
-    if instances::get_instance_by_id(instance_id.clone()).is_none() {
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        link_server_owned(instance_id, id, name, ip, minecraft_version)
+    })
+}
+
+fn link_server_owned(
+    instance_id: String,
+    id: Option<String>,
+    name: String,
+    ip: String,
+    minecraft_version: Option<String>,
+) -> Result<LinkedServer, String> {
+    if instances::get_instance_by_id(instance_id.clone())?.is_none() {
         return Err(format!("Instance not found: {instance_id}"));
     }
     let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -240,24 +248,29 @@ pub fn link_server(
         minecraft_version: normalize_minecraft_version(minecraft_version)?,
         updated_at: chrono::Utc::now().timestamp_millis(),
     };
-    let mut store = load_linked_store();
-    let servers = store.instances.entry(instance_id).or_default();
-    servers.retain(|existing| existing.id != server.id && existing.ip != server.ip);
-    servers.push(server.clone());
-    persist_linked_store(&store)?;
-    Ok(server)
+    persistence::update_json(&linked_servers_path(), empty_linked_store, |store| {
+        let servers = store.instances.entry(instance_id).or_default();
+        servers.retain(|existing| existing.id != server.id && existing.ip != server.ip);
+        servers.push(server.clone());
+        Ok(server)
+    })
 }
 
 #[tauri::command]
 pub fn unlink_server(instance_id: String, id: String) -> Result<(), String> {
-    let mut store = load_linked_store();
-    if let Some(servers) = store.instances.get_mut(&instance_id) {
-        servers.retain(|server| server.id != id);
-        if servers.is_empty() {
-            store.instances.remove(&instance_id);
-        }
-    }
-    persist_linked_store(&store)
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        instances::resolve_instance_dir(&instance_id)?;
+        persistence::update_json(&linked_servers_path(), empty_linked_store, |store| {
+            if let Some(servers) = store.instances.get_mut(&instance_id) {
+                servers.retain(|server| server.id != id);
+                if servers.is_empty() {
+                    store.instances.remove(&instance_id);
+                }
+            }
+            Ok(())
+        })
+    })
 }
 
 // ── Server List Ping (TCP) ───────────────────────────────────────────────────

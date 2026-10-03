@@ -32,7 +32,8 @@ pub fn activity_list() -> Vec<ActivityEntry> {
 }
 
 #[tauri::command]
-pub fn activity_add(label: String) -> ActivityEntry {
+pub fn activity_add(label: String) -> Result<ActivityEntry, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let entry = ActivityEntry {
         id: uuid::Uuid::new_v4().to_string(),
         label,
@@ -48,5 +49,5 @@ pub fn activity_add(label: String) -> ActivityEntry {
     if let Ok(text) = serde_json::to_string_pretty(&entries) {
         let _ = fs::write(activity_path(), text);
     }
-    entry
+    Ok(entry)
 }

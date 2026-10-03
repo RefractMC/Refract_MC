@@ -6,10 +6,14 @@
 //! surface (accounts/active/begin/complete/offline/setActive/logout) is served
 //! by the commands here so accounts share the one config the launcher reads.
 
+use crate::error::{AuthCode, IpcError};
 use crate::{config, secrets};
 use serde::Serialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
+
+#[path = "auth_session.rs"]
+mod session;
 
 pub const CLIENT_ID: &str = "2ca3a07c-2fa0-433d-820a-e2f752f44415";
 const SCOPE: &str = "XboxLive.signin offline_access";
@@ -20,9 +24,6 @@ const XSTS_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_AUTH_URL: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
 const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 
-/// Stable sentinel the renderer maps to the re-login flow.
-const AUTH_EXPIRED: &str = "AUTH_EXPIRED";
-
 fn mc_token_key(uuid: &str) -> String {
     format!("mc_access::{uuid}")
 }
@@ -31,7 +32,7 @@ fn refresh_key(uuid: &str) -> String {
 }
 
 fn is_localhost(host: &str) -> bool {
-    matches!(host, "localhost" | "127.0.0.1" | "::1")
+    matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
 }
 
 fn normalize_yggdrasil_base(input: &str) -> Result<String, String> {
@@ -61,6 +62,9 @@ fn normalize_yggdrasil_base(input: &str) -> Result<String, String> {
     if parsed.query().is_some() || parsed.fragment().is_some() {
         return Err("Auth server URL cannot include a query string or fragment.".into());
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Auth server URL cannot contain embedded credentials.".into());
+    }
 
     Ok(trimmed.to_string())
 }
@@ -70,49 +74,28 @@ async fn yggdrasil_post(
     base: &str,
     action: &str,
     body: Value,
-) -> Result<Value, String> {
+) -> Result<Value, IpcError> {
     let base = normalize_yggdrasil_base(base)?;
-    let mut last_err = "Authentication endpoint not found. Check the server URL.".to_string();
-
+    let endpoint = if action == "refresh" {
+        session::Endpoint::YggdrasilRefresh
+    } else {
+        session::Endpoint::YggdrasilLogin
+    };
     for prefix in ["/authserver", "/auth"] {
-        let url = format!("{base}{prefix}/{action}");
-        let res = client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| {
-                format!(
-                    "Could not connect to auth server. Check the URL and your connection. ({e})"
-                )
-            })?;
-        let status = res.status();
-        let ok = status.is_success();
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        if ok {
-            return Ok(v);
-        }
-
-        let msg = v["errorMessage"]
-            .as_str()
-            .or(v["message"].as_str())
-            .or(v["error"].as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| status.to_string());
-        let lc = msg.to_ascii_lowercase();
-        last_err = msg;
-        if status.as_u16() == 404 || lc.contains("not found") || lc.contains("page not found") {
+        let (status, value) = session::raw_json(
+            client
+                .post(format!("{base}{prefix}/{action}"))
+                .header("Accept", "application/json")
+                .json(&body),
+        )
+        .await?;
+        if status.as_u16() == 404 {
             continue;
         }
-        return Err(last_err);
+        return session::checked_response(status, value, endpoint);
     }
-
-    Err(last_err)
+    Err(IpcError::auth(AuthCode::InvalidResponse))
 }
-
-// ── config-backed account helpers ────────────────────────────────────────────
 
 /// Add the renderer-facing computed fields. No token ever lives in config, so
 /// there's nothing to strip because encrypted token blobs are not returned.
@@ -143,111 +126,110 @@ fn safe_account(acc: &Value) -> Value {
     o
 }
 
-fn accounts() -> Vec<Value> {
-    config::read()
-        .get("accounts")
+fn accounts_in(cfg: &Value) -> Result<Vec<Value>, String> {
+    cfg.get("accounts")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default()
+        .ok_or_else(|| "Account storage is invalid. Restore the configuration backup.".into())
+}
+
+fn accounts() -> Result<Vec<Value>, String> {
+    accounts_in(&config::read()?)
 }
 
 /// Upsert `account` to the front of the list and make it active.
 fn save_account_active(account: Value) -> Result<(), String> {
-    let mut cfg = config::read();
-    let uuid = account
-        .get("uuid")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let mut list: Vec<Value> = accounts()
-        .into_iter()
-        .filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str()))
-        .collect();
-    list.insert(0, account);
-    let map = cfg.as_object_mut().ok_or("config root is not an object")?;
-    map.insert("accounts".into(), json!(list));
-    map.insert("activeAccountId".into(), json!(uuid));
-    config::write(&cfg)
+    config::update(|cfg| {
+        let uuid = account
+            .get("uuid")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let mut list: Vec<Value> = accounts_in(cfg)?
+            .into_iter()
+            .filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str()))
+            .collect();
+        list.insert(0, account);
+        let map = cfg.as_object_mut().ok_or("config root is not an object")?;
+        map.insert("accounts".into(), json!(list));
+        map.insert("activeAccountId".into(), json!(uuid));
+        Ok(())
+    })
 }
 
 /// Patch fields onto a stored account in place (e.g. refreshed expiry/xuid).
 fn patch_account(uuid: &str, patch: Value) -> Result<(), String> {
-    let mut cfg = config::read();
-    let mut list = accounts();
-    for a in list.iter_mut() {
-        if a.get("uuid").and_then(Value::as_str) == Some(uuid) {
-            if let (Some(m), Some(p)) = (a.as_object_mut(), patch.as_object()) {
-                for (k, v) in p {
-                    m.insert(k.clone(), v.clone());
+    config::update(|cfg| {
+        let mut list = accounts_in(cfg)?;
+        if !list
+            .iter()
+            .any(|account| account["uuid"].as_str() == Some(uuid))
+        {
+            return Err("The account was removed while it was being updated.".into());
+        }
+        for a in list.iter_mut() {
+            if a.get("uuid").and_then(Value::as_str) == Some(uuid) {
+                if let (Some(m), Some(p)) = (a.as_object_mut(), patch.as_object()) {
+                    for (k, v) in p {
+                        m.insert(k.clone(), v.clone());
+                    }
                 }
             }
         }
-    }
-    cfg.as_object_mut()
-        .ok_or("config root is not an object")?
-        .insert("accounts".into(), json!(list));
-    config::write(&cfg)
+        cfg.as_object_mut()
+            .ok_or("config root is not an object")?
+            .insert("accounts".into(), json!(list));
+        Ok(())
+    })
 }
 
 // ── token chain ──────────────────────────────────────────────────────────────
 
-async fn post_json(client: &reqwest::Client, url: &str, body: Value) -> Result<Value, String> {
-    let res = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let ok = res.status().is_success();
-    let status = res.status();
-    let v: Value = res.json().await.unwrap_or(Value::Null);
-    if !ok {
-        let msg = v["errorMessage"]
-            .as_str()
-            .or(v["message"].as_str())
-            .or(v["error"].as_str());
-        return Err(msg
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("request failed: HTTP {status}")));
-    }
-    Ok(v)
+async fn post_json(
+    client: &reqwest::Client,
+    url: &str,
+    body: Value,
+    endpoint: session::Endpoint,
+) -> Result<Value, IpcError> {
+    session::request_json(
+        client
+            .post(url)
+            .header("Accept", "application/json")
+            .json(&body),
+        endpoint,
+    )
+    .await
 }
 
 /// XBL → XSTS → Minecraft. Returns `(mc_access_token, expires_in_secs, xuid)`.
 async fn run_chain(
     client: &reqwest::Client,
     ms_access: &str,
-) -> Result<(String, u64, String), String> {
-    let xbl = post_json(client, XBL_URL, json!({
+    urls: &session::Endpoints,
+) -> Result<(String, u64, String), IpcError> {
+    let xbl = post_json(client, &urls.xbl, json!({
         "Properties": { "AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": format!("d={ms_access}") },
         "RelyingParty": "http://auth.xboxlive.com",
         "TokenType": "JWT"
-    })).await?;
-    let xbl_token = xbl["Token"]
-        .as_str()
-        .ok_or("Xbox Live did not return a token.")?
-        .to_string();
-    let user_hash = xbl["DisplayClaims"]["xui"][0]["uhs"]
-        .as_str()
-        .ok_or("Xbox Live did not return a user hash.")?
-        .to_string();
+    }), session::Endpoint::Xbox).await?;
+    let xbl_token = session::required_string(&xbl, "Token")?;
+    let user_hash = session::required_string(&xbl["DisplayClaims"]["xui"][0], "uhs")?;
 
     let xsts = post_json(
         client,
-        XSTS_URL,
+        &urls.xsts,
         json!({
             "Properties": { "SandboxId": "RETAIL", "UserTokens": [xbl_token] },
             "RelyingParty": "rp://api.minecraftservices.com/",
             "TokenType": "JWT"
         }),
+        session::Endpoint::Xbox,
     )
     .await?;
-    let xsts_token = xsts["Token"]
-        .as_str()
-        .ok_or("XSTS did not return a token (no Xbox profile?).")?
-        .to_string();
+    let xsts_token = session::required_string(&xsts, "Token")?;
+    if session::required_string(&xsts["DisplayClaims"]["xui"][0], "uhs")? != user_hash {
+        return Err(IpcError::auth(AuthCode::InvalidResponse));
+    }
     let xuid = xsts["DisplayClaims"]["xui"][0]["xid"]
         .as_str()
         .unwrap_or("")
@@ -255,17 +237,18 @@ async fn run_chain(
 
     let mc = post_json(
         client,
-        MC_AUTH_URL,
+        &urls.minecraft,
         json!({
             "identityToken": format!("XBL3.0 x={user_hash};{xsts_token}")
         }),
+        session::Endpoint::Service,
     )
     .await?;
-    let mc_token = mc["access_token"]
-        .as_str()
-        .ok_or("Minecraft auth did not return a token.")?
-        .to_string();
-    let expires_in = mc["expires_in"].as_u64().unwrap_or(86400);
+    let mc_token = session::required_string(&mc, "access_token")?.to_string();
+    let expires_in = mc["expires_in"]
+        .as_u64()
+        .filter(|seconds| *seconds > 0 && *seconds <= 7 * 86400)
+        .ok_or_else(|| IpcError::auth(AuthCode::InvalidResponse))?;
     Ok((mc_token, expires_in, xuid))
 }
 
@@ -276,138 +259,19 @@ fn now_ms() -> i64 {
 /// Get a valid Minecraft access token for a Microsoft account, refreshing via the
 /// stored MSA refresh token when the cached one is expired. Used by the launcher.
 /// Returns `(token, xuid)`. Tokens stay in Rust — only the launch args use them.
-pub async fn mc_token(uuid: &str) -> Result<(String, String), String> {
-    let account = accounts()
-        .into_iter()
-        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid))
-        .ok_or("Account not found")?;
-
-    if account.get("type").and_then(Value::as_str) == Some("yggdrasil") {
-        let expires_at = account
-            .get("expiresAt")
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let fresh = expires_at > now_ms() + 5 * 60 * 1000;
-        if fresh {
-            if let Ok(Some(tok)) = secrets::get_secret(&mc_token_key(uuid)) {
-                if !tok.is_empty() {
-                    return Ok((tok, String::new()));
-                }
-            }
-        }
-
-        let access = secrets::get_secret(&mc_token_key(uuid))
-            .ok()
-            .flatten()
-            .filter(|t| !t.is_empty());
-        let client_token = secrets::get_secret(&refresh_key(uuid))
-            .ok()
-            .flatten()
-            .filter(|t| !t.is_empty());
-        let server = account
-            .get("yggdrasilServer")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty());
-        let (Some(access), Some(client_token), Some(server)) = (access, client_token, server)
-        else {
-            let _ = patch_account(uuid, json!({ "needsReauth": true }));
-            return Err(AUTH_EXPIRED.to_string());
-        };
-
-        let client = reqwest::Client::new();
-        let refreshed = yggdrasil_post(
-            &client,
-            server,
-            "refresh",
-            json!({ "accessToken": access, "clientToken": client_token }),
-        )
-        .await
-        .map_err(|_| {
-            let _ = patch_account(uuid, json!({ "needsReauth": true }));
-            AUTH_EXPIRED.to_string()
-        })?;
-
-        let token = refreshed["accessToken"]
-            .as_str()
-            .ok_or(AUTH_EXPIRED.to_string())?
-            .to_string();
-        let client_token = refreshed["clientToken"]
-            .as_str()
-            .unwrap_or(client_token.as_str())
-            .to_string();
-        secrets::store_secret(&mc_token_key(uuid), &token)?;
-        secrets::store_secret(&refresh_key(uuid), &client_token)?;
-        patch_account(
-            uuid,
-            json!({
-                "expiresAt": now_ms() + 24 * 60 * 60 * 1000,
-                "needsReauth": false,
-            }),
-        )?;
-        return Ok((token, String::new()));
-    }
-
-    let expires_at = account
-        .get("expiresAt")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let xuid = account
-        .get("xuid")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    // 5-minute skew.
-    let fresh = expires_at > now_ms() + 5 * 60 * 1000;
-    if fresh {
-        if let Ok(Some(tok)) = secrets::get_secret(&mc_token_key(uuid)) {
-            if !tok.is_empty() {
-                return Ok((tok, xuid));
-            }
-        }
-    }
-
-    let refresh = secrets::get_secret(&refresh_key(uuid))
-        .ok()
-        .flatten()
-        .filter(|r| !r.is_empty())
-        .ok_or(AUTH_EXPIRED.to_string())?;
-    let client = reqwest::Client::new();
-    let ms = client
-        .post(TOKEN_URL)
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("client_id", CLIENT_ID),
-            ("refresh_token", refresh.as_str()),
-            ("scope", SCOPE),
-        ])
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !ms.status().is_success() {
-        let _ = patch_account(uuid, json!({ "needsReauth": true }));
-        return Err(AUTH_EXPIRED.to_string());
-    }
-    let ms: Value = ms.json().await.map_err(|e| e.to_string())?;
-    let ms_access = ms["access_token"].as_str().unwrap_or_default().to_string();
-    if let Some(new_refresh) = ms["refresh_token"].as_str() {
-        let _ = secrets::store_secret(&refresh_key(uuid), new_refresh);
-    }
-
-    let (token, expires_in, new_xuid) = run_chain(&client, &ms_access).await?;
-    secrets::store_secret(&mc_token_key(uuid), &token)?;
-    let xuid = if new_xuid.is_empty() { xuid } else { new_xuid };
-    patch_account(
-        uuid,
-        json!({
-            "expiresAt": now_ms() + expires_in as i64 * 1000,
-            "xuid": xuid,
-            "needsReauth": false,
-        }),
-    )?;
-    Ok((token, xuid))
+pub async fn mc_token(uuid: &str) -> Result<(String, String), IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
+    session::mc_token(uuid).await
 }
 
-// ── commands (the renderer auth surface) ─────────────────────────────────────
+pub(crate) fn service_client() -> Result<reqwest::Client, IpcError> {
+    session::client()
+}
+
+/// Shared bounded transport for authenticated Minecraft profile/skin/cape calls.
+pub(crate) async fn profile_request(request: reqwest::RequestBuilder) -> Result<Value, IpcError> {
+    session::request_json(request, session::Endpoint::Profile).await
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -421,28 +285,46 @@ pub struct DeviceLogin {
 }
 
 #[tauri::command]
-pub async fn auth_microsoft_begin() -> Result<DeviceLogin, String> {
-    let res = reqwest::Client::new()
-        .post(DEVICE_URL)
-        .form(&[("client_id", CLIENT_ID), ("scope", SCOPE)])
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !res.status().is_success() {
-        return Err(format!("device code request failed: HTTP {}", res.status()));
+pub async fn auth_microsoft_begin() -> Result<DeviceLogin, IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
+    let v = session::request_json(
+        session::client()?
+            .post(DEVICE_URL)
+            .form(&[("client_id", CLIENT_ID), ("scope", SCOPE)]),
+        session::Endpoint::Service,
+    )
+    .await?;
+    let verification_uri = session::required_string(&v, "verification_uri")?.to_string();
+    let verification = reqwest::Url::parse(&verification_uri)
+        .map_err(|_| IpcError::auth(AuthCode::InvalidResponse))?;
+    if verification.scheme() != "https"
+        || !matches!(
+            verification.host_str(),
+            Some(
+                "microsoft.com"
+                    | "www.microsoft.com"
+                    | "login.microsoftonline.com"
+                    | "login.live.com"
+            )
+        )
+        || !verification.username().is_empty()
+        || verification.password().is_some()
+    {
+        return Err(IpcError::auth(AuthCode::InvalidResponse));
     }
-    let v: Value = res.json().await.map_err(|e| e.to_string())?;
-    let verification_uri = v["verification_uri"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    let interval = v["interval"].as_u64().unwrap_or(5);
+    let expires_in = v["expires_in"].as_u64().unwrap_or(0);
+    if !(1..=300).contains(&interval) || !(1..=3600).contains(&expires_in) {
+        return Err(IpcError::auth(AuthCode::InvalidResponse));
+    }
     Ok(DeviceLogin {
-        device_code: v["device_code"].as_str().unwrap_or_default().to_string(),
-        user_code: v["user_code"].as_str().unwrap_or_default().to_string(),
+        device_code: session::required_string(&v, "device_code")?.to_string(),
+        user_code: session::required_string(&v, "user_code")?.to_string(),
         verification_uri,
-        interval: v["interval"].as_u64().unwrap_or(5),
-        expires_in: v["expires_in"].as_u64().unwrap_or(900),
-        message: v["message"].as_str().unwrap_or_default().to_string(),
+        interval,
+        expires_in,
+        // Kept for API compatibility; the UI uses local instructions.
+        message: String::new(),
     })
 }
 
@@ -451,61 +333,35 @@ pub async fn auth_microsoft_begin() -> Result<DeviceLogin, String> {
 /// success it runs the full token chain, persists tokens to the vault + the safe
 /// account to config, and returns the safe account.
 #[tauri::command]
-pub async fn auth_microsoft_complete(device_code: String) -> Result<Value, String> {
-    let client = reqwest::Client::new();
-    let res = client
-        .post(TOKEN_URL)
-        .form(&[
+pub async fn auth_microsoft_complete(device_code: String) -> Result<Value, IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
+    let client = session::client()?;
+    let v = session::request_json(
+        client.post(TOKEN_URL).form(&[
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ("client_id", CLIENT_ID),
             ("device_code", device_code.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let ok = res.status().is_success();
-    let v: Value = res.json().await.map_err(|e| e.to_string())?;
-    if !ok {
-        // Surface the OAuth error code (+ description) so the renderer's
-        // authorization_pending / expired / declined matchers work and real
-        // failures show why.
-        let code = v["error"].as_str().unwrap_or("unknown");
-        let desc = v["error_description"].as_str().unwrap_or("");
-        return Err(if desc.is_empty() {
-            code.to_string()
-        } else {
-            format!("{code}: {desc}")
-        });
-    }
+        ]),
+        session::Endpoint::Device,
+    )
+    .await?;
 
-    let ms_access = v["access_token"].as_str().unwrap_or_default().to_string();
-    let ms_refresh = v["refresh_token"].as_str().map(str::to_string);
+    let ms_access = session::required_string(&v, "access_token")?.to_string();
+    let ms_refresh = session::required_string(&v, "refresh_token")?.to_string();
 
-    let (token, expires_in, xuid) = run_chain(&client, &ms_access).await?;
+    let (token, expires_in, xuid) =
+        run_chain(&client, &ms_access, &session::Endpoints::default()).await?;
 
     // Profile (proves Java Edition ownership + gives uuid/username).
-    let profile = client
-        .get(MC_PROFILE_URL)
-        .header("Authorization", format!("Bearer {token}"))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !profile.status().is_success() {
-        return Err(
-            "This Microsoft account does not appear to own Minecraft: Java Edition.".into(),
-        );
-    }
-    let profile: Value = profile.json().await.map_err(|e| e.to_string())?;
-    let uuid = profile["id"]
-        .as_str()
-        .ok_or("Profile had no id.")?
-        .to_string();
-    let username = profile["name"].as_str().unwrap_or("Player").to_string();
-
-    secrets::store_secret(&mc_token_key(&uuid), &token)?;
-    if let Some(r) = ms_refresh {
-        secrets::store_secret(&refresh_key(&uuid), &r)?;
-    }
+    let profile = session::request_json(
+        client
+            .get(MC_PROFILE_URL)
+            .header("Authorization", format!("Bearer {token}")),
+        session::Endpoint::Profile,
+    )
+    .await?;
+    let uuid = session::required_string(&profile, "id")?.to_string();
+    let username = session::required_string(&profile, "name")?.to_string();
 
     let account = json!({
         "uuid": uuid,
@@ -515,7 +371,23 @@ pub async fn auth_microsoft_complete(device_code: String) -> Result<Value, Strin
         "expiresAt": now_ms() + expires_in as i64 * 1000,
         "needsReauth": false,
     });
-    save_account_active(account.clone())?;
+    let lease = session::account_lease(&uuid).await?;
+    let saved = account.clone();
+    session::account_blocking(&lease, move || {
+        let values = [
+            (mc_token_key(&uuid), token),
+            (refresh_key(&uuid), ms_refresh),
+        ];
+        secrets::store_secrets(
+            &values
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect::<Vec<_>>(),
+        )
+        .map_err(IpcError::vault)?;
+        save_account_active(saved).map_err(|_| IpcError::auth(AuthCode::StorageFailed))
+    })
+    .await?;
     Ok(safe_account(&account))
 }
 
@@ -524,11 +396,12 @@ pub async fn auth_yggdrasil_login(
     server_url: String,
     username: String,
     password: String,
-) -> Result<Value, String> {
+) -> Result<Value, IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
     let base = normalize_yggdrasil_base(&server_url)?;
 
     let client_token = Uuid::new_v4().to_string();
-    let client = reqwest::Client::new();
+    let client = session::client()?;
     let res = yggdrasil_post(
         &client,
         &base,
@@ -544,22 +417,13 @@ pub async fn auth_yggdrasil_login(
     .await?;
 
     let profile = &res["selectedProfile"];
-    let uuid = profile["id"]
-        .as_str()
-        .ok_or("This account has no Minecraft profile on this auth server.")?
-        .to_string();
-    let name = profile["name"].as_str().unwrap_or("Player").to_string();
-    let access_token = res["accessToken"]
-        .as_str()
-        .ok_or("Auth server did not return an access token.")?
-        .to_string();
+    let uuid = session::required_string(profile, "id")?.to_string();
+    let name = session::required_string(profile, "name")?.to_string();
+    let access_token = session::required_string(&res, "accessToken")?.to_string();
     let client_token = res["clientToken"]
         .as_str()
         .unwrap_or(client_token.as_str())
         .to_string();
-
-    secrets::store_secret(&mc_token_key(&uuid), &access_token)?;
-    secrets::store_secret(&refresh_key(&uuid), &client_token)?;
 
     let account = json!({
         "uuid": uuid,
@@ -569,43 +433,62 @@ pub async fn auth_yggdrasil_login(
         "expiresAt": now_ms() + 24 * 60 * 60 * 1000,
         "needsReauth": false,
     });
-    save_account_active(account.clone())?;
+    let lease = session::account_lease(&uuid).await?;
+    let saved = account.clone();
+    session::account_blocking(&lease, move || {
+        secrets::store_secrets(&[
+            (&mc_token_key(&uuid), &access_token),
+            (&refresh_key(&uuid), &client_token),
+        ])
+        .map_err(IpcError::vault)?;
+        save_account_active(saved).map_err(|_| IpcError::auth(AuthCode::StorageFailed))
+    })
+    .await?;
     Ok(safe_account(&account))
 }
 
 #[tauri::command]
-pub fn auth_accounts() -> Vec<Value> {
-    accounts().iter().map(safe_account).collect()
+pub fn auth_accounts() -> Result<Vec<Value>, String> {
+    Ok(accounts()?.iter().map(safe_account).collect())
 }
 
-/// Proactively check an authenticated account's session, silently refreshing
-/// the token when possible. On failure `mc_token` marks the account
-/// `needsReauth`, so the accounts page can show its re-login prompt without
-/// waiting for a launch to fail. Offline accounts are always valid.
+/// Refresh the session when needed. Only expired credentials return false and
+/// set needsReauth; network, provider and local-storage failures retain their
+/// typed recovery details. Offline accounts are always valid.
 #[tauri::command]
-pub async fn auth_validate(uuid: String) -> bool {
+pub async fn auth_validate(uuid: String) -> Result<bool, IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
     let ty = accounts()
+        .map_err(|_| IpcError::auth(AuthCode::StorageFailed))?
         .into_iter()
         .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
         .and_then(|a| a.get("type").and_then(Value::as_str).map(|s| s.to_string()));
     match ty.as_deref() {
-        Some("microsoft") | Some("yggdrasil") => mc_token(&uuid).await.is_ok(),
-        _ => true,
+        Some("microsoft") | Some("yggdrasil") => match mc_token(&uuid).await {
+            Ok(_) => Ok(true),
+            Err(error) if error.is_auth(AuthCode::Expired) => Ok(false),
+            Err(error) => Err(error),
+        },
+        Some("offline") => Ok(true),
+        _ => Err(IpcError::auth(AuthCode::InvalidAccount)),
     }
 }
 
 #[tauri::command]
-pub fn auth_active() -> Option<Value> {
-    let cfg = config::read();
-    let active = cfg.get("activeAccountId").and_then(Value::as_str)?;
-    accounts()
+pub fn auth_active() -> Result<Option<Value>, String> {
+    let cfg = config::read()?;
+    let Some(active) = cfg.get("activeAccountId").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    Ok(accounts_in(&cfg)?
         .iter()
         .find(|a| a.get("uuid").and_then(Value::as_str) == Some(active))
-        .map(safe_account)
+        .map(safe_account))
 }
 
 #[tauri::command]
 pub fn auth_create_offline(username: String) -> Result<Value, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let trimmed = username.trim();
     if trimmed.is_empty() {
         return Err("Username is required.".into());
@@ -621,11 +504,12 @@ pub fn auth_create_offline(username: String) -> Result<Value, String> {
 
 #[tauri::command]
 pub fn auth_rename_offline(uuid: String, username: String) -> Result<Value, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let trimmed = username.trim();
     if trimmed.is_empty() {
         return Err("Username is required.".into());
     }
-    let account = accounts()
+    let account = accounts()?
         .into_iter()
         .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
         .ok_or(format!("Account not found: {uuid}"))?;
@@ -633,7 +517,7 @@ pub fn auth_rename_offline(uuid: String, username: String) -> Result<Value, Stri
         return Err("Only offline accounts can be renamed.".into());
     }
     patch_account(&uuid, json!({ "username": trimmed }))?;
-    let updated = accounts()
+    let updated = accounts()?
         .into_iter()
         .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
         .unwrap_or(account);
@@ -642,46 +526,60 @@ pub fn auth_rename_offline(uuid: String, username: String) -> Result<Value, Stri
 
 #[tauri::command]
 pub fn auth_set_active(uuid: String) -> Result<Value, String> {
-    let account = accounts()
-        .into_iter()
-        .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
-        .ok_or(format!("Account not found: {uuid}"))?;
-    let mut cfg = config::read();
-    cfg.as_object_mut()
-        .ok_or("config root is not an object")?
-        .insert("activeAccountId".into(), json!(uuid));
-    config::write(&cfg)?;
-    Ok(safe_account(&account))
+    let _maintenance = crate::maintenance::shared()?;
+    config::update(|cfg| {
+        let account = accounts_in(cfg)?
+            .into_iter()
+            .find(|a| a.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()))
+            .ok_or(format!("Account not found: {uuid}"))?;
+        cfg.as_object_mut()
+            .ok_or("config root is not an object")?
+            .insert("activeAccountId".into(), json!(uuid));
+        Ok(safe_account(&account))
+    })
 }
 
 #[tauri::command]
-pub fn auth_logout(uuid: String) -> Result<(), String> {
-    let mut cfg = config::read();
-    let remaining: Vec<Value> = accounts()
-        .into_iter()
-        .filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str()))
-        .collect();
-    let next_active = remaining
-        .first()
-        .and_then(|a| a.get("uuid").and_then(Value::as_str))
-        .map(str::to_string);
-    {
-        let map = cfg.as_object_mut().ok_or("config root is not an object")?;
-        let was_active = map.get("activeAccountId").and_then(Value::as_str) == Some(uuid.as_str());
-        map.insert("accounts".into(), json!(remaining));
-        if was_active {
-            map.insert(
-                "activeAccountId".into(),
-                next_active.map(Value::from).unwrap_or(Value::Null),
-            );
+pub async fn auth_logout(uuid: String) -> Result<(), IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
+    let lease = session::account_lease(&uuid).await?;
+    session::account_blocking(&lease, move || {
+        let target = accounts()
+            .map_err(|_| IpcError::auth(AuthCode::StorageFailed))?
+            .into_iter()
+            .find(|account| account["uuid"].as_str() == Some(&uuid));
+        if target.as_ref().is_some_and(|account| {
+            matches!(account["type"].as_str(), Some("microsoft" | "yggdrasil"))
+        }) {
+            // Clear both keys in one committed vault write before removing the
+            // account record. Failed secure storage leaves the account retryable.
+            secrets::store_secrets(&[(&mc_token_key(&uuid), ""), (&refresh_key(&uuid), "")])
+                .map_err(IpcError::vault)?;
         }
-    }
-    config::write(&cfg)?;
-    let mc_key = mc_token_key(&uuid);
-    let refresh_secret_key = refresh_key(&uuid);
-    std::thread::spawn(move || {
-        let _ = secrets::store_secret(&mc_key, "");
-        let _ = secrets::store_secret(&refresh_secret_key, "");
-    });
-    Ok(())
+        config::update(|cfg| {
+            let remaining: Vec<Value> = accounts_in(cfg)?
+                .into_iter()
+                .filter(|a| a.get("uuid").and_then(Value::as_str) != Some(uuid.as_str()))
+                .collect();
+            let next_active = remaining
+                .first()
+                .and_then(|a| a.get("uuid").and_then(Value::as_str))
+                .map(str::to_string);
+            {
+                let map = cfg.as_object_mut().ok_or("config root is not an object")?;
+                let was_active =
+                    map.get("activeAccountId").and_then(Value::as_str) == Some(uuid.as_str());
+                map.insert("accounts".into(), json!(remaining));
+                if was_active {
+                    map.insert(
+                        "activeAccountId".into(),
+                        next_active.map(Value::from).unwrap_or(Value::Null),
+                    );
+                }
+            }
+            Ok(())
+        })
+        .map_err(|_| IpcError::auth(AuthCode::StorageFailed))
+    })
+    .await
 }

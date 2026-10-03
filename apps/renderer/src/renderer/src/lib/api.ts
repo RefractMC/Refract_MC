@@ -1,12 +1,24 @@
 import type { CreateInstanceInput, Instance } from '@refract/core'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke, Resource } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
-import { logger } from './logger'
+import { logger, setNativeLogWriter } from './logger'
+import { ownSubscription } from './subscription'
+import { createUpdateLifecycle } from './update-lifecycle'
+import { parseUpdateMetadata } from './update-metadata'
+import { createUpdateStatusReader, createUpdateStatusStore, emptyUpdateStatus } from './update-status'
 import { fetchMinecraftNews } from '../../../shared/minecraft-news'
 
 export type RefractAPI = Window['api']
+
+function subscribeNative<T>(event: string, callback: (payload: T) => void): () => void {
+  return ownSubscription<T>(
+    (emit) => listen<T>(event, ({ payload }) => emit(payload)),
+    callback,
+    (error) => logger.error(`nativeEvent:${event}`, error)
+  )
+}
 export type QuickPlayTarget = { kind: 'server'; address: string } | { kind: 'world'; name: string }
 export type SafeAccount = Awaited<ReturnType<RefractAPI['auth']['accounts']>>[number]
 export type DeviceLogin = Awaited<ReturnType<RefractAPI['auth']['microsoftBegin']>>
@@ -61,7 +73,7 @@ export interface IpcErrorPayload {
 export interface InstanceSnapshot {
   id: string
   instanceId: string
-  reason: 'modpack_update' | 'before_snapshot_restore' | string
+  reason: 'modpack_update' | 'content_change' | 'before_snapshot_restore' | string
   createdAt: string
   sizeBytes: number
 }
@@ -118,6 +130,10 @@ const DEFAULT_CONFIG: AppConfig = {
   onboardingDone: false,
   migrationNotice120Shown: false,
   disableDiscordPresence: false,
+  minimizeToTray: false,
+  startMinimized: false,
+  launchMinimizesToTray: false,
+  reopenOnGameExit: false,
   accounts: [],
 }
 
@@ -186,7 +202,8 @@ function getConfig(): AppConfig {
 }
 
 function saveConfig(config: AppConfig): void {
-  writeJson(CONFIG_KEY, config)
+  // Settings must reject failed preview storage just as native persistence does.
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
 }
 
 function getInstances(): Instance[] {
@@ -219,6 +236,14 @@ function createInstance(input: CreateInstanceInput): Instance {
 
 function createBrowserApi(): RefractAPI {
   return {
+    operations: {
+      list: async () => [],
+      get: async () => null,
+      cancel: async () => undefined,
+      recoveries: async () => [],
+      recover: async () => undefined,
+      onChanged: () => () => undefined,
+    },
     skins: {
       list:    async () => [],
       browse:  async () => null,
@@ -237,10 +262,12 @@ function createBrowserApi(): RefractAPI {
       fontFamilies: async () => ['Segoe UI Variable', 'Segoe UI', 'SF Pro Text', 'Ubuntu', 'Cantarell', 'Noto Sans', 'Inter', 'Arial'],
     },
     config: {
+      onRecovery: () => () => {},
       get: async () => getConfig(),
       set: async (key, value) => {
         const config = getConfig()
         saveConfig({ ...config, [key]: value })
+        return getConfig()
       },
     },
     analytics: {
@@ -322,6 +349,8 @@ function createBrowserApi(): RefractAPI {
       browseBackgroundImage: async () => null,
     },
     updater: {
+      status: async () => emptyUpdateStatus,
+      onChanged: () => () => undefined,
       check: async () => ({ available: false }),
       onAvailable:  () => () => undefined,
       onProgress:   () => () => undefined,
@@ -370,6 +399,9 @@ function createBrowserApi(): RefractAPI {
       importExternal: async () => { throw new Error('Import requires the desktop app.') },
     },
     window: {
+      quit: async () => {},
+      setLanguage: async () => {},
+      onError: () => () => {},
       minimize: () => undefined,
       maximize: () => undefined,
       close: () => undefined,
@@ -511,6 +543,8 @@ function createBrowserApi(): RefractAPI {
       stop: async () => undefined,
       crashReport: async () => null,
       uploadLog: async () => { throw new Error('Log upload requires the desktop app.') },
+      previewLog: async () => { throw new Error('Log preview requires the desktop app.') },
+      discardLogPreview: async () => {},
       importWorld: async () => { throw new Error('World import requires the desktop app.') },
       createShortcut: async () => { throw new Error('Shortcuts require the desktop app.') },
       copyGameOptions: async () => { throw new Error('Options sync requires the desktop app.') },
@@ -733,15 +767,16 @@ async function planCurseforgeDeps(file: { dependencies?: Array<Record<string, un
 
 // ── updater (Tauri) ───────────────────────────────────────────────────────
 // The renderer expects an event-style API (onAvailable → download → onProgress →
-// onDownloaded → install). Map it onto tauri-plugin-updater: check once when the
+// onDownloaded → install). Native commands own updater resources: check once when the
 // first listener attaches, then download()/install() drive the rest.
 type UpdateHandle = {
+  rid: number
   version: string
   download: (cb: (e: {
     event: string
     data?: { contentLength?: number; chunkLength?: number }
   }) => void) => Promise<void>
-  install: () => Promise<void>
+  install: (requestId?: string) => Promise<void>
   close?: () => Promise<void>
 }
 type UpdateCheckResult = { available: boolean; version?: string }
@@ -752,36 +787,80 @@ let pendingUpdate: UpdateHandle | null = null
 let updaterStarted = false
 let lastNotified: string | null = null   // avoid re-banners for the same version
 let updateDownloaded = false              // set once a manual Download completes
-let installingOnQuit = false
 let updateCheckPromise: Promise<UpdateCheckResult> | null = null
 let updateDownloadPromise: Promise<void> | null = null
 
+const updateLifecycle = createUpdateLifecycle({
+  downloadedUpdate: async () => {
+    await readUpdateStatus()
+    return updateDownloaded ? pendingUpdate : null
+  },
+  acknowledge: async (requestId) => { await tinvoke('window_quit_ack', { requestId }) },
+  finish: async (requestId) => { await tinvoke('window_quit_finish', { requestId }) },
+  cancel: async (requestId) => { await tinvoke('window_cancel_exit', { requestId }) },
+  cleanupFailed: (error) => logger.error('updater:cancel-exit', error),
+})
+
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60_000 // re-check every 30 min while open
+const nativeUpdateStatus = createUpdateStatusStore()
+
+function adoptUpdate(metadata: ReturnType<typeof parseUpdateMetadata>): UpdateHandle | null {
+  if (!metadata) return null
+  if (pendingUpdate?.rid === metadata.rid) return pendingUpdate
+  const resource = new Resource(metadata.rid)
+  return {
+    rid: metadata.rid,
+    version: metadata.version,
+    download: async (callback) => {
+      const onEvent = new Channel<Parameters<typeof callback>[0]>(callback)
+      await tinvoke('updater_download', { rid: resource.rid, onEvent })
+    },
+    install: async (requestId) => {
+      await tinvoke('updater_install', { rid: resource.rid, requestId })
+    },
+    close: () => resource.close(),
+  }
+}
+
+const readUpdateStatus = createUpdateStatusReader(
+  () => tinvoke('updater_status'),
+  (value) => {
+    const previousRevision = nativeUpdateStatus.get()?.revision ?? -1
+    const status = nativeUpdateStatus.accept(value)
+    const previous = pendingUpdate
+    pendingUpdate = adoptUpdate(status.update)
+    if (previous && previous !== pendingUpdate) void previous.close?.().catch(() => {})
+    updateDownloaded = ['ready', 'installing', 'restarting'].includes(status.phase) ||
+      (status.phase === 'error' && status.retry === 'install')
+    if (status.revision > previousRevision) {
+      if (status.phase === 'error' && status.retry === 'install') updateLifecycle.observedFailure()
+      if (status.phase === 'ready' || (status.phase === 'error' && status.retry === 'download'))
+        updateDownloadPromise = null
+      if (['current', 'available'].includes(status.phase) ||
+        (status.phase === 'error' && status.retry === 'check')) updateCheckPromise = null
+    }
+    return status
+  }
+)
 
 async function runUpdateCheck(notifyExisting = false): Promise<UpdateCheckResult> {
-  if (updateDownloaded || updateDownloadPromise || installingOnQuit) {
+  if (updateDownloaded || updateDownloadPromise || updateLifecycle.busy) {
     return pendingUpdate
       ? { available: true, version: pendingUpdate.version }
       : { available: false }
   }
   if (updateCheckPromise) return updateCheckPromise
 
-  updateCheckPromise = (async () => {
+  const promise = Promise.resolve().then(async () => {
     try {
-      const { check } = await import('@tauri-apps/plugin-updater')
-      const update = (await check({ timeout: 20_000 })) as unknown as UpdateHandle | null
+      parseUpdateMetadata(await tinvoke('updater_check'))
+      // Settle an older status read, then ask again after this check committed.
+      await readUpdateStatus()
+      await readUpdateStatus()
+      const update = pendingUpdate
       if (!update) {
-        const previous = pendingUpdate
-        pendingUpdate = null
         lastNotified = null
-        if (previous?.close) await previous.close().catch(() => {})
         return { available: false }
-      }
-
-      const previous = pendingUpdate
-      pendingUpdate = update
-      if (previous && previous !== update && previous.close) {
-        await previous.close().catch(() => {})
       }
       if (notifyExisting || lastNotified !== update.version) {
         lastNotified = update.version
@@ -792,11 +871,12 @@ async function runUpdateCheck(notifyExisting = false): Promise<UpdateCheckResult
       logger.warn('updater:check', String(e))
       throw e instanceof Error ? e : new Error(String(e))
     } finally {
-      updateCheckPromise = null
+      if (updateCheckPromise === promise) updateCheckPromise = null
+      void readUpdateStatus().catch(error => logger.error('updater:status', error))
     }
-  })()
-
-  return updateCheckPromise
+  })
+  updateCheckPromise = promise
+  return promise
 }
 
 // Start the updater once a listener is attached: register the quit-installer,
@@ -805,8 +885,11 @@ async function runUpdateCheck(notifyExisting = false): Promise<UpdateCheckResult
 function startUpdater(): void {
   if (updaterStarted) return
   updaterStarted = true
-  void registerQuitInstaller()
-  void runUpdateCheck().catch(() => {})
+  // Process-owned observation survives route cleanup; UI callbacks detach.
+  subscribeNative('updater://changed', () => {
+    void readUpdateStatus().catch(error => logger.error('updater:status', error))
+  })
+  void readUpdateStatus().then(() => runUpdateCheck()).catch(() => {})
   setInterval(() => void runUpdateCheck().catch(() => {}), UPDATE_CHECK_INTERVAL_MS)
 }
 
@@ -816,18 +899,11 @@ function startUpdater(): void {
 // the window closes normally.
 async function registerQuitInstaller(): Promise<void> {
   try {
-    const w = getCurrentWindow()
-    await w.onCloseRequested(async (event) => {
-      if (!updateDownloaded || installingOnQuit || !pendingUpdate) return
-      installingOnQuit = true
-      event.preventDefault()
+    await listen<{ requestId: string; skipUpdate: boolean }>('window://quit-requested', async ({ payload }) => {
       try {
-        await pendingUpdate.install()
-        const { relaunch } = await import('@tauri-apps/plugin-process')
-        await relaunch()
+        await updateLifecycle.quit(payload.requestId, payload.skipUpdate)
       } catch (e) {
         logger.error('updater:quit-install', String(e))
-        await w.close() // install failed — honour the quit anyway (installingOnQuit guards re-entry)
       }
     })
   } catch (e) {
@@ -837,8 +913,18 @@ async function registerQuitInstaller(): Promise<void> {
 
 function createTauriApi(): RefractAPI {
   const base = createBrowserApi()
+  setNativeLogWriter((entry) => tinvoke('log_write', { entry }))
+  void registerQuitInstaller()
   return {
     ...base,
+    operations: {
+      list: (() => tinvoke('operations_list')) as RefractAPI['operations']['list'],
+      get: ((operationId: string) => tinvoke('operations_get', { operationId })) as RefractAPI['operations']['get'],
+      cancel: ((operationId: string) => tinvoke('operations_cancel', { operationId })) as RefractAPI['operations']['cancel'],
+      recoveries: (() => tinvoke('instance_recoveries_list')) as RefractAPI['operations']['recoveries'],
+      recover: ((instanceId: string) => tinvoke('instance_recovery_retry', { instanceId })) as RefractAPI['operations']['recover'],
+      onChanged: (callback) => subscribeNative('operations://changed', callback),
+    },
     analytics: {
       track: (name, params) => { void tinvoke('analytics_track', { name, params }).catch(() => {}) },
     },
@@ -871,15 +957,12 @@ function createTauriApi(): RefractAPI {
       publish: ((input: CreatorPublishInput) =>
         tinvoke('creator_publish', { input })) as RefractAPI['creator']['publish'],
       onProgress: ((cb: (data: { step: string; percent: number }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ step: string; percent: number }>('creator://progress', event => {
-          cb(event.payload)
-        }).then(unlisten => { off = unlisten })
-        return () => off?.()
+        return subscribeNative('creator://progress', cb)
       }) as RefractAPI['creator']['onProgress'],
     },
     config: {
       ...base.config,
+      onRecovery: (callback) => subscribeNative('storage://recovered', callback),
       get: (() => tinvoke('config_get')) as RefractAPI['config']['get'],
       set: ((key: string, value: unknown) => tinvoke('config_set', { key, value })) as RefractAPI['config']['set'],
     },
@@ -928,7 +1011,7 @@ function createTauriApi(): RefractAPI {
     },
     launcher: {
       ...base.launcher,
-      deleteAll: (() => tinvoke('launcher_delete_all')) as RefractAPI['launcher']['deleteAll'],
+      deleteAll: ((options) => tinvoke('launcher_delete_all', { options })) as RefractAPI['launcher']['deleteAll'],
     },
     instance: {
       ...base.instance,
@@ -1013,9 +1096,7 @@ function createTauriApi(): RefractAPI {
       blockedCancel: ((modId: number, fileId: number) =>
         tinvoke('curseforge_blocked_cancel', { modId, fileId })) as RefractAPI['curseforge']['blockedCancel'],
       onBlockedProgress: ((cb: (data: { modId: number; fileId: number; step: string; secondsLeft?: number }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ modId: number; fileId: number; step: string; secondsLeft?: number }>('cf://blocked', e => cb(e.payload)).then(u => { off = u })
-        return () => off?.()
+        return subscribeNative('cf://blocked', cb)
       }) as RefractAPI['curseforge']['onBlockedProgress'],
       installModpack: ((name: string, modId: number, fileId: number) =>
         tinvoke('curseforge_install_modpack', { name, modId, fileId })) as RefractAPI['curseforge']['installModpack'],
@@ -1081,14 +1162,10 @@ function createTauriApi(): RefractAPI {
         }
       }) as RefractAPI['modpack']['update'],
       onProgress: ((cb: (data: { projectId: string; step: string; percent: number }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ projectId: string; step: string; percent: number }>('modpack://progress', e => cb(e.payload)).then(u => { off = u })
-        return () => off?.()
+        return subscribeNative('modpack://progress', cb)
       }) as RefractAPI['modpack']['onProgress'],
       onDone: ((cb: (data: { projectId: string; instanceId?: string; error?: string; stats?: InstallStats }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ projectId: string; instanceId?: string; error?: string; stats?: InstallStats }>('modpack://done', e => cb(e.payload)).then(u => { off = u })
-        return () => off?.()
+        return subscribeNative('modpack://done', cb)
       }) as RefractAPI['modpack']['onDone'],
     },
     // Modrinth metadata is fetched in the WebView (CORS-open core helpers); only
@@ -1226,7 +1303,9 @@ function createTauriApi(): RefractAPI {
       worlds: ((instanceId: string) => tinvoke('mc_worlds', { instanceId })) as RefractAPI['mc']['worlds'],
       deleteWorld: ((instanceId: string, worldName: string) => tinvoke('mc_delete_world', { instanceId, worldName })) as RefractAPI['mc']['deleteWorld'],
       crashReport: ((instanceId: string) => tinvoke('mc_crash_report', { instanceId })) as RefractAPI['mc']['crashReport'],
-      uploadLog: ((instanceId: string, source: 'latest' | 'crash' | 'launcher') => tinvoke('mc_upload_log', { instanceId, source })) as RefractAPI['mc']['uploadLog'],
+      previewLog: ((instanceId: string, source: 'latest' | 'crash' | 'launcher') => tinvoke('mc_preview_log', { instanceId, source })) as RefractAPI['mc']['previewLog'],
+      discardLogPreview: ((previewId: string) => tinvoke('mc_discard_log_preview', { previewId })) as RefractAPI['mc']['discardLogPreview'],
+      uploadLog: ((previewId: string) => tinvoke('mc_upload_log', { previewId })) as RefractAPI['mc']['uploadLog'],
       createShortcut: ((instanceId: string, label: string, quickPlay?: QuickPlayTarget) =>
         tinvoke('create_play_shortcut', { instanceId, label, quickPlay })) as RefractAPI['mc']['createShortcut'],
       copyGameOptions: ((fromId: string, toId: string, includeServers?: boolean) =>
@@ -1254,24 +1333,14 @@ function createTauriApi(): RefractAPI {
       unlinkServer: ((instanceId: string, id: string) =>
         tinvoke('unlink_server', { instanceId, id })) as RefractAPI['mc']['unlinkServer'],
       pingServer: ((ip: string) => tinvoke('ping_server', { ip })) as RefractAPI['mc']['pingServer'],
-      // Renderer expects a synchronous unsubscribe; listen() resolves async, so
-      // each wrapper detaches once its listener is actually attached.
       onProgress: ((cb: (data: { instanceId: string; step: string; current: number; total: number; percent: number }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ instanceId: string; step: string; current: number; total: number; percent: number }>(
-          'mc://progress', e => cb(e.payload),
-        ).then(u => { off = u })
-        return () => off?.()
+        return subscribeNative('mc://progress', cb)
       }) as RefractAPI['mc']['onProgress'],
       onLog: ((cb: (data: { instanceId: string; line: string; stream: string }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ instanceId: string; line: string; stream: string }>('mc://log', e => cb(e.payload)).then(u => { off = u })
-        return () => off?.()
+        return subscribeNative('mc://log', cb)
       }) as RefractAPI['mc']['onLog'],
       onExit: ((cb: (data: { instanceId: string; code: number | null; error?: string }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ instanceId: string; code: number | null; error?: string }>('mc://exit', e => cb(e.payload)).then(u => { off = u })
-        return () => off?.()
+        return subscribeNative('mc://exit', cb)
       }) as RefractAPI['mc']['onExit'],
     },
     // Managed (auto-downloaded) Java runtimes. browseExe/addCustom/removeCustom
@@ -1289,34 +1358,43 @@ function createTauriApi(): RefractAPI {
         const p = await dialogOpen({ multiple: false, title: 'Select Java executable' })
         return typeof p === 'string' ? p : null
       }) as RefractAPI['java']['browseExe'],
-      onProgress: ((cb: (data: { major: number; step: string; percent: number }) => void) => {
-        let off: (() => void) | undefined
-        void listen<{ major: number; step: string; percent: number }>('java://progress', e => cb(e.payload)).then(u => { off = u })
-        return () => off?.()
+      onProgress: ((cb: Parameters<RefractAPI['java']['onProgress']>[0]) => {
+        return subscribeNative('java://progress', cb)
       }) as RefractAPI['java']['onProgress'],
     },
     // Custom-titlebar controls — the Tauri window is frameless (decorations:false),
     // so these drive the native window via Tauri's window API.
     window: {
       ...base.window,
+      quit: async (skipUpdate = false) => { await tinvoke('window_request_quit', { skipUpdate }) },
+      setLanguage: async (language) => { await tinvoke('window_set_language', { language }) },
+      onError: (callback) => subscribeNative('window://error', callback),
       minimize: () => { void getCurrentWindow().minimize() },
       maximize: () => { void getCurrentWindow().toggleMaximize() },
       close: () => { void getCurrentWindow().close() },
-      // `destroy` was dropped from the desktop capability when it was hardened,
-      // so route forceClose through the permitted graceful close() instead.
-      forceClose: () => { void getCurrentWindow().close() },
+      forceClose: () => { void tinvoke('window_request_quit').catch(error => logger.error('window:quit', error)) },
       startDragging: () => { void getCurrentWindow().startDragging() },
       startResizeDragging: (direction) => { void getCurrentWindow().startResizeDragging(direction) },
       isMaximized: (() => getCurrentWindow().isMaximized()) as RefractAPI['window']['isMaximized'],
       onMaximizedChange: ((cb: (maximized: boolean) => void) => {
-        let off: (() => void) | undefined
         const w = getCurrentWindow()
-        void w.onResized(() => { void w.isMaximized().then(cb) }).then(u => { off = u })
-        return () => off?.()
+        const onError = (error: unknown) => logger.error('nativeEvent:window-resized', error)
+        return ownSubscription<boolean>(
+          (emit) => w.onResized(() => { void w.isMaximized().then(emit, onError) }),
+          cb,
+          onError
+        )
       }) as RefractAPI['window']['onMaximizedChange'],
     },
     updater: {
       ...base.updater,
+      status: () => readUpdateStatus(),
+      onChanged: (callback) => {
+        const dispose = nativeUpdateStatus.subscribe(callback)
+        startUpdater()
+        void readUpdateStatus().catch(error => logger.error('updater:status', error))
+        return dispose
+      },
       check: (() => runUpdateCheck(true)) as RefractAPI['updater']['check'],
       onAvailable: ((cb: (v: { version: string }) => void) => {
         updAvailable.push(cb)
@@ -1338,11 +1416,14 @@ function createTauriApi(): RefractAPI {
           return
         }
         if (updateDownloadPromise) return updateDownloadPromise
-        if (!pendingUpdate) throw new Error('No app update is available to download.')
-
-        const upd = pendingUpdate
-        updateDownloadPromise = (async () => {
+        const promise = Promise.resolve().then(async () => {
           try {
+            // A check already in flight may replace/close the previous handle.
+            // Reserve the download first, then use its settled result.
+            await updateCheckPromise
+            if (updateLifecycle.busy) throw new Error('Wait for the current quit or update request to finish.')
+            const upd = pendingUpdate
+            if (!upd) throw new Error('No app update is available to download.')
             let total = 0
             let got = 0
             await upd.download((e) => {
@@ -1361,21 +1442,21 @@ function createTauriApi(): RefractAPI {
             logger.error('updater:download', e)
             throw e instanceof Error ? e : new Error(String(e))
           } finally {
-            updateDownloadPromise = null
+            if (updateDownloadPromise === promise) updateDownloadPromise = null
+            void readUpdateStatus().catch(error => logger.error('updater:status', error))
           }
-        })()
-        return updateDownloadPromise
+        })
+        updateDownloadPromise = promise
+        return promise
       }) as RefractAPI['updater']['download'],
       install: (async () => {
-        if (!pendingUpdate) throw new Error('No app update is available to install.')
-        if (!updateDownloaded) throw new Error('Download the app update before installing it.')
         try {
-          await pendingUpdate.install()
-          const { relaunch } = await import('@tauri-apps/plugin-process')
-          await relaunch()
+          await updateLifecycle.install()
         } catch (e) {
           logger.error('updater:install', e)
           throw e instanceof Error ? e : new Error(String(e))
+        } finally {
+          void readUpdateStatus().catch(error => logger.error('updater:status', error))
         }
       }) as RefractAPI['updater']['install'],
     },
@@ -1414,7 +1495,5 @@ export function onExportProgress(
   cb: (data: { id: string; current: number; total: number; percent: number }) => void,
 ): () => void {
   if (!isTauri) return () => {}
-  let off: (() => void) | undefined
-  void listen<{ id: string; current: number; total: number; percent: number }>('instance://export-progress', e => cb(e.payload)).then(u => { off = u })
-  return () => off?.()
+  return subscribeNative('instance://export-progress', cb)
 }

@@ -3,18 +3,16 @@
 //! deleteWorld/backupWorld IPC handlers). Screenshots (image thumbnails), the
 //! server list (servers.dat NBT) and server ping need extra deps — separate step.
 
-use crate::instances;
+use crate::{fs_safety, instances, operations, persistence};
 use base64::Engine as _;
 use serde::Serialize;
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Seek, Write};
 use std::path::{Component, Path, PathBuf};
 
 /// Join one renderer-supplied path component under `base`.
 fn safe_child(base: &Path, name: &str) -> Option<PathBuf> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') {
-        return None;
-    }
+    fs_safety::safe_component(name).ok()?;
     let mut components = Path::new(name).components();
     match (components.next(), components.next()) {
         (Some(Component::Normal(_)), None) => Some(base.join(name)),
@@ -39,6 +37,7 @@ fn is_link_or_reparse(path: &Path) -> Result<bool, String> {
 }
 
 fn safe_existing_child(base: &Path, name: &str) -> Result<PathBuf, String> {
+    fs_safety::directory_root(base)?;
     let candidate = safe_child(base, name).ok_or("Invalid filename.")?;
     if is_link_or_reparse(&candidate)? {
         return Err("Linked filesystem entries are not allowed here.".into());
@@ -52,18 +51,24 @@ fn safe_existing_child(base: &Path, name: &str) -> Result<PathBuf, String> {
 }
 
 fn dir_size_kb(dir: &Path) -> u64 {
-    let mut total = 0u64;
-    if let Ok(entries) = fs::read_dir(dir) {
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                total += dir_size_kb(&p);
-            } else if let Ok(m) = e.metadata() {
-                total += m.len() / 1024;
+    let mut bytes = 0u64;
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if fs_safety::is_link(&metadata) {
+            continue;
+        }
+        if metadata.is_file() {
+            bytes = bytes.saturating_add(metadata.len());
+        } else if metadata.is_dir() {
+            if let Ok(entries) = fs::read_dir(path) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
             }
         }
     }
-    total
+    bytes / 1024
 }
 
 fn mtime_ms(p: &Path) -> f64 {
@@ -85,16 +90,23 @@ pub struct World {
 }
 
 #[tauri::command]
-pub fn mc_worlds(instance_id: String) -> Vec<World> {
-    let saves = instances::game_dir(&instance_id).join("saves");
+pub async fn mc_worlds(instance_id: String) -> Result<Vec<World>, String> {
+    let game = instances::game_dir(&instance_id)?;
+    operations::blocking(move || worlds_at(&game)).await?
+}
+
+fn worlds_at(game: &Path) -> Result<Vec<World>, String> {
+    let saves = fs_safety::checked_join(game, "saves")?;
+    fs_safety::directory_root(&saves)?;
     let mut out: Vec<World> = Vec::new();
     if let Ok(entries) = fs::read_dir(&saves) {
         for e in entries.flatten() {
-            if !e.path().is_dir() {
+            let metadata = fs::symlink_metadata(e.path()).map_err(|error| error.to_string())?;
+            if !metadata.is_dir() || fs_safety::is_link(&metadata) {
                 continue;
             }
             let path = e.path();
-            let level = path.join("level.dat");
+            let level = fs_safety::checked_join(&path, "level.dat")?;
             let last_modified = mtime_ms(if level.exists() { &level } else { &path });
             out.push(World {
                 name: e.file_name().to_string_lossy().to_string(),
@@ -104,12 +116,19 @@ pub fn mc_worlds(instance_id: String) -> Vec<World> {
         }
     }
     out.sort_by(|a, b| b.last_modified.total_cmp(&a.last_modified));
-    out
+    Ok(out)
 }
 
 #[tauri::command]
 pub fn mc_delete_world(instance_id: String, world_name: String) -> Result<(), String> {
-    let saves = instances::game_dir(&instance_id).join("saves");
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mc_delete_world_owned(instance_id, world_name)
+    })
+}
+
+fn mc_delete_world_owned(instance_id: String, world_name: String) -> Result<(), String> {
+    let saves = instances::game_dir(&instance_id)?.join("saves");
     let candidate = safe_child(&saves, &world_name).ok_or("Invalid world name.")?;
     if candidate.exists() {
         let world = safe_existing_child(&saves, &world_name)?;
@@ -129,31 +148,28 @@ pub struct CrashReport {
 
 /// Contents of the most recent crash report, or null if there are none.
 #[tauri::command]
-pub fn mc_crash_report(instance_id: String) -> Option<CrashReport> {
-    let dir = instances::game_dir(&instance_id).join("crash-reports");
-    let mut reports: Vec<(PathBuf, f64)> = fs::read_dir(&dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().map(|x| x == "txt").unwrap_or(false))
-        .map(|p| {
-            let t = mtime_ms(&p);
-            (p, t)
-        })
-        .collect();
-    reports.sort_by(|a, b| b.1.total_cmp(&a.1));
-    let latest = reports.first()?;
-    let text = fs::read_to_string(&latest.0).ok()?;
-    Some(CrashReport {
-        text,
-        filename: latest
-            .0
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_else(|| "crash-report.txt".to_string()),
-        path: latest.0.to_string_lossy().to_string(),
-        modified_at: latest.1,
+pub async fn mc_crash_report(instance_id: String) -> Result<Option<CrashReport>, String> {
+    operations::blocking(move || {
+        let game = instances::game_dir(&instance_id)?;
+        let Some(latest) = crate::log_share::newest_crash(&game)? else {
+            return Ok(None);
+        };
+        let censor = crate::log_share::censor_for_instance(&instance_id)?;
+        let tail =
+            crate::log_privacy::tail(&latest, crate::log_privacy::MAX_TAIL_BYTES, 25_000, &censor)?;
+        Ok(Some(CrashReport {
+            text: tail.text,
+            filename: censor.line(
+                &latest
+                    .file_name()
+                    .ok_or("Invalid crash report filename.")?
+                    .to_string_lossy(),
+            ),
+            path: censor.line(&latest.to_string_lossy()),
+            modified_at: mtime_ms(&latest),
+        }))
     })
+    .await?
 }
 
 /// Copy game settings from one instance to another: options.txt plus the
@@ -165,8 +181,26 @@ pub fn copy_game_options(
     to_id: String,
     include_servers: Option<bool>,
 ) -> Result<Vec<String>, String> {
-    let src = instances::game_dir(&from_id);
-    let dst = instances::game_dir(&to_id);
+    let owner = from_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        crate::operations::attach_existing_instance(&to_id)?;
+        copy_game_options_owned(from_id, to_id, include_servers)
+    })
+}
+
+fn copy_game_options_owned(
+    from_id: String,
+    to_id: String,
+    include_servers: Option<bool>,
+) -> Result<Vec<String>, String> {
+    if from_id == to_id {
+        return Err("Choose a different destination instance.".into());
+    }
+    let src = instances::game_dir(&from_id)?;
+    let dst = instances::game_dir(&to_id)?;
+    if fs_safety::canonical_path(&src)? == fs_safety::canonical_path(&dst)? {
+        return Err("Choose an instance with a different game folder.".into());
+    }
     fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
 
     let mut files = vec!["options.txt", "optionsof.txt", "optionsshaders.txt"];
@@ -175,9 +209,12 @@ pub fn copy_game_options(
     }
     let mut copied = Vec::new();
     for name in files {
-        let from = src.join(name);
+        let from = fs_safety::checked_join(&src, name)?;
+        let to = fs_safety::checked_join(&dst, name)?;
         if from.is_file() {
-            fs::copy(&from, dst.join(name)).map_err(|e| format!("Couldn't copy {name}: {e}"))?;
+            let mut source =
+                fs::File::open(&from).map_err(|error| format!("Could not read {name}: {error}"))?;
+            persistence::atomic_write_with(&to, |file| copy_world_bytes(&mut source, file))?;
             copied.push(name.to_string());
         }
     }
@@ -194,170 +231,160 @@ pub fn copy_game_options(
 /// single top-level folder. Returns the created world folder name.
 #[tauri::command]
 pub async fn mc_import_world(instance_id: String, zip_path: String) -> Result<String, String> {
-    let saves = instances::game_dir(&instance_id).join("saves");
-    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-        let file = fs::File::open(&zip_path).map_err(|e| format!("Couldn't open archive: {e}"))?;
-        let mut zip =
-            zip::ZipArchive::new(file).map_err(|_| "Not a valid zip archive.".to_string())?;
-
-        // Find level.dat to learn the layout: at the root, or under one folder.
-        let mut prefix: Option<String> = None;
-        for i in 0..zip.len() {
-            let name = {
-                let entry = zip.by_index(i).map_err(|e| e.to_string())?;
-                entry.name().replace('\\', "/")
-            };
-            if name == "level.dat" {
-                prefix = Some(String::new());
-                break;
-            }
-            if let Some(dir) = name.strip_suffix("/level.dat") {
-                if !dir.contains('/') {
-                    prefix = Some(format!("{dir}/"));
-                    break;
-                }
-            }
-        }
-        let prefix =
-            prefix.ok_or("No level.dat found — this doesn't look like a world archive.")?;
-
-        // World folder name: the archive's top folder, else the zip's file stem.
-        let raw_name = if prefix.is_empty() {
-            Path::new(&zip_path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "world".into())
-        } else {
-            prefix.trim_end_matches('/').to_string()
-        };
-        let invalid = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
-        let base: String = raw_name
-            .chars()
-            .filter(|c| !invalid.contains(c) && !c.is_control())
-            .collect();
-        let base = base.trim().trim_end_matches('.').trim().to_string();
-        let base = if base.is_empty() {
-            "world".to_string()
-        } else {
-            base
-        };
-        let mut name = base.clone();
-        let mut n = 2;
-        while saves.join(&name).exists() {
-            name = format!("{base} ({n})");
-            n += 1;
-        }
-        let dest = saves.join(&name);
-        fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-
-        for i in 0..zip.len() {
-            let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-            let Some(rel) = entry.enclosed_name().map(|p| p.to_path_buf()) else {
-                continue;
-            };
-            let rel_str = rel.to_string_lossy().replace('\\', "/");
-            let Some(stripped) = rel_str.strip_prefix(prefix.as_str()) else {
-                continue;
-            };
-            if stripped.is_empty() {
-                continue;
-            }
-            let out = dest.join(stripped);
-            if !out.starts_with(&dest) {
-                continue;
-            }
-            if entry.is_dir() {
-                fs::create_dir_all(&out).ok();
-            } else {
-                if let Some(p) = out.parent() {
-                    fs::create_dir_all(p).ok();
-                }
-                let mut f = fs::File::create(&out).map_err(|e| e.to_string())?;
-                std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
-            }
-        }
-        Ok(name)
+    let owner = instance_id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Mutation, async move {
+        mc_import_world_owned(instance_id, zip_path).await
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
-/// Newest crash report file path, if any.
-fn latest_crash_report_path(instance_id: &str) -> Option<PathBuf> {
-    let dir = instances::game_dir(instance_id).join("crash-reports");
-    let mut reports: Vec<(PathBuf, f64)> = fs::read_dir(&dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().map(|x| x == "txt").unwrap_or(false))
-        .map(|p| {
-            let t = mtime_ms(&p);
-            (p, t)
-        })
-        .collect();
-    reports.sort_by(|a, b| b.1.total_cmp(&a.1));
-    reports.into_iter().next().map(|(p, _)| p)
+async fn mc_import_world_owned(instance_id: String, zip_path: String) -> Result<String, String> {
+    let game = instances::game_dir(&instance_id)?;
+    operations::blocking(move || import_world_archive(&game, Path::new(&zip_path))).await?
 }
 
-/// mclo.gs caps uploads at 10 MB / 25k lines and silently truncates the *end*;
-/// trim to the last lines ourselves so the tail (where the error is) survives.
-fn tail_for_mclogs(text: &str) -> String {
-    const MAX_LINES: usize = 25_000;
-    const MAX_BYTES: usize = 10 * 1024 * 1024;
-    let lines: Vec<&str> = text.lines().collect();
-    let start = lines.len().saturating_sub(MAX_LINES);
-    let mut out = lines[start..].join("\n");
-    if out.len() > MAX_BYTES {
-        let cut = out.len() - MAX_BYTES;
-        // Trim to a char boundary at/after the cut point.
-        let boundary = (cut..out.len())
-            .find(|i| out.is_char_boundary(*i))
-            .unwrap_or(out.len());
-        out = out[boundary..].to_string();
+struct WorldStage(PathBuf);
+
+impl Drop for WorldStage {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
     }
-    out
 }
 
-/// Upload a log to mclo.gs and return the share URL. `source` picks what to
-/// send: the game's latest.log, the newest crash report, or the launcher log.
-#[tauri::command]
-pub async fn mc_upload_log(instance_id: String, source: String) -> Result<String, String> {
-    let path = match source.as_str() {
-        "latest" => instances::game_dir(&instance_id)
-            .join("logs")
-            .join("latest.log"),
-        "crash" => latest_crash_report_path(&instance_id).ok_or("No crash report found.")?,
-        "launcher" => crate::paths::data_dir().join("logs").join("refract.log"),
-        other => return Err(format!("Unknown log source: {other}")),
+fn copy_world_bytes(reader: &mut impl Read, writer: &mut impl Write) -> Result<(), String> {
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        operations::check_current()?;
+        let size = reader
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        if size == 0 {
+            return Ok(());
+        }
+        writer
+            .write_all(&buffer[..size])
+            .map_err(|error| error.to_string())?;
+    }
+}
+
+fn import_world_archive(game: &Path, archive: &Path) -> Result<String, String> {
+    operations::check_current()?;
+    let saves = fs_safety::checked_join(game, "saves")?;
+    fs_safety::directory_root(&saves)?;
+    let file = fs::File::open(archive)
+        .map_err(|error| format!("Could not open world archive: {error}"))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|_| "Not a valid world ZIP archive.")?;
+    let mut entries = Vec::new();
+    let mut roots = Vec::new();
+    // Validate all names before any destination is created, including entries
+    // outside the selected wrapper. Extraction never silently skips unsafe data.
+    for index in 0..zip.len() {
+        operations::check_current()?;
+        let entry = zip.by_index(index).map_err(|error| error.to_string())?;
+        if entry.is_dir() && matches!(entry.name(), "." | "./") {
+            continue;
+        }
+        let relative = fs_safety::relative_path(entry.name())?;
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| !matches!(mode & 0o170000, 0 | 0o100000 | 0o040000))
+        {
+            return Err("World archive contains a linked or unsupported entry.".into());
+        }
+        if !entry.is_dir()
+            && relative.file_name().is_some_and(|name| name == "level.dat")
+            && relative.components().count() <= 2
+        {
+            roots.push(relative.parent().unwrap_or(Path::new("")).to_path_buf());
+        }
+        entries.push((index, relative, entry.is_dir()));
+    }
+    let root = if roots.iter().any(|root| root.as_os_str().is_empty()) {
+        PathBuf::new()
+    } else if roots.len() == 1 {
+        roots.remove(0)
+    } else {
+        return Err(
+            "World archive must contain one world with level.dat at its root or inside one folder."
+                .into(),
+        );
     };
-    let text =
-        fs::read_to_string(&path).map_err(|_| format!("Log file not found: {}", path.display()))?;
-    if text.trim().is_empty() {
-        return Err("The log file is empty.".into());
+    let raw_name = root
+        .file_name()
+        .or_else(|| archive.file_stem())
+        .and_then(|name| name.to_str())
+        .unwrap_or("world");
+    let base: String = raw_name
+        .chars()
+        .filter(|c| !c.is_control() && !"<>:\"/\\|?*".contains(*c))
+        .take(100)
+        .collect();
+    let base = base.trim().trim_end_matches('.').trim();
+    let base = if fs_safety::safe_component(base).is_ok() {
+        base
+    } else {
+        "world"
+    };
+    let mut planned = Vec::new();
+    let mut names = std::collections::HashSet::new();
+    for (index, relative, is_dir) in entries {
+        let Ok(relative) = relative.strip_prefix(&root) else {
+            continue;
+        };
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        let key = relative.to_string_lossy().to_lowercase();
+        if !names.insert(key) {
+            return Err("World archive contains duplicate or case-conflicting paths.".into());
+        }
+        planned.push((index, relative.to_path_buf(), is_dir));
     }
-    let content = tail_for_mclogs(&text);
-
-    let res = reqwest::Client::new()
-        .post("https://api.mclo.gs/1/log")
-        .form(&[("content", content)])
-        .send()
-        .await
-        .map_err(|e| format!("Upload failed: {e}"))?;
-    if !res.status().is_success() {
-        return Err(format!("mclo.gs returned HTTP {}", res.status()));
+    fs::create_dir_all(game).map_err(|error| error.to_string())?;
+    let stage_path = fs_safety::checked_join(
+        game,
+        &format!(".refract-world-import-{}", uuid::Uuid::new_v4()),
+    )?;
+    fs::create_dir(&stage_path).map_err(|error| error.to_string())?;
+    let stage = WorldStage(stage_path);
+    for (index, relative, is_dir) in planned {
+        operations::check_current()?;
+        let out = fs_safety::checked_join(&stage.0, &relative.to_string_lossy())?;
+        if is_dir {
+            fs::create_dir_all(out).map_err(|error| error.to_string())?;
+        } else {
+            fs::create_dir_all(out.parent().ok_or("World file has no parent.")?)
+                .map_err(|error| error.to_string())?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&out)
+                .map_err(|error| error.to_string())?;
+            let mut entry = zip.by_index(index).map_err(|error| error.to_string())?;
+            copy_world_bytes(&mut entry, &mut file)?;
+            file.sync_all().map_err(|error| error.to_string())?;
+        }
     }
-    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
-    if body.get("success").and_then(serde_json::Value::as_bool) != Some(true) {
-        return Err(body
-            .get("error")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("mclo.gs rejected the upload")
-            .to_string());
+    operations::check_current()?;
+    fs::create_dir_all(&saves).map_err(|error| error.to_string())?;
+    let mut name = base.to_string();
+    let mut suffix = 2;
+    loop {
+        let dest = fs_safety::checked_join(&saves, &name)?;
+        if !dest.try_exists().map_err(|error| error.to_string())? {
+            // Same-filesystem publication makes the world visible only after
+            // every required file was extracted and synced successfully.
+            fs::rename(&stage.0, &dest)
+                .map_err(|error| format!("Could not publish imported world: {error}"))?;
+            #[cfg(unix)]
+            fs::File::open(&saves)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|error| error.to_string())?;
+            return Ok(name);
+        }
+        name = format!("{base} ({suffix})");
+        suffix += 1;
     }
-    body.get("url")
-        .and_then(serde_json::Value::as_str)
-        .map(String::from)
-        .ok_or("mclo.gs response had no URL".into())
 }
 
 /// Zip a world folder to `dest_path` (chosen via a save dialog in the renderer),
@@ -368,22 +395,47 @@ pub async fn mc_backup_world(
     world_name: String,
     dest_path: String,
 ) -> Result<String, String> {
-    let saves = instances::game_dir(&instance_id).join("saves");
+    let owner = instance_id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Snapshot, async move {
+        mc_backup_world_owned(instance_id, world_name, dest_path).await
+    })
+    .await
+}
+
+async fn mc_backup_world_owned(
+    instance_id: String,
+    world_name: String,
+    dest_path: String,
+) -> Result<String, String> {
+    let saves = instances::game_dir(&instance_id)?.join("saves");
     let world = safe_existing_child(&saves, &world_name)
         .map_err(|_| "World not found or is not a safe local directory.".to_string())?;
-    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-        let file =
-            fs::File::create(&dest_path).map_err(|e| format!("Couldn't write {dest_path}: {e}"))?;
-        let mut zip = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .large_file(true);
-        zip_dir(&mut zip, &world, &world, opts)?;
-        zip.finish().map_err(|e| e.to_string())?;
+    crate::operations::blocking(move || -> Result<String, String> {
+        backup_world_archive(&world, Path::new(&dest_path))?;
         Ok(dest_path)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn backup_world_archive(world: &Path, destination: &Path) -> Result<(), String> {
+    operations::check_current()?;
+    fs_safety::directory_root(world)?;
+    if !fs_safety::checked_join(world, "level.dat")?.is_file() {
+        return Err("World has no level.dat to back up.".into());
+    }
+    if fs_safety::canonical_path(destination)?.starts_with(fs_safety::canonical_path(world)?) {
+        return Err("Choose a backup destination outside the world folder.".into());
+    }
+    persistence::atomic_write_with(destination, |file| -> Result<(), String> {
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(true);
+        zip_dir(&mut zip, world, world, opts)?;
+        zip.finish().map_err(|error| error.to_string())?;
+        operations::check_current()
+    })
 }
 
 // ── screenshots ──────────────────────────────────────────────────────────────
@@ -448,7 +500,7 @@ fn screenshot_rename_target(original: &str, requested: &str) -> Result<String, S
 /// + resize runs off the main thread.
 #[tauri::command]
 pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, String> {
-    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let dir = instances::game_dir(&instance_id)?.join("screenshots");
     tauri::async_runtime::spawn_blocking(move || {
         let mut files: Vec<(PathBuf, u64, f64)> = Vec::new();
         if let Ok(entries) = fs::read_dir(&dir) {
@@ -497,7 +549,7 @@ pub async fn mc_screenshots(instance_id: String) -> Result<Vec<Screenshot>, Stri
 /// Open a screenshot in the OS image viewer.
 #[tauri::command]
 pub fn mc_open_screenshot(instance_id: String, filename: String) -> Result<(), String> {
-    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let dir = instances::game_dir(&instance_id)?.join("screenshots");
     let p = safe_existing_child(&dir, &filename)
         .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
     #[cfg(target_os = "windows")]
@@ -517,7 +569,18 @@ pub fn mc_rename_screenshot(
     filename: String,
     new_name: String,
 ) -> Result<String, String> {
-    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mc_rename_screenshot_owned(instance_id, filename, new_name)
+    })
+}
+
+fn mc_rename_screenshot_owned(
+    instance_id: String,
+    filename: String,
+    new_name: String,
+) -> Result<String, String> {
+    let dir = instances::game_dir(&instance_id)?.join("screenshots");
     let source = safe_existing_child(&dir, &filename)
         .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
     if !source.is_file() {
@@ -543,7 +606,14 @@ pub fn mc_rename_screenshot(
 /// renderer-controlled paths.
 #[tauri::command]
 pub fn mc_delete_screenshot(instance_id: String, filename: String) -> Result<(), String> {
-    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mc_delete_screenshot_owned(instance_id, filename)
+    })
+}
+
+fn mc_delete_screenshot_owned(instance_id: String, filename: String) -> Result<(), String> {
+    let dir = instances::game_dir(&instance_id)?.join("screenshots");
     let screenshot = safe_existing_child(&dir, &filename)
         .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
     if !screenshot.is_file() {
@@ -558,7 +628,7 @@ pub async fn mc_screenshot_full(
     instance_id: String,
     filename: String,
 ) -> Result<Option<String>, String> {
-    let dir = instances::game_dir(&instance_id).join("screenshots");
+    let dir = instances::game_dir(&instance_id)?.join("screenshots");
     let p = safe_existing_child(&dir, &filename)
         .map_err(|_| "Screenshot not found or is not a safe local file.".to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -582,13 +652,14 @@ fn mtime_ms_meta(m: &fs::Metadata) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn zip_dir(
-    zip: &mut zip::ZipWriter<std::fs::File>,
+fn zip_dir<W: Write + Seek>(
+    zip: &mut zip::ZipWriter<W>,
     root: &Path,
     dir: &Path,
     opts: zip::write::SimpleFileOptions,
 ) -> Result<(), String> {
     for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        operations::check_current()?;
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         if is_link_or_reparse(&path)? {
@@ -597,18 +668,26 @@ fn zip_dir(
                 path.display()
             ));
         }
-        if path.is_dir() {
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_str()
+            .ok_or("World filename has an unsupported encoding.")?
+            .replace('\\', "/");
+        fs_safety::relative_path(&rel)?;
+        let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if metadata.is_dir() {
+            zip.add_directory(format!("{rel}/"), opts)
+                .map_err(|error| error.to_string())?;
             zip_dir(zip, root, &path, opts)?;
+        } else if metadata.is_file() {
+            let mut file = fs::File::open(&path)
+                .map_err(|error| format!("Could not read world file {rel}: {error}"))?;
+            zip.start_file(rel, opts)
+                .map_err(|error| error.to_string())?;
+            copy_world_bytes(&mut file, zip)?;
         } else {
-            let rel = path
-                .strip_prefix(root)
-                .map_err(|e| e.to_string())?
-                .to_string_lossy()
-                .replace('\\', "/");
-            if let Ok(bytes) = fs::read(&path) {
-                zip.start_file(rel, opts).map_err(|e| e.to_string())?;
-                zip.write_all(&bytes).map_err(|e| e.to_string())?;
-            }
+            return Err("World contains an unsupported filesystem entry.".into());
         }
     }
     Ok(())
@@ -616,8 +695,222 @@ fn zip_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::{safe_child, screenshot_rename_target};
-    use std::path::Path;
+    use super::*;
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let root =
+                std::env::temp_dir().join(format!("refract-world-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir(&root).unwrap();
+            Self(root)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn archive(path: &Path, entries: &[(&str, &[u8])]) {
+        let mut writer = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, bytes) in entries {
+            writer.start_file(*name, opts).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn world_backup_import_round_trip_preserves_files_and_existing_worlds() {
+        let fixture = Fixture::new();
+        let world = fixture.0.join("original");
+        fs::create_dir_all(world.join("region")).unwrap();
+        fs::create_dir_all(world.join("datapacks/empty")).unwrap();
+        fs::write(world.join("level.dat"), b"world metadata").unwrap();
+        let region = vec![0x57; 128 * 1024 + 7];
+        fs::write(world.join("region/r.0.0.mca"), &region).unwrap();
+        let backup = fixture.0.join("World.zip");
+        backup_world_archive(&world, &backup).unwrap();
+        let game = fixture.0.join("game");
+        fs::create_dir_all(game.join("saves/World")).unwrap();
+        fs::write(game.join("saves/World/keep"), b"existing").unwrap();
+        let imported = import_world_archive(&game, &backup).unwrap();
+        assert_eq!(imported, "World (2)");
+        assert_eq!(
+            fs::read(game.join("saves/World/keep")).unwrap(),
+            b"existing"
+        );
+        let restored = game.join("saves").join(imported);
+        assert_eq!(
+            fs::read(restored.join("level.dat")).unwrap(),
+            b"world metadata"
+        );
+        assert_eq!(fs::read(restored.join("region/r.0.0.mca")).unwrap(), region);
+        assert!(restored.join("datapacks/empty").is_dir());
+        assert_eq!(fs::read_dir(&game).unwrap().count(), 1);
+        assert!(backup_world_archive(&world, &world.join("nested/backup.zip")).is_err());
+        assert!(!world.join("nested").exists());
+    }
+
+    #[test]
+    fn unsafe_world_archive_entries_fail_before_destination_creation() {
+        let fixture = Fixture::new();
+        let zip = fixture.0.join("world.zip");
+        let game = fixture.0.join("game");
+        for name in [
+            "../escape",
+            "region/../../escape",
+            "region\\..\\escape",
+            "/absolute",
+            "C:drive",
+            "region/NUL.mca",
+            "region/file:stream",
+        ] {
+            archive(&zip, &[("level.dat", b"level"), (name, b"unsafe")]);
+            assert!(
+                import_world_archive(&game, &zip).is_err(),
+                "accepted {name}"
+            );
+            assert!(!game.exists(), "created destination for {name}");
+        }
+        archive(
+            &zip,
+            &[
+                ("level.dat", b"level"),
+                ("region/A", b"a"),
+                ("region/a", b"b"),
+            ],
+        );
+        assert!(import_world_archive(&game, &zip)
+            .unwrap_err()
+            .contains("conflicting"));
+        assert!(!game.exists());
+        let mut writer = zip::ZipWriter::new(fs::File::create(&zip).unwrap());
+        let opts = zip::write::SimpleFileOptions::default();
+        writer.start_file("level.dat", opts).unwrap();
+        writer.write_all(b"level").unwrap();
+        writer
+            .add_symlink("region/link", "../../outside", opts)
+            .unwrap();
+        writer.finish().unwrap();
+        assert!(import_world_archive(&game, &zip)
+            .unwrap_err()
+            .contains("linked"));
+        assert!(!game.exists());
+    }
+
+    #[test]
+    fn failed_world_extraction_removes_staging_and_preserves_previous_world() {
+        let fixture = Fixture::new();
+        let zip = fixture.0.join("world.zip");
+        let payload = b"broken-world-payload-for-crc-check";
+        archive(&zip, &[("level.dat", b"level"), ("region/data", payload)]);
+        let mut bytes = fs::read(&zip).unwrap();
+        let start = bytes
+            .windows(payload.len())
+            .position(|window| window == payload)
+            .unwrap();
+        bytes[start] ^= 1;
+        fs::write(&zip, bytes).unwrap();
+        let game = fixture.0.join("game");
+        fs::create_dir_all(game.join("saves/world")).unwrap();
+        fs::write(game.join("saves/world/level.dat"), b"previous").unwrap();
+        assert!(import_world_archive(&game, &zip).is_err());
+        assert_eq!(
+            fs::read(game.join("saves/world/level.dat")).unwrap(),
+            b"previous"
+        );
+        assert_eq!(fs::read_dir(game.join("saves")).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&game).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unreadable_world_file_preserves_the_previous_backup() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let fixture = Fixture::new();
+        let world = fixture.0.join("world");
+        fs::create_dir(&world).unwrap();
+        let level = world.join("level.dat");
+        fs::write(&level, b"level").unwrap();
+        let backup = fixture.0.join("world.zip");
+        fs::write(&backup, b"last good backup").unwrap();
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(level)
+            .unwrap();
+        assert!(backup_world_archive(&world, &backup).is_err());
+        assert_eq!(fs::read(&backup).unwrap(), b"last good backup");
+        assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 2);
+        drop(locked);
+        backup_world_archive(&world, &backup).unwrap();
+        assert!(zip::ZipArchive::new(fs::File::open(backup).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn world_copy_checks_cancellation_between_chunks() {
+        struct CancellingReader {
+            operation: String,
+            first: bool,
+        }
+        impl Read for CancellingReader {
+            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+                assert!(!self.first, "read again after cancellation");
+                self.first = true;
+                operations::request_cancel(&self.operation).unwrap();
+                bytes.fill(1);
+                Ok(bytes.len())
+            }
+        }
+        let fixture = crate::instances::TestInstance::new();
+        let id = fixture.id.clone();
+        let operation = operations::Operation::begin(&id, operations::Kind::Mutation).unwrap();
+        let mut reader = CancellingReader {
+            operation: operation.id().into(),
+            first: false,
+        };
+        let mut copied = Vec::new();
+        let error = operation
+            .sync_scope(|| copy_world_bytes(&mut reader, &mut copied))
+            .unwrap_err();
+        assert_eq!(error, operations::CANCELLED);
+        assert_eq!(copied.len(), 64 * 1024);
+    }
+
+    #[test]
+    fn linked_world_parent_is_rejected_without_touching_external_data() {
+        let fixture = Fixture::new();
+        let outside = fixture.0.join("outside");
+        fs::create_dir_all(outside.join("world")).unwrap();
+        fs::write(outside.join("world/level.dat"), b"external world").unwrap();
+        let link = fixture.0.join("saves");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        #[cfg(windows)]
+        {
+            let mut command = std::process::Command::new("cmd");
+            crate::procutil::hide_window(&mut command);
+            let output = command
+                .args(["/C", "mklink", "/J"])
+                .arg(&link)
+                .arg(&outside)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "junction fixture creation failed");
+        }
+        assert!(safe_existing_child(&link, "world").is_err());
+        fs::write(outside.join("world/region"), vec![0u8; 2048]).unwrap();
+        assert_eq!(dir_size_kb(&outside.join("world")), 2);
+        assert_eq!(dir_size_kb(&link), 0);
+        assert_eq!(
+            fs::read(outside.join("world/level.dat")).unwrap(),
+            b"external world"
+        );
+    }
 
     #[test]
     fn renderer_names_are_single_path_components() {

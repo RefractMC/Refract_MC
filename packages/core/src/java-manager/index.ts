@@ -6,6 +6,8 @@ export interface JavaInstallation {
   version: number
   path: string
   vendor: string
+  architecture?: string
+  custom?: boolean
 }
 
 function probeJava(javaExe: string): JavaInstallation | null {

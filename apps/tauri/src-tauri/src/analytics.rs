@@ -18,9 +18,7 @@ fn api_secret() -> &'static str {
 
 fn consented() -> bool {
     config::read()
-        .get("analyticsEnabled")
-        .and_then(Value::as_bool)
-        != Some(false)
+        .is_ok_and(|cfg| cfg.get("analyticsEnabled").and_then(Value::as_bool) == Some(true))
 }
 
 fn client_id_file() -> std::path::PathBuf {
@@ -81,6 +79,9 @@ pub fn init() {
 }
 
 pub fn track_event(name: &str, params: Option<Value>) {
+    let Ok(_maintenance) = crate::maintenance::shared() else {
+        return;
+    };
     if !configured() || !consented() {
         return;
     }

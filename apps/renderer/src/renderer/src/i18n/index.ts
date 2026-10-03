@@ -30,6 +30,12 @@ function i(template: string, params: Record<string, string | number>): string {
 
 function build(l: Locale) {
   return {
+    settingsReset: { ...l.settingsReset },
+    windowLifecycle: { ...l.windowLifecycle },
+    appUpdateStatus: { ...l.appUpdateStatus },
+    logSharing: { ...l.logSharing },
+    authErrors: { ...l.authErrors },
+    storage: { ...l.storage },
     nav: { ...l.nav },
 
     sidebar: {

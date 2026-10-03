@@ -4,13 +4,13 @@
 //! curseforge_* proxy commands); this module owns the filesystem + instance.json
 //! writes.
 
-use crate::{downloader, instances, net};
+use crate::{downloader, fs_safety, instances, net, persistence};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha512};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Read;
@@ -36,15 +36,8 @@ static UPDATE_CACHE: LazyLock<Mutex<HashMap<String, (Instant, u64, Vec<ModUpdate
 const UPDATE_TTL: Duration = Duration::from_secs(300);
 
 /// Game dir for an instance: its external dir if set, else <instance>/minecraft.
-pub(crate) fn game_dir(instance_id: &str) -> PathBuf {
-    if let Some(inst) = instances::get_instance_by_id(instance_id.to_string()) {
-        if let Some(ext) = inst.get("externalGameDir").and_then(Value::as_str) {
-            if !ext.is_empty() {
-                return PathBuf::from(ext);
-            }
-        }
-    }
-    instances::resolve_instance_dir(instance_id).join("minecraft")
+pub(crate) fn game_dir(instance_id: &str) -> Result<PathBuf, String> {
+    instances::game_dir(instance_id)
 }
 
 fn subdir_for(kind: &str) -> &'static str {
@@ -54,6 +47,23 @@ fn subdir_for(kind: &str) -> &'static str {
         "datapack" => "datapacks",
         _ => "mods",
     }
+}
+
+fn sync_content_directory(directory: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    match fs::File::open(directory) {
+        Ok(directory) => directory
+            .sync_all()
+            .map_err(|error| format!("Could not sync installed content: {error}"))?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Could not open installed content for sync: {error}"
+            ))
+        }
+    }
+    let _ = directory;
+    Ok(())
 }
 
 /// Renderer-supplied content names may only address one entry directly under
@@ -75,6 +85,7 @@ fn safe_content_name(name: &str) -> Result<String, String> {
     {
         return Err("content filename must be a single safe name".into());
     }
+    fs_safety::safe_component(base)?;
     Ok(base.to_string())
 }
 
@@ -85,10 +96,11 @@ async fn download_verified(
     sha512: Option<&str>,
     sha1: Option<&str>,
 ) -> Result<downloader::Outcome, String> {
-    downloader::fetch(
+    downloader::fetch_with_cancel(
         &downloader::Task::new(url, dest.to_path_buf(), allowed_hosts)
             .hash(downloader::OwnedHash::from_options(sha512, sha1))
             .existing(downloader::Existing::ReuseIfValid),
+        crate::operations::current_cancellation_check(),
     )
     .await
 }
@@ -105,24 +117,27 @@ pub(crate) fn record_instance_mod(instance_id: &str, record: Value) -> Result<()
         .get("contentType")
         .and_then(Value::as_str)
         .map(str::to_string);
-    let inst =
-        instances::get_instance_by_id(instance_id.to_string()).ok_or("instance not found")?;
-    let mut mods: Vec<Value> = inst
-        .get("mods")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    mods.retain(|m| {
-        let same_project = m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str());
-        match &content_type {
-            Some(ct) => {
-                !(same_project && m.get("contentType").and_then(Value::as_str) == Some(ct.as_str()))
+    instances::mutate_instance(instance_id, |inst| {
+        let mut mods: Vec<Value> = inst
+            .get("mods")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        mods.retain(|m| {
+            let same_project =
+                m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str());
+            match &content_type {
+                Some(ct) => {
+                    !(same_project
+                        && m.get("contentType").and_then(Value::as_str) == Some(ct.as_str()))
+                }
+                None => !same_project,
             }
-            None => !same_project,
-        }
-    });
-    mods.insert(0, record);
-    instances::update_instance(instance_id.to_string(), json!({ "mods": mods })).map(|_| ())
+        });
+        mods.insert(0, record);
+        inst["mods"] = json!(mods);
+        Ok(())
+    })
 }
 
 #[derive(Serialize)]
@@ -303,8 +318,13 @@ fn extract_icon(path: &Path, is_dir: bool) -> Option<String> {
     find_common_icon(path)
 }
 
-fn list_dir(instance_id: &str, subdir: &str, kind: &str, exts: &[&str]) -> Vec<ContentEntry> {
-    let dir = game_dir(instance_id).join(subdir);
+fn list_dir(
+    instance_id: &str,
+    subdir: &str,
+    kind: &str,
+    exts: &[&str],
+) -> Result<Vec<ContentEntry>, String> {
+    let dir = game_dir(instance_id)?.join(subdir);
     let mut out: Vec<ContentEntry> = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
         for e in entries.flatten() {
@@ -344,7 +364,7 @@ fn list_dir(instance_id: &str, subdir: &str, kind: &str, exts: &[&str]) -> Vec<C
             .to_lowercase()
             .cmp(&b.display_name.to_lowercase())
     });
-    out
+    Ok(out)
 }
 
 #[tauri::command]
@@ -352,19 +372,19 @@ pub async fn mods_list(instance_id: String) -> Result<Vec<ContentEntry>, String>
     // Reading each jar's metadata/icon can be slow with many mods — do it off the
     // main thread so the UI stays responsive.
     tauri::async_runtime::spawn_blocking(move || {
-        let mut v = list_dir(&instance_id, "mods", "mod", &[".jar"]);
+        let mut v = list_dir(&instance_id, "mods", "mod", &[".jar"])?;
         v.extend(list_dir(
             &instance_id,
             "resourcepacks",
             "resourcepack",
             &[".zip"],
-        ));
-        v.extend(list_dir(&instance_id, "shaderpacks", "shader", &[".zip"]));
-        v.extend(list_dir(&instance_id, "datapacks", "datapack", &[".zip"]));
-        v
+        )?);
+        v.extend(list_dir(&instance_id, "shaderpacks", "shader", &[".zip"])?);
+        v.extend(list_dir(&instance_id, "datapacks", "datapack", &[".zip"])?);
+        Ok(v)
     })
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -373,7 +393,18 @@ pub fn mods_toggle(
     filename: String,
     r#type: Option<String>,
 ) -> Result<(), String> {
-    let dir = game_dir(&instance_id).join(subdir_for(r#type.as_deref().unwrap_or("mod")));
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mods_toggle_owned(instance_id, filename, r#type)
+    })
+}
+
+fn mods_toggle_owned(
+    instance_id: String,
+    filename: String,
+    r#type: Option<String>,
+) -> Result<(), String> {
+    let dir = game_dir(&instance_id)?.join(subdir_for(r#type.as_deref().unwrap_or("mod")));
     let safe = safe_content_name(&filename)?;
     let src = dir.join(&safe);
     if !src.exists() {
@@ -395,7 +426,18 @@ pub fn mods_delete(
     filename: String,
     r#type: Option<String>,
 ) -> Result<(), String> {
-    let dir = game_dir(&instance_id).join(subdir_for(r#type.as_deref().unwrap_or("mod")));
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mods_delete_owned(instance_id, filename, r#type)
+    })
+}
+
+fn mods_delete_owned(
+    instance_id: String,
+    filename: String,
+    r#type: Option<String>,
+) -> Result<(), String> {
+    let dir = game_dir(&instance_id)?.join(subdir_for(r#type.as_deref().unwrap_or("mod")));
     let safe = safe_content_name(&filename)?;
     let src = dir.join(&safe);
     if !src.exists() {
@@ -410,13 +452,20 @@ pub fn mods_delete(
 
 #[tauri::command]
 pub fn mods_install_local(instance_id: String, src_path: String) -> Result<String, String> {
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mods_install_local_owned(instance_id, src_path)
+    })
+}
+
+fn mods_install_local_owned(instance_id: String, src_path: String) -> Result<String, String> {
     let src = PathBuf::from(&src_path);
     let filename = src
         .file_name()
         .ok_or("invalid source path")?
         .to_string_lossy()
         .to_string();
-    let mods_dir = game_dir(&instance_id).join("mods");
+    let mods_dir = game_dir(&instance_id)?.join("mods");
     fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
     fs::copy(&src, mods_dir.join(&filename)).map_err(|e| e.to_string())?;
     Ok(filename)
@@ -435,8 +484,25 @@ pub async fn install_mod_file(
     sha512: Option<String>,
     sha1: Option<String>,
 ) -> Result<Value, String> {
+    let owner = instance_id.clone();
+    crate::operations::run(
+        &owner,
+        crate::operations::Kind::Mutation,
+        install_mod_file_owned(instance_id, url, file_name, r#mod, sha512, sha1),
+    )
+    .await
+}
+
+async fn install_mod_file_owned(
+    instance_id: String,
+    url: String,
+    file_name: String,
+    r#mod: Value,
+    sha512: Option<String>,
+    sha1: Option<String>,
+) -> Result<Value, String> {
     let timer = downloader::InstallTimer::start();
-    let mods_dir = game_dir(&instance_id).join("mods");
+    let mods_dir = game_dir(&instance_id)?.join("mods");
     let safe = Path::new(&file_name)
         .file_name()
         .ok_or("invalid filename")?
@@ -476,71 +542,289 @@ pub async fn install_content_file(
     sha512: Option<String>,
     sha1: Option<String>,
 ) -> Result<String, String> {
+    let owner = instance_id.clone();
+    crate::operations::run(
+        &owner,
+        crate::operations::Kind::Mutation,
+        install_content_file_owned(
+            instance_id,
+            url,
+            file_name,
+            content_type,
+            r#mod,
+            sha512,
+            sha1,
+        ),
+    )
+    .await
+}
+
+async fn install_content_file_owned(
+    instance_id: String,
+    url: String,
+    file_name: String,
+    content_type: String,
+    r#mod: Option<Value>,
+    sha512: Option<String>,
+    sha1: Option<String>,
+) -> Result<String, String> {
     match content_type.as_str() {
         "resourcepack" | "shader" | "datapack" => {}
         _ => return Err(format!("Unsupported content type: {content_type}")),
     }
 
-    let dir = game_dir(&instance_id).join(subdir_for(&content_type));
-    let safe = Path::new(&file_name)
-        .file_name()
-        .ok_or("invalid filename")?
-        .to_string_lossy()
-        .to_string();
-    let dest = dir.join(&safe);
-    let disabled = dir.join(format!("{safe}.disabled"));
-    let project_id = r#mod
-        .as_ref()
-        .and_then(|m| m.get("projectId"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-
-    if !project_id.is_empty() {
-        if let Some(inst) = instances::get_instance_by_id(instance_id.clone()) {
-            if let Some(old) = inst
-                .get("mods")
-                .and_then(Value::as_array)
-                .and_then(|mods| {
-                    mods.iter().find(|m| {
-                        m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str())
-                            && m.get("contentType").and_then(Value::as_str)
-                                == Some(content_type.as_str())
-                    })
-                })
-                .and_then(|m| m.get("fileName"))
-                .and_then(Value::as_str)
-            {
-                let old_safe = Path::new(old)
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string());
-                if let Some(old_safe) = old_safe {
-                    let _ = fs::remove_file(dir.join(&old_safe));
-                    let _ = fs::remove_file(dir.join(format!("{old_safe}.disabled")));
-                }
-            }
-        }
-    }
-
-    if dest.exists() || disabled.exists() {
-        return Err(format!("{safe} is already downloaded for this instance."));
-    }
+    let plan = ContentInstallPlan::new(&instance_id, &file_name, &content_type, r#mod)?;
+    // Staging lives outside the selected content folder, so a rollback snapshot
+    // never captures incomplete downloads or resurrects their temporary files.
+    let stage = ContentInstallStage::new(&instance_id)?;
 
     download_verified(
         &url,
-        &dest,
+        &stage.path,
         net::MODRINTH_HOSTS,
         sha512.as_deref(),
         sha1.as_deref(),
     )
     .await?;
 
-    if let Some(mod_record) = r#mod {
-        if !project_id.is_empty() {
-            record_instance_mod(&instance_id, mod_record)?;
+    crate::operations::blocking(move || {
+        let snapshot_id = instance_id.clone();
+        let root = plan.root.clone();
+        publish_content_install(plan, stage, &url, sha512, sha1, move || {
+            crate::snapshots::create_content_change(&snapshot_id, &root)
+        })
+    })
+    .await
+    .map_err(|error| format!("Could not finish content installation: {error}"))?
+}
+
+struct ContentInstallStage {
+    directory: PathBuf,
+    name: String,
+    path: PathBuf,
+}
+
+impl ContentInstallStage {
+    fn new(instance_id: &str) -> Result<Self, String> {
+        let directory = instances::resolve_instance_dir(instance_id)?;
+        let name = format!(".refract-content-{}.tmp", uuid::Uuid::new_v4());
+        let path = fs_safety::checked_join(&directory, &name)?;
+        Ok(Self {
+            directory,
+            name,
+            path,
+        })
+    }
+}
+
+impl Drop for ContentInstallStage {
+    fn drop(&mut self) {
+        if let Ok(path) = fs_safety::checked_join(&self.directory, &self.name) {
+            let _ = fs::remove_file(path);
         }
     }
-    Ok(safe)
+}
+
+struct ContentInstallPlan {
+    instance_id: String,
+    game: PathBuf,
+    root: String,
+    safe: String,
+    destination: String,
+    old: Option<String>,
+    record: Option<Value>,
+}
+
+impl ContentInstallPlan {
+    fn new(
+        instance_id: &str,
+        file_name: &str,
+        content_type: &str,
+        mut record: Option<Value>,
+    ) -> Result<Self, String> {
+        let safe = safe_content_name(file_name)?;
+        if record.as_ref().is_some_and(|value| !value.is_object()) {
+            return Err("Invalid content metadata.".into());
+        }
+        let project_id = record
+            .as_ref()
+            .and_then(|value| value["projectId"].as_str())
+            .unwrap_or_default();
+        let instance =
+            instances::get_instance_by_id(instance_id.to_string())?.ok_or("Instance not found.")?;
+        let records = match instance.get("mods") {
+            None | Some(Value::Null) => &[][..],
+            Some(Value::Array(values)) => values.as_slice(),
+            _ => return Err("Invalid instance content metadata.".into()),
+        };
+        let matches = records
+            .iter()
+            .filter(|value| {
+                !project_id.is_empty()
+                    && value["projectId"].as_str() == Some(project_id)
+                    && value["contentType"].as_str() == Some(content_type)
+            })
+            .collect::<Vec<_>>();
+        if matches.len() > 1 {
+            return Err("Instance has conflicting records for this content project.".into());
+        }
+        let game = game_dir(instance_id)?;
+        let root = subdir_for(content_type).to_string();
+        let mut old = None;
+        let mut was_disabled = false;
+        if records.iter().any(|value| {
+            value["contentType"].as_str() == Some(content_type)
+                && value["fileName"].as_str() == Some(&safe)
+                && (project_id.is_empty() || value["projectId"].as_str() != Some(project_id))
+        }) {
+            return Err("Another content record uses this filename. Verify the instance before replacing it.".into());
+        }
+        if let Some(previous) = matches.first() {
+            let old_name = safe_content_name(
+                previous["fileName"]
+                    .as_str()
+                    .ok_or("Installed content filename is missing.")?,
+            )?;
+            if records.iter().any(|value| {
+                value["contentType"].as_str() == Some(content_type)
+                    && value["fileName"].as_str() == Some(&old_name)
+                    && value["projectId"].as_str() != Some(project_id)
+            }) {
+                return Err(
+                    "Installed content shares its filename with another project record.".into(),
+                );
+            }
+            for (name, disabled) in [
+                (old_name.clone(), false),
+                (format!("{old_name}.disabled"), true),
+            ] {
+                let relative = format!("{root}/{name}");
+                if let Some(metadata) = export_metadata(&game, &relative)? {
+                    if !metadata.is_file() || old.is_some() {
+                        return Err(
+                            "Installed content has conflicting or unsupported files.".into()
+                        );
+                    }
+                    old = Some(relative);
+                    was_disabled = disabled;
+                }
+            }
+        }
+        let destination = format!(
+            "{root}/{safe}{}",
+            if was_disabled { ".disabled" } else { "" }
+        );
+        for name in [safe.clone(), format!("{safe}.disabled")] {
+            let relative = format!("{root}/{name}");
+            if export_metadata(&game, &relative)?.is_some() && old.as_ref() != Some(&relative) {
+                return Err(format!("{safe} is already downloaded for this instance."));
+            }
+        }
+        if let Some(value) = &mut record {
+            value["fileName"] = json!(safe);
+            value["contentType"] = json!(content_type);
+        }
+        Ok(Self {
+            instance_id: instance_id.to_string(),
+            game,
+            root,
+            safe,
+            destination,
+            old,
+            record,
+        })
+    }
+}
+
+fn publish_content_install(
+    plan: ContentInstallPlan,
+    stage: ContentInstallStage,
+    url: &str,
+    sha512: Option<String>,
+    sha1: Option<String>,
+    create_snapshot: impl FnOnce() -> Result<crate::snapshots::SnapshotHandle, String>,
+) -> Result<String, String> {
+    crate::operations::check_current()?;
+    // Check the complete plan again after network I/O. In-process mutations are
+    // reserved by the operation owner; external edits still require validation.
+    let mut record = plan.record.clone();
+    let refreshed = ContentInstallPlan::new(
+        &plan.instance_id,
+        &plan.safe,
+        match plan.root.as_str() {
+            "resourcepacks" => "resourcepack",
+            "shaderpacks" => "shader",
+            _ => "datapack",
+        },
+        record.clone(),
+    )?;
+    if refreshed.old != plan.old
+        || refreshed.destination != plan.destination
+        || fs_safety::canonical_path(&refreshed.game)? != fs_safety::canonical_path(&plan.game)?
+        || fs_safety::canonical_path(&instances::resolve_instance_dir(&plan.instance_id)?)?
+            != fs_safety::canonical_path(&stage.directory)?
+    {
+        return Err("Installed content changed during download. Retry the installation.".into());
+    }
+    let snapshot = create_snapshot()?;
+    let result = (|| {
+        let destination = fs_safety::checked_join(&plan.game, &plan.destination)?;
+        let mut size = 0;
+        persistence::atomic_write_with(&destination, |output| -> Result<(), String> {
+            let (written, hash) = read_export_file(&stage.directory, &stage.name, |bytes| {
+                std::io::Write::write_all(output, bytes).map_err(|error| error.to_string())
+            })?;
+            if sha512.as_ref().is_some_and(|expected| {
+                !expected.trim().is_empty() && !hash.eq_ignore_ascii_case(expected)
+            }) {
+                return Err("Downloaded content changed before publication.".into());
+            }
+            size = written;
+            Ok(())
+        })?;
+        crate::operations::check_current()?;
+        if let Some(old) = &plan.old {
+            if old != &plan.destination {
+                let old_path = fs_safety::checked_join(&plan.game, old)?;
+                fs::remove_file(old_path).map_err(|error| {
+                    format!("Could not remove the previous content file: {error}")
+                })?;
+            }
+        }
+        sync_content_directory(&fs_safety::checked_join(&plan.game, &plan.root)?)?;
+        if let Some(value) = &mut record {
+            if value["projectId"].as_str().is_some_and(|id| !id.is_empty()) {
+                value["fileSize"] = json!(size);
+                value["downloadUrl"] = json!(url);
+                value["sha512"] = json!(sha512);
+                value["sha1"] = json!(sha1);
+                record_instance_mod(&plan.instance_id, value.clone())?;
+            }
+        }
+        crate::operations::check_current()?;
+        snapshot.commit()?;
+        Ok(plan.safe)
+    })();
+    match result {
+        Ok(name) => {
+            if let Ok(mut cache) = UPDATE_CACHE.lock() {
+                cache.remove(&plan.instance_id);
+            }
+            if let Ok(mut cache) = HASH_CACHE.lock() {
+                cache.remove(&plan.game.join(&plan.destination));
+                if let Some(old) = &plan.old {
+                    cache.remove(&plan.game.join(old));
+                }
+            }
+            Ok(name)
+        }
+        Err(error) => match snapshot.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!(
+                "{error}; restoring the previous content failed: {rollback}. Recover the instance before making further changes."
+            )),
+        },
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -644,8 +928,8 @@ pub async fn check_mod_updates(
     force: Option<bool>,
 ) -> Result<Vec<ModUpdateEntry>, String> {
     let instance =
-        instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
-    let game_root = game_dir(&instance_id);
+        instances::get_instance_by_id(instance_id.clone())?.ok_or("instance not found")?;
+    let game_root = game_dir(&instance_id)?;
 
     // Enumerate enabled content across mods, resource packs and shaders, tagging each
     // file with its content type, and fold (type/name, size, mtime) into a cheap
@@ -1077,10 +1361,21 @@ pub async fn apply_mod_updates(
     instance_id: String,
     updates: Vec<ApplyModUpdate>,
 ) -> Result<Vec<ApplyModUpdateResult>, String> {
+    let owner = instance_id.clone();
+    crate::operations::run(
+        &owner,
+        crate::operations::Kind::Mutation,
+        apply_mod_updates_owned(instance_id, updates),
+    )
+    .await
+}
+
+async fn apply_mod_updates_owned(
+    instance_id: String,
+    updates: Vec<ApplyModUpdate>,
+) -> Result<Vec<ApplyModUpdateResult>, String> {
     use futures_util::StreamExt;
-    let game_root = game_dir(&instance_id);
-    let instance =
-        instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
+    let game_root = game_dir(&instance_id)?;
     let staged_results: Vec<(usize, String, Result<StagedContentUpdate, String>)> =
         futures_util::stream::iter(updates.into_iter().enumerate().map(|(index, update)| {
             let game_root = game_root.clone();
@@ -1111,19 +1406,19 @@ pub async fn apply_mod_updates(
     }
 
     if !committed.is_empty() {
-        let original_records: Vec<Value> = instance
-            .get("mods")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let mut updated_records = original_records.clone();
-        for update in &committed {
-            update_content_record(&mut updated_records, &instance, update);
-        }
-
-        if let Err(metadata_error) =
-            instances::update_instance(instance_id.clone(), json!({ "mods": updated_records }))
-        {
+        let metadata_result = instances::mutate_instance(&instance_id, |instance| {
+            let mut updated_records: Vec<Value> = instance
+                .get("mods")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for update in &committed {
+                update_content_record(&mut updated_records, instance, update);
+            }
+            instance["mods"] = json!(updated_records);
+            Ok(())
+        });
+        if let Err(metadata_error) = metadata_result {
             for update in committed.into_iter().rev() {
                 let filename = update.staged.update.filename.clone();
                 let mut error = format!(
@@ -1199,14 +1494,27 @@ pub async fn mods_verify(
     instance_id: String,
     repair: Option<bool>,
 ) -> Result<Vec<VerifyEntry>, String> {
+    let owner = instance_id.clone();
+    crate::operations::run(
+        &owner,
+        crate::operations::Kind::Mutation,
+        mods_verify_owned(instance_id, repair),
+    )
+    .await
+}
+
+async fn mods_verify_owned(
+    instance_id: String,
+    repair: Option<bool>,
+) -> Result<Vec<VerifyEntry>, String> {
     let repair = repair.unwrap_or(false);
-    let inst = instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
+    let inst = instances::get_instance_by_id(instance_id.clone())?.ok_or("instance not found")?;
     let records: Vec<Value> = inst
         .get("mods")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let game_root = game_dir(&instance_id);
+    let game_root = game_dir(&instance_id)?;
 
     let mut out = Vec::new();
     for record in records {
@@ -1239,11 +1547,9 @@ pub async fn mods_verify(
             (Some(p), Some(hash)) => {
                 let p = p.clone();
                 let hash = hash.clone();
-                let ok = tauri::async_runtime::spawn_blocking(move || {
-                    downloader::file_matches(&p, &hash)
-                })
-                .await
-                .unwrap_or(false);
+                let ok = crate::operations::blocking(move || downloader::file_matches(&p, &hash))
+                    .await
+                    .unwrap_or(false);
                 if ok {
                     "ok"
                 } else {
@@ -1324,22 +1630,311 @@ fn emit_export_progress(app: &tauri::AppHandle, id: &str, current: u64, total: u
     );
 }
 
-/// Recursively collect (absolute path, zip-relative path) pairs under `dir`,
-/// where the relative path is prefixed with `prefix` (forward slashes).
-fn collect_override_files(dir: &Path, prefix: &str, out: &mut Vec<(PathBuf, String)>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let path = e.path();
-        let name = e.file_name().to_string_lossy().to_string();
-        let rel = format!("{prefix}/{name}");
-        if path.is_dir() {
-            collect_override_files(&path, &rel, out);
+const EXPORT_MAX_ENTRIES: usize = 100_000;
+const EXPORT_MAX_DEPTH: usize = 64;
+const EXPORT_MAX_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+
+#[derive(Clone)]
+struct ExportFile {
+    relative: String,
+    size: u64,
+    sha512: String,
+}
+
+#[derive(Default)]
+struct ExportInventory {
+    candidates: Vec<ExportFile>,
+    overrides: Vec<ExportFile>,
+    names: HashSet<String>,
+    visited: usize,
+    bytes: u64,
+}
+
+/// Missing optional roots are allowed, but unreadable, linked and special entries
+/// must never become an apparently complete export or extend its selected scope.
+fn export_metadata(game: &Path, relative: &str) -> Result<Option<fs::Metadata>, String> {
+    let path = fs_safety::checked_join(game, relative)?;
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if !fs_safety::is_link(&metadata) => Ok(Some(metadata)),
+        Ok(_) => Err(format!("Refusing linked instance entry: {relative}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "Could not inspect instance entry {relative}: {error}"
+        )),
+    }
+}
+
+fn read_export_file(
+    game: &Path,
+    relative: &str,
+    mut consume: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(u64, String), String> {
+    let metadata = export_metadata(game, relative)?
+        .filter(fs::Metadata::is_file)
+        .ok_or_else(|| format!("Export file is missing or unsupported: {relative}"))?;
+    if metadata.len() > EXPORT_MAX_BYTES {
+        return Err("Export exceeds the 64 GiB selected-file limit.".into());
+    }
+    let path = fs_safety::checked_join(game, relative)?;
+    let mut input = fs::File::open(&path)
+        .map_err(|error| format!("Could not read export file {relative}: {error}"))?;
+    // Recheck after opening too. Path checks do not coordinate external programs
+    // that replace ancestors; the broader filesystem race review remains required.
+    export_metadata(game, relative)?
+        .filter(fs::Metadata::is_file)
+        .ok_or_else(|| format!("Export file changed while opening it: {relative}"))?;
+    let mut hash = Sha512::new();
+    let mut size = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        crate::operations::check_current()?;
+        let count = input
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not read export file {relative}: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        size = size
+            .checked_add(count as u64)
+            .ok_or("Export file is too large.")?;
+        if size > metadata.len() {
+            return Err(format!("Export file grew while reading it: {relative}"));
+        }
+        hash.update(&buffer[..count]);
+        consume(&buffer[..count])?;
+    }
+    if size != metadata.len() {
+        return Err(format!("Export file changed while reading it: {relative}"));
+    }
+    Ok((size, hex::encode(hash.finalize())))
+}
+
+impl ExportInventory {
+    fn add(&mut self, game: &Path, relative: String, candidate: bool) -> Result<(), String> {
+        if self.names.len() >= EXPORT_MAX_ENTRIES {
+            return Err(format!(
+                "Export exceeds the {EXPORT_MAX_ENTRIES} file limit."
+            ));
+        }
+        if !self.names.insert(relative.to_lowercase()) {
+            return Err(format!(
+                "Export contains duplicate or case-conflicting paths: {relative}"
+            ));
+        }
+        let (size, sha512) = read_export_file(game, &relative, |_| Ok(()))?;
+        self.bytes = self.bytes.checked_add(size).ok_or("Export is too large.")?;
+        if self.bytes > EXPORT_MAX_BYTES {
+            return Err("Export exceeds the 64 GiB selected-file limit.".into());
+        }
+        let file = ExportFile {
+            relative,
+            size,
+            sha512,
+        };
+        if candidate {
+            self.candidates.push(file);
         } else {
-            out.push((path, rel));
+            self.overrides.push(file);
+        }
+        Ok(())
+    }
+}
+
+fn collect_export_directory(
+    game: &Path,
+    relative: &str,
+    depth: usize,
+    extension: Option<&str>,
+    inventory: &mut ExportInventory,
+) -> Result<(), String> {
+    crate::operations::check_current()?;
+    if depth > EXPORT_MAX_DEPTH {
+        return Err(format!(
+            "Export exceeds the {EXPORT_MAX_DEPTH} directory depth limit."
+        ));
+    }
+    let Some(metadata) = export_metadata(game, relative)? else {
+        return Ok(());
+    };
+    if !metadata.is_dir() {
+        return Err(format!("Export folder is not a directory: {relative}"));
+    }
+    let directory = fs_safety::checked_join(game, relative)?;
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(&directory)
+        .map_err(|error| format!("Could not read export folder {relative}: {error}"))?
+    {
+        inventory.visited += 1;
+        if inventory.visited > EXPORT_MAX_ENTRIES {
+            return Err(format!(
+                "Export exceeds the {EXPORT_MAX_ENTRIES} entry limit."
+            ));
+        }
+        entries.push(
+            entry.map_err(|error| {
+                format!("Could not enumerate export folder {relative}: {error}")
+            })?,
+        );
+    }
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let name = entry.file_name();
+        let name = name
+            .to_str()
+            .ok_or("Export filename is not valid Unicode.")?;
+        fs_safety::safe_component(name)?;
+        let child = format!("{relative}/{name}");
+        let metadata = export_metadata(game, &child)?
+            .ok_or_else(|| format!("Export entry disappeared: {child}"))?;
+        if metadata.is_dir() {
+            // Content selection covers direct archives and disabled files only.
+            // Recursive selection belongs to config; do not include unrelated
+            // nested files or the launcher's private update/download staging.
+            if extension.is_none() {
+                collect_export_directory(game, &child, depth + 1, extension, inventory)?;
+            }
+        } else if metadata.is_file() {
+            let candidate = extension.is_some_and(|ext| name.ends_with(ext));
+            if extension.is_some() && !candidate && !name.ends_with(".disabled") {
+                continue;
+            }
+            inventory.add(game, child, candidate)?;
+        } else {
+            return Err(format!("Cannot export unsupported entry: {child}"));
         }
     }
+    Ok(())
+}
+
+fn export_inventory(game: &Path) -> Result<ExportInventory, String> {
+    fs_safety::directory_root(game)?;
+    let mut inventory = ExportInventory::default();
+    for (root, extension) in [
+        ("mods", Some(".jar")),
+        ("resourcepacks", Some(".zip")),
+        ("shaderpacks", Some(".zip")),
+        ("datapacks", Some(".zip")),
+        ("config", None),
+    ] {
+        collect_export_directory(game, root, 0, extension, &mut inventory)?;
+    }
+    for relative in ["options.txt", "servers.dat"] {
+        if export_metadata(game, relative)?.is_some() {
+            inventory.add(game, relative.into(), false)?;
+        }
+    }
+    Ok(inventory)
+}
+
+fn verify_export_file(game: &Path, file: &ExportFile) -> Result<(), String> {
+    let (size, hash) = read_export_file(game, &file.relative, |_| Ok(()))?;
+    if size != file.size || hash != file.sha512 {
+        return Err(format!(
+            "Export file changed since planning: {}. Retry the export.",
+            file.relative
+        ));
+    }
+    Ok(())
+}
+
+fn export_provider_file(version: &Value, sha512: &str) -> Option<Value> {
+    let file = version.get("files")?.as_array()?.iter().find(|file| {
+        file.get("hashes")
+            .and_then(|hashes| hashes.get("sha512"))
+            .and_then(Value::as_str)
+            .map(|hash| hash.eq_ignore_ascii_case(sha512))
+            .unwrap_or(false)
+    })?;
+    let url = file.get("url")?.as_str()?;
+    if url.len() > 2048 {
+        return None;
+    }
+    net::validate_url(url, net::MODRINTH_HOSTS).ok()?;
+    let sha1 = file.get("hashes")?.get("sha1")?.as_str()?;
+    if sha1.len() != 40 || !sha1.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let size = file.get("size")?.as_u64()?;
+    // Retain only bounded fields used by the index. Unrequested keys, provider
+    // descriptions and unrelated version files must not accumulate across chunks.
+    Some(json!({"url": url, "sha1": sha1, "size": size}))
+}
+
+fn verify_export_inventory(
+    game: &Path,
+    referenced: &[ExportFile],
+    overrides: &[ExportFile],
+) -> Result<(), String> {
+    let current = export_inventory(game)?;
+    let expected = referenced
+        .iter()
+        .chain(overrides)
+        .map(|file| (file.relative.as_str(), file))
+        .collect::<HashMap<_, _>>();
+    if current.candidates.len() + current.overrides.len() != expected.len()
+        || current
+            .candidates
+            .iter()
+            .chain(&current.overrides)
+            .any(|file| {
+                expected.get(file.relative.as_str()).is_none_or(|previous| {
+                    file.size != previous.size || file.sha512 != previous.sha512
+                })
+            })
+    {
+        return Err("Selected instance files changed during export. Retry the export.".into());
+    }
+    Ok(())
+}
+
+fn write_export_archive(
+    game: &Path,
+    destination: &Path,
+    index: &Value,
+    referenced: &[ExportFile],
+    overrides: &[ExportFile],
+    mut progress: impl FnMut(u64, u64),
+) -> Result<(), String> {
+    use std::io::Write;
+    // Provider-backed files are part of the inventory too; a lost/changed file
+    // must not disappear just because its bytes are represented by a download URL.
+    for file in referenced {
+        verify_export_file(game, file)?;
+    }
+    // Reserve the final unit for durable publication. The renderer treats 100%
+    // as completion, so finishing ZIP entries alone must not emit it.
+    let total = overrides.len() as u64 + 2;
+    persistence::atomic_write_with(destination, |output| -> Result<(), String> {
+        let mut zip = zip::ZipWriter::new(output);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(true);
+        zip.start_file("modrinth.index.json", options)
+            .map_err(|error| error.to_string())?;
+        serde_json::to_writer_pretty(&mut zip, index).map_err(|error| error.to_string())?;
+        progress(1, total);
+        for (position, file) in overrides.iter().enumerate() {
+            zip.start_file(format!("overrides/{}", file.relative), options)
+                .map_err(|error| error.to_string())?;
+            let (size, hash) = read_export_file(game, &file.relative, |bytes| {
+                zip.write_all(bytes).map_err(|error| error.to_string())
+            })?;
+            if size != file.size || hash != file.sha512 {
+                return Err(format!(
+                    "Export file changed since planning: {}. Retry the export.",
+                    file.relative
+                ));
+            }
+            progress(position as u64 + 2, total);
+        }
+        zip.finish()
+            .map_err(|error| format!("Could not finish export archive: {error}"))?;
+        verify_export_inventory(game, referenced, overrides)?;
+        crate::operations::check_current()?;
+        Ok(())
+    })?;
+    progress(total, total);
+    Ok(())
 }
 
 /// Export an instance as a Modrinth-format modpack (.mrpack): content files that
@@ -1371,9 +1966,36 @@ async fn export_mrpack_inner(
     dest_path: String,
     version_id: String,
 ) -> Result<String, String> {
+    let owner = instance_id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Snapshot, async move {
+        export_mrpack_owned(app, instance_id, dest_path, version_id).await
+    })
+    .await
+}
+
+async fn export_mrpack_owned(
+    app: tauri::AppHandle,
+    instance_id: String,
+    dest_path: String,
+    version_id: String,
+) -> Result<String, String> {
     let instance =
-        instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
-    let game_root = game_dir(&instance_id);
+        instances::get_instance_by_id(instance_id.clone())?.ok_or("instance not found")?;
+    let game_root = game_dir(&instance_id)?;
+    let destination = std::path::absolute(&dest_path).map_err(|error| error.to_string())?;
+    let canonical_destination = fs_safety::canonical_path(&destination)?;
+    for source in [
+        game_root.clone(),
+        instances::resolve_instance_dir(&instance_id)?,
+    ] {
+        if canonical_destination.starts_with(fs_safety::canonical_path(&source)?) {
+            return Err(
+                "Choose an export destination outside the instance's game and metadata folders."
+                    .into(),
+            );
+        }
+    }
+    crate::operations::claim_paths(std::slice::from_ref(&destination))?;
     let name = instance
         .get("name")
         .and_then(Value::as_str)
@@ -1387,119 +2009,81 @@ async fn export_mrpack_inner(
 
     emit_export_progress(&app, &instance_id, 0, 1);
 
-    // Enabled content files are candidates for Modrinth `files` entries; disabled
-    // ones go straight to overrides (keeping the .disabled suffix so the pack
-    // round-trips through import).
-    let scan: [(&str, &str); 4] = [
-        ("mods", ".jar"),
-        ("resourcepacks", ".zip"),
-        ("shaderpacks", ".zip"),
-        ("datapacks", ".zip"),
-    ];
-    let mut candidates: Vec<(PathBuf, String)> = Vec::new(); // (path, subdir/filename)
-    let mut overrides: Vec<(PathBuf, String)> = Vec::new(); // (path, zip-relative path)
-    for (subdir, ext) in scan {
-        let dir = game_root.join(subdir);
-        let Ok(read) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in read.flatten() {
-            let filename = entry.file_name().to_string_lossy().to_string();
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if filename.ends_with(ext) {
-                candidates.push((path, format!("{subdir}/{filename}")));
-            } else if filename.ends_with(".disabled") {
-                overrides.push((path, format!("overrides/{subdir}/{filename}")));
-            }
-        }
-    }
-    // Config and client settings travel as overrides.
-    collect_override_files(
-        &game_root.join("config"),
-        "overrides/config",
-        &mut overrides,
-    );
-    for extra in ["options.txt", "servers.dat"] {
-        let p = game_root.join(extra);
-        if p.is_file() {
-            overrides.push((p, format!("overrides/{extra}")));
-        }
-    }
-
-    // Hash candidates off the async runtime, reusing the mtime/size hash cache.
-    let hashed: Vec<(PathBuf, String, String)> = {
-        let candidates = candidates.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let mut out = Vec::new();
-            for (path, rel) in candidates {
-                if let Ok(meta) = fs::metadata(&path) {
-                    if let Ok(hash) = sha512_file_cached(&path, &meta) {
-                        out.push((path, rel, hash));
-                    }
-                }
-            }
-            out
-        })
-        .await
-        .map_err(|e| e.to_string())?
+    // All selected files are checked and hashed off the async runtime. Export
+    // integrity must not depend on a cache keyed only by modification time/size.
+    let ExportInventory {
+        candidates,
+        mut overrides,
+        ..
+    } = {
+        let game = game_root.clone();
+        crate::operations::blocking(move || export_inventory(&game))
+            .await
+            .map_err(|e| e.to_string())??
     };
 
     // Resolve which files Modrinth knows. A lookup failure downgrades everything
     // to overrides rather than failing the export.
     let mut known_map: HashMap<String, Value> = HashMap::new();
-    if !hashed.is_empty() {
-        let hashes: Vec<String> = hashed.iter().map(|(_, _, h)| h.clone()).collect();
-        let res = reqwest::Client::new()
-            .post("https://api.modrinth.com/v2/version_files")
-            .header("accept", "application/json")
-            .json(&json!({ "hashes": hashes, "algorithm": "sha512" }))
-            .send()
+    if !candidates.is_empty() {
+        let hashes: Vec<&str> = candidates.iter().map(|file| file.sha512.as_str()).collect();
+        // Keep request/response work bounded even for large instances. A failed
+        // optional lookup embeds the selected files, while cancellation aborts.
+        let lookup_deadline = Instant::now() + Duration::from_secs(120);
+        for chunk in hashes.chunks(500) {
+            let Some(remaining) = lookup_deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+            let result = tokio::time::timeout(
+                remaining,
+                downloader::post_json_query(
+                    "https://api.modrinth.com/v2/version_files",
+                    net::MODRINTH_HOSTS,
+                    &json!({ "hashes": chunk, "algorithm": "sha512" }),
+                    crate::operations::current_cancellation_check(),
+                ),
+            )
             .await;
-        if let Ok(res) = res {
-            if net::validate_url(res.url().as_str(), net::MODRINTH_HOSTS).is_ok()
-                && res.status().is_success()
-            {
-                if let Ok(map) = res.json::<HashMap<String, Value>>().await {
-                    known_map = map;
+            if let Ok(Ok(value)) = result {
+                for hash in chunk {
+                    if let Some(file) = value.get(*hash).and_then(|v| export_provider_file(v, hash))
+                    {
+                        known_map.insert((*hash).to_string(), file);
+                    }
                 }
+            } else {
+                crate::operations::check_current()?;
+                break;
             }
+            crate::operations::check_current()?;
         }
     }
 
     // Split candidates into index `files` (Modrinth-known) and overrides.
     let mut index_files: Vec<Value> = Vec::new();
-    for (path, rel, hash) in hashed {
-        let matched = known_map.get(&hash).and_then(|version| {
-            let files = version.get("files")?.as_array()?;
-            files.iter().find(|f| {
-                f.get("hashes")
-                    .and_then(|h| h.get("sha512"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|s| s.eq_ignore_ascii_case(&hash))
-            })
-        });
-        let entry = matched.and_then(|f| {
+    let mut referenced = Vec::new();
+    for file in candidates {
+        let entry = known_map.get(&file.sha512).and_then(|f| {
             let url = f.get("url").and_then(Value::as_str)?;
-            net::validate_url(url, net::MODRINTH_HOSTS).ok()?;
-            let sha1 = f
-                .get("hashes")
-                .and_then(|h| h.get("sha1"))
-                .and_then(Value::as_str)?;
+            let sha1 = f.get("sha1").and_then(Value::as_str)?;
             let size = f.get("size").and_then(Value::as_u64)?;
+            if size != file.size {
+                return None;
+            }
             Some(json!({
-                "path": rel,
-                "hashes": { "sha1": sha1, "sha512": hash },
+                "path": file.relative,
+                "hashes": { "sha1": sha1, "sha512": file.sha512 },
                 "env": { "client": "required", "server": "required" },
                 "downloads": [url],
                 "fileSize": size,
             }))
         });
         match entry {
-            Some(e) => index_files.push(e),
-            None => overrides.push((path, format!("overrides/{rel}"))),
+            Some(entry) => {
+                index_files.push(entry);
+                referenced.push(file);
+            }
+            None => overrides.push(file),
         }
     }
 
@@ -1524,36 +2108,17 @@ async fn export_mrpack_inner(
 
     // Write the archive off the main thread, streaming the shared export
     // progress event so the existing UI progress bar just works.
-    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-        use std::io::Write;
-        let total = overrides.len() as u64 + 1;
-        let file = fs::File::create(&dest_path).map_err(|e| {
-            format!("Couldn't write to {dest_path}: {e}. Pick a different folder (e.g. Downloads).")
-        })?;
-        let mut zip = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .large_file(true);
-
-        zip.start_file("modrinth.index.json", opts)
-            .map_err(|e| e.to_string())?;
-        let index_text = serde_json::to_string_pretty(&index).map_err(|e| e.to_string())?;
-        zip.write_all(index_text.as_bytes())
-            .map_err(|e| e.to_string())?;
-        let mut done = 1u64;
-        emit_export_progress(&app, &instance_id, done, total);
-
-        for (path, rel) in overrides {
-            // Skip unreadable files (e.g. locked by a running game) rather than
-            // aborting the whole export.
-            if let Ok(bytes) = fs::read(&path) {
-                zip.start_file(rel, opts).map_err(|e| e.to_string())?;
-                zip.write_all(&bytes).map_err(|e| e.to_string())?;
-            }
-            done += 1;
-            emit_export_progress(&app, &instance_id, done, total);
-        }
-        zip.finish().map_err(|e| e.to_string())?;
+    crate::operations::blocking(move || -> Result<String, String> {
+        write_export_archive(
+            &game_root,
+            &destination,
+            &index,
+            &referenced,
+            &overrides,
+            |done, total| {
+                emit_export_progress(&app, &instance_id, done, total);
+            },
+        )?;
         Ok(dest_path)
     })
     .await
@@ -1562,32 +2127,85 @@ async fn export_mrpack_inner(
 
 // ── mod profiles (saved enabled-mod sets) ────────────────────────────────────
 
-fn profiles_path(instance_id: &str) -> PathBuf {
-    instances::resolve_instance_dir(instance_id).join("mod-profiles.json")
-}
-
-fn read_profiles(instance_id: &str) -> Vec<Value> {
-    fs::read_to_string(profiles_path(instance_id))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| v.get("profiles").and_then(Value::as_array).cloned())
-        .unwrap_or_default()
-}
-
-fn write_profiles(instance_id: &str, profiles: &[Value]) -> Result<(), String> {
-    let path = profiles_path(instance_id);
-    if let Some(p) = path.parent() {
-        fs::create_dir_all(p).ok();
-    }
-    fs::write(
-        path,
-        serde_json::to_vec_pretty(&json!({ "profiles": profiles })).map_err(|e| e.to_string())?,
+fn profiles_path(instance_id: &str) -> Result<PathBuf, String> {
+    crate::fs_safety::checked_join(
+        &instances::resolve_instance_dir(instance_id)?,
+        "mod-profiles.json",
     )
-    .map_err(|e| e.to_string())
+}
+
+fn validate_profiles(store: &Value) -> Result<(), String> {
+    let profiles = store
+        .get("profiles")
+        .and_then(Value::as_array)
+        .ok_or("Invalid saved mod profiles. Restore a valid backup before changing profiles.")?;
+    let mut ids = HashSet::new();
+    for profile in profiles {
+        let id = profile
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .ok_or("Saved mod profile is missing its ID.")?;
+        if !ids.insert(id) || profile.get("name").and_then(Value::as_str).is_none() {
+            return Err("Saved mod profiles contain duplicate IDs or invalid names.".into());
+        }
+        profile_enabled_files(profile)?;
+    }
+    Ok(())
+}
+
+fn profile_enabled_files(profile: &Value) -> Result<HashSet<String>, String> {
+    let files = profile
+        .get("enabledFiles")
+        .and_then(Value::as_array)
+        .ok_or("Saved mod profile has an invalid enabled-file list.")?;
+    let mut names = HashSet::new();
+    let mut portable_names = HashSet::new();
+    for file in files {
+        let name = safe_content_name(
+            file.as_str()
+                .ok_or("Saved mod profile filename is invalid.")?,
+        )?;
+        if !portable_names.insert(name.to_lowercase()) {
+            return Err("Saved mod profile has duplicate or case-conflicting filenames.".into());
+        }
+        names.insert(name);
+    }
+    Ok(names)
+}
+
+fn read_profiles(instance_id: &str) -> Result<Vec<Value>, String> {
+    let store: Value =
+        persistence::read_json(&profiles_path(instance_id)?, || json!({"profiles": []}))?;
+    validate_profiles(&store)?;
+    Ok(store["profiles"]
+        .as_array()
+        .ok_or("Invalid saved mod profiles.")?
+        .clone())
+}
+
+fn update_profiles<R>(
+    instance_id: &str,
+    update: impl FnOnce(&mut Vec<Value>) -> Result<R, String>,
+) -> Result<R, String> {
+    persistence::update_json(
+        &profiles_path(instance_id)?,
+        || json!({"profiles": []}),
+        |store| {
+            validate_profiles(store)?;
+            let result = update(
+                store["profiles"]
+                    .as_array_mut()
+                    .ok_or("Invalid saved mod profiles.")?,
+            )?;
+            validate_profiles(store)?;
+            Ok(result)
+        },
+    )
 }
 
 #[tauri::command]
-pub fn mods_profiles_list(instance_id: String) -> Vec<Value> {
+pub fn mods_profiles_list(instance_id: String) -> Result<Vec<Value>, String> {
     read_profiles(&instance_id)
 }
 
@@ -1597,68 +2215,156 @@ pub fn mods_profiles_save(
     name: String,
     enabled_files: Vec<String>,
 ) -> Result<Value, String> {
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mods_profiles_save_owned(instance_id, name, enabled_files)
+    })
+}
+
+fn mods_profiles_save_owned(
+    instance_id: String,
+    name: String,
+    enabled_files: Vec<String>,
+) -> Result<Value, String> {
+    if name.trim().is_empty() {
+        return Err("Profile name is required.".into());
+    }
     let profile = json!({ "id": uuid::Uuid::new_v4().to_string(), "name": name, "enabledFiles": enabled_files });
-    let mut profiles = read_profiles(&instance_id);
-    profiles.push(profile.clone());
-    write_profiles(&instance_id, &profiles)?;
+    update_profiles(&instance_id, |profiles| {
+        profiles.push(profile.clone());
+        Ok(())
+    })?;
     Ok(profile)
 }
 
 /// Enable/disable each .jar in the mods dir to match the profile's enabled set.
 #[tauri::command]
-pub fn mods_profiles_apply(instance_id: String, profile_id: String) -> Result<(), String> {
-    let profiles = read_profiles(&instance_id);
+pub async fn mods_profiles_apply(instance_id: String, profile_id: String) -> Result<(), String> {
+    let owner = instance_id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Mutation, async move {
+        crate::operations::blocking(move || mods_profiles_apply_owned(instance_id, profile_id))
+            .await
+            .map_err(|error| format!("Could not apply the mod profile: {error}"))?
+    })
+    .await
+}
+
+fn mods_profiles_apply_owned(instance_id: String, profile_id: String) -> Result<(), String> {
+    let snapshot_id = instance_id.clone();
+    mods_profiles_apply_with_snapshot(instance_id, profile_id, move || {
+        crate::snapshots::create_content_change(&snapshot_id, "mods")
+    })
+}
+
+fn mods_profiles_apply_with_snapshot(
+    instance_id: String,
+    profile_id: String,
+    create_snapshot: impl FnOnce() -> Result<crate::snapshots::SnapshotHandle, String>,
+) -> Result<(), String> {
+    let profiles = read_profiles(&instance_id)?;
     let profile = profiles
         .iter()
         .find(|p| p["id"].as_str() == Some(profile_id.as_str()))
         .ok_or(format!("Profile not found: {profile_id}"))?;
-    let enabled: std::collections::HashSet<String> = profile["enabledFiles"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let mods_dir = game_dir(&instance_id).join("mods");
-    if !mods_dir.exists() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(&mods_dir)
-        .map_err(|e| e.to_string())?
-        .flatten()
-    {
-        let path = entry.path();
-        if path.is_dir() {
-            continue;
-        }
-        let fname = entry.file_name().to_string_lossy().to_string();
+    let enabled = profile_enabled_files(profile)?;
+    let enabled_names = enabled
+        .iter()
+        .map(|name| name.to_lowercase())
+        .collect::<HashSet<_>>();
+    let game = game_dir(&instance_id)?;
+    let mods_dir = fs_safety::checked_join(&game, "mods")?;
+    let mut installed = HashSet::new();
+    let mut mutations = Vec::new();
+    let entries = match fs::read_dir(&mods_dir) {
+        Ok(entries) => Some(entries),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("Could not read installed mods: {error}")),
+    };
+    for entry in entries.into_iter().flatten() {
+        crate::operations::check_current()?;
+        let entry =
+            entry.map_err(|error| format!("Could not enumerate installed mods: {error}"))?;
+        let name = entry.file_name();
+        let fname = name
+            .to_str()
+            .ok_or("Installed mod filename is not valid Unicode.")?;
         let is_disabled = fname.ends_with(".disabled");
-        let base = fname
-            .strip_suffix(".disabled")
-            .unwrap_or(&fname)
-            .to_string();
+        let base = fname.strip_suffix(".disabled").unwrap_or(fname).to_string();
         if !base.ends_with(".jar") {
             continue;
         }
-        let should_enable = enabled.contains(&base);
+        safe_content_name(fname)?;
+        let relative = format!("mods/{fname}");
+        if !export_metadata(&game, &relative)?.is_some_and(|metadata| metadata.is_file()) {
+            return Err(format!("Installed mod is missing or unsupported: {fname}"));
+        }
+        if !installed.insert(base.to_lowercase()) {
+            return Err(format!(
+                "Installed mod has conflicting enabled/disabled files: {base}"
+            ));
+        }
+        let should_enable = enabled_names.contains(&base.to_lowercase());
         if should_enable && is_disabled {
-            let _ = fs::rename(&path, mods_dir.join(&base));
+            mutations.push((relative, format!("mods/{base}")));
         } else if !should_enable && !is_disabled {
-            let _ = fs::rename(&path, mods_dir.join(format!("{base}.disabled")));
+            mutations.push((relative, format!("mods/{base}.disabled")));
         }
     }
-    Ok(())
+    if let Some(missing) = enabled
+        .iter()
+        .filter(|name| !installed.contains(&name.to_lowercase()))
+        .min()
+    {
+        return Err(format!(
+            "Saved profile requires a mod that is not installed: {missing}"
+        ));
+    }
+    if mutations.is_empty() {
+        return Ok(());
+    }
+    mutations.sort();
+    crate::operations::check_current()?;
+    let snapshot = create_snapshot()?;
+    let result = (|| {
+        for (source, target) in mutations {
+            crate::operations::check_current()?;
+            if export_metadata(&game, &target)?.is_some() {
+                return Err(format!("Profile destination already exists: {target}"));
+            }
+            let source = fs_safety::checked_join(&game, &source)?;
+            let target = fs_safety::checked_join(&game, &target)?;
+            fs::rename(source, target)
+                .map_err(|error| format!("Could not change the mod's enabled state: {error}"))?;
+        }
+        sync_content_directory(&mods_dir)?;
+        crate::operations::check_current()?;
+        snapshot.commit()
+    })();
+    match result {
+        Ok(()) => {
+            if let Ok(mut cache) = UPDATE_CACHE.lock() { cache.remove(&instance_id); }
+            Ok(())
+        }
+        Err(error) => match snapshot.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; rollback failed: {rollback}. Recover the instance before making further changes.")),
+        },
+    }
 }
 
 #[tauri::command]
 pub fn mods_profiles_delete(instance_id: String, profile_id: String) -> Result<(), String> {
-    let profiles: Vec<Value> = read_profiles(&instance_id)
-        .into_iter()
-        .filter(|p| p["id"].as_str() != Some(profile_id.as_str()))
-        .collect();
-    write_profiles(&instance_id, &profiles)
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mods_profiles_delete_owned(instance_id, profile_id)
+    })
+}
+
+fn mods_profiles_delete_owned(instance_id: String, profile_id: String) -> Result<(), String> {
+    update_profiles(&instance_id, |profiles| {
+        profiles.retain(|profile| profile["id"].as_str() != Some(profile_id.as_str()));
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -1667,49 +2373,151 @@ pub fn mods_profiles_rename(
     profile_id: String,
     new_name: String,
 ) -> Result<Value, String> {
-    let mut profiles = read_profiles(&instance_id);
-    let mut updated = None;
-    for p in profiles.iter_mut() {
-        if p["id"].as_str() == Some(profile_id.as_str()) {
-            p["name"] = json!(new_name);
-            updated = Some(p.clone());
-        }
+    let owner = instance_id.clone();
+    crate::operations::run_sync(&owner, crate::operations::Kind::Mutation, || {
+        mods_profiles_rename_owned(instance_id, profile_id, new_name)
+    })
+}
+
+fn mods_profiles_rename_owned(
+    instance_id: String,
+    profile_id: String,
+    new_name: String,
+) -> Result<Value, String> {
+    if new_name.trim().is_empty() {
+        return Err("Profile name is required.".into());
     }
-    let u = updated.ok_or(format!("Profile not found: {profile_id}"))?;
-    write_profiles(&instance_id, &profiles)?;
-    Ok(u)
+    update_profiles(&instance_id, |profiles| {
+        let profile = profiles
+            .iter_mut()
+            .find(|p| p["id"].as_str() == Some(profile_id.as_str()))
+            .ok_or(format!("Profile not found: {profile_id}"))?;
+        profile["name"] = json!(new_name);
+        Ok(profile.clone())
+    })
 }
 
 #[tauri::command]
-pub fn uninstall_mod(instance_id: String, project_id: String) -> Result<(), String> {
-    let inst = instances::get_instance_by_id(instance_id.clone()).ok_or("instance not found")?;
-    let mods: Vec<Value> = inst
-        .get("mods")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+pub async fn uninstall_mod(instance_id: String, project_id: String) -> Result<(), String> {
+    let owner = instance_id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Mutation, async move {
+        crate::operations::blocking(move || uninstall_mod_owned(instance_id, project_id))
+            .await
+            .map_err(|error| format!("Could not uninstall the mod: {error}"))?
+    })
+    .await
+}
 
-    if let Some(m) = mods
+fn uninstall_mod_owned(instance_id: String, project_id: String) -> Result<(), String> {
+    let snapshot_id = instance_id.clone();
+    uninstall_mod_with_snapshot(instance_id, project_id, move || {
+        crate::snapshots::create_content_change(&snapshot_id, "mods")
+    })
+}
+
+fn uninstall_mod_with_snapshot(
+    instance_id: String,
+    project_id: String,
+    create_snapshot: impl FnOnce() -> Result<crate::snapshots::SnapshotHandle, String>,
+) -> Result<(), String> {
+    if project_id.is_empty() {
+        return Err("Mod project ID is required.".into());
+    }
+    let inst = instances::get_instance_by_id(instance_id.clone())?.ok_or("instance not found")?;
+    let mods = match inst.get("mods") {
+        None | Some(Value::Null) => return Ok(()),
+        Some(Value::Array(records)) => records,
+        _ => return Err("Invalid instance content metadata.".into()),
+    };
+    let is_mod = |record: &Value| match record["contentType"].as_str() {
+        None | Some("mod") => true,
+        _ => false,
+    };
+    let selected = mods
         .iter()
-        .find(|m| m.get("projectId").and_then(Value::as_str) == Some(project_id.as_str()))
-    {
-        if let Some(fname) = m.get("fileName").and_then(Value::as_str) {
-            if let Some(safe) = Path::new(fname).file_name() {
-                let p = game_dir(&instance_id).join("mods").join(safe);
-                if p.exists() {
-                    let _ = fs::remove_file(&p);
-                }
+        .filter(|record| record["projectId"].as_str() == Some(&project_id) && is_mod(record))
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return Ok(());
+    }
+    if selected.len() != 1 {
+        return Err("Instance has conflicting records for this mod project.".into());
+    }
+    let name = safe_content_name(
+        selected[0]["fileName"]
+            .as_str()
+            .ok_or("Installed mod filename is missing.")?,
+    )?;
+    if mods.iter().any(|record| {
+        is_mod(record)
+            && record["fileName"].as_str() == Some(&name)
+            && record["projectId"].as_str() != Some(&project_id)
+    }) {
+        return Err(
+            "Another mod record uses this filename. Verify the instance before uninstalling it."
+                .into(),
+        );
+    }
+    let game = game_dir(&instance_id)?;
+    let mut files = Vec::new();
+    for relative in [format!("mods/{name}"), format!("mods/{name}.disabled")] {
+        if let Some(metadata) = export_metadata(&game, &relative)? {
+            if !metadata.is_file() || !files.is_empty() {
+                return Err("Installed mod has conflicting or unsupported files.".into());
             }
+            files.push(relative);
         }
     }
+    crate::operations::check_current()?;
+    let snapshot = create_snapshot()?;
+    let result = (|| {
+        for relative in files {
+            crate::operations::check_current()?;
+            fs::remove_file(fs_safety::checked_join(&game, &relative)?)
+                .map_err(|error| format!("Could not remove the installed mod: {error}"))?;
+        }
+        sync_content_directory(&fs_safety::checked_join(&game, "mods")?)?;
+        instances::mutate_instance(&instance_id, |instance| {
+            let mods = instance["mods"]
+                .as_array_mut()
+                .ok_or("Invalid instance content metadata.")?;
+            // Other content types sharing a project ID remain discoverable.
+            mods.retain(|record| {
+                !(record["projectId"].as_str() == Some(&project_id)
+                    && record["fileName"].as_str() == Some(&name)
+                    && is_mod(record))
+            });
+            Ok(())
+        })?;
+        crate::operations::check_current()?;
+        snapshot.commit()
+    })();
 
-    let remaining: Vec<Value> = mods
-        .into_iter()
-        .filter(|m| m.get("projectId").and_then(Value::as_str) != Some(project_id.as_str()))
-        .collect();
-    instances::update_instance(instance_id, json!({ "mods": remaining }))?;
-    Ok(())
+    match result {
+        Ok(()) => {
+            if let Ok(mut cache) = UPDATE_CACHE.lock() {
+                cache.remove(&instance_id);
+            }
+            Ok(())
+        }
+        Err(error) => match snapshot.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; rollback failed: {rollback}. Recover the instance before making further changes.")),
+        },
+    }
 }
+
+#[cfg(test)]
+#[path = "mods_export_tests.rs"]
+mod export_tests;
+
+#[cfg(test)]
+#[path = "mods_install_tests.rs"]
+mod install_tests;
+
+#[cfg(test)]
+#[path = "mods_profile_tests.rs"]
+mod profile_tests;
 
 #[cfg(test)]
 mod tests {

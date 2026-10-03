@@ -182,13 +182,15 @@ fn status_from_vault() -> Result<CreatorStatus, String> {
 
 #[tauri::command]
 pub async fn creator_status() -> Result<CreatorStatus, String> {
-    tauri::async_runtime::spawn_blocking(status_from_vault)
+    let _maintenance = crate::maintenance::shared()?;
+    crate::operations::blocking(status_from_vault)
         .await
         .map_err(|e| format!("Creator status task failed: {e}"))?
 }
 
 #[tauri::command]
 pub async fn creator_connect_from_file(path: String) -> Result<CreatorConnection, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let source = PathBuf::from(&path);
     if fs::symlink_metadata(&source)
         .map_err(|e| format!("Could not inspect token file: {e}"))?
@@ -232,7 +234,7 @@ pub async fn creator_connect_from_file(path: String) -> Result<CreatorConnection
     let stored_token = Zeroizing::new(token.to_string());
     let stored_username = username.clone();
     let stored_avatar = avatar.to_string();
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::operations::blocking(move || {
         secrets::store_secrets(&[
             (TOKEN_KEY, stored_token.as_str()),
             (USERNAME_KEY, stored_username.as_str()),
@@ -251,7 +253,8 @@ pub async fn creator_connect_from_file(path: String) -> Result<CreatorConnection
 
 #[tauri::command]
 pub async fn creator_disconnect() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| {
+    let _maintenance = crate::maintenance::shared()?;
+    crate::operations::blocking(|| {
         secrets::store_secrets(&[(TOKEN_KEY, ""), (USERNAME_KEY, ""), (AVATAR_KEY, "")])
     })
     .await
@@ -349,8 +352,9 @@ pub async fn creator_publish(
     app: tauri::AppHandle,
     input: CreatorPublishInput,
 ) -> Result<CreatorPublishResult, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let token = stored_token()?;
-    let instance = instances::get_instance_by_id(input.instance_id.clone())
+    let instance = instances::get_instance_by_id(input.instance_id.clone())?
         .ok_or("Choose an instance that still exists.")?;
     if !instance
         .get("isInstalled")

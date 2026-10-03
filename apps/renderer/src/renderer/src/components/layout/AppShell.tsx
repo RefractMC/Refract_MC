@@ -5,6 +5,10 @@ import { Info, X } from '@/components/ui/Icon'
 import { TitleBar } from './TitleBar'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
+import { StorageNotice } from './StorageNotice'
+import { RecoveryNotice } from './RecoveryNotice'
+import { WindowNotice } from './WindowNotice'
+import { AppUpdateNotice } from './AppUpdateNotice'
 import { InstallFromLinkDialog } from '@/components/sharing/InstallFromLinkDialog'
 import { api, supportsWindowResizeDragging } from '@/lib/api'
 import { SocialInviteDialog } from '@/components/sharing/SocialInviteDialog'
@@ -168,6 +172,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar />
       <div style={{ gridRow:'2/3', gridColumn:'2/3', display:'flex', flexDirection:'column', minHeight:0, minWidth:0, overflow:'hidden', background:'transparent', position:'relative' }}>
         {showMigrationNotice && <MigrationNotice120 onDismiss={dismissMigrationNotice} />}
+          <WindowNotice />
+          <AppUpdateNotice />
+          <StorageNotice />
+        <RecoveryNotice />
         <div
           key={pathname}
           className="app-scroll"

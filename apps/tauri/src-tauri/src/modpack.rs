@@ -6,10 +6,13 @@
 //! new instance id, or an error) over `modpack://done`.
 
 use crate::cf::{self, CfRequiredFile};
-use crate::{config, downloader, external, instances, mc_install, mods, net, paths, snapshots};
+use crate::{
+    config, downloader, external, fs_safety, instances, mc_install, mods, net, paths, snapshots,
+};
 use flate2::read::GzDecoder;
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -19,6 +22,32 @@ use tauri::{AppHandle, Emitter};
 
 const FTB: &str = "https://api.modpacks.ch/public";
 const MOJANG_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
+
+/// Every import owns its archive and extraction directory, even when two
+/// instances install the same pack. Dropping a future cannot clean another
+/// import's files. Interrupted-process retention is handled separately.
+struct PackStage(PathBuf);
+
+impl PackStage {
+    fn create() -> Result<Self, String> {
+        Self::at(&paths::data_dir().join("cache"))
+    }
+
+    fn at(cache: &Path) -> Result<Self, String> {
+        crate::operations::check_current()?;
+        fs_safety::directory_root(cache)?;
+        fs::create_dir_all(cache).map_err(|error| error.to_string())?;
+        let directory = fs_safety::checked_join(cache, &format!("pack-{}", uuid::Uuid::new_v4()))?;
+        fs::create_dir(&directory).map_err(|error| error.to_string())?;
+        Ok(Self(directory))
+    }
+}
+
+impl Drop for PackStage {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct ModpackProgress {
@@ -79,18 +108,17 @@ fn done_err(app: &AppHandle, project_id: &str, error: &str) {
 // ── shared helpers ───────────────────────────────────────────────────────────
 
 async fn get_json(url: &str) -> Result<Value, String> {
-    let allowed_hosts = &[net::MINECRAFT_HOSTS, net::MODRINTH_HOSTS, net::FTB_HOSTS];
-    net::validate_url_any(url, allowed_hosts)?;
-    let res = downloader::http()
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    net::validate_url_any(res.url().as_str(), allowed_hosts)?;
-    if !res.status().is_success() {
-        return Err(format!("HTTP {} for {url}", res.status()));
+    for hosts in [net::MINECRAFT_HOSTS, net::MODRINTH_HOSTS, net::FTB_HOSTS] {
+        if net::validate_url(url, hosts).is_ok() {
+            return downloader::get_json(
+                url,
+                hosts,
+                crate::operations::current_cancellation_check(),
+            )
+            .await;
+        }
     }
-    res.json().await.map_err(|e| e.to_string())
+    Err("Modpack metadata URL is not allowed.".into())
 }
 
 fn string_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
@@ -232,6 +260,20 @@ async fn resolve_blocked_cf_files(
     unresolved
 }
 
+fn validate_cf_manifest_files(manifest_files: &[Value]) -> Result<(), String> {
+    for file in manifest_files {
+        if file["projectID"].as_u64().filter(|id| *id > 0).is_none()
+            || file["fileID"].as_u64().filter(|id| *id > 0).is_none()
+        {
+            return Err(
+                "CurseForge manifest contains a file without valid project/file identifiers."
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn download_and_audit_cf_mods(
     app: &AppHandle,
     project_id: &str,
@@ -242,6 +284,7 @@ async fn download_and_audit_cf_mods(
     timer: &downloader::InstallTimer,
 ) -> Result<(), String> {
     use futures_util::StreamExt;
+    validate_cf_manifest_files(manifest_files)?;
     let required = cf::cf_required_files(manifest_files).await;
     let unverifiable = required
         .iter()
@@ -323,19 +366,29 @@ async fn download_and_audit_cf_mods(
 }
 
 fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
+    crate::operations::check_current()?;
+    fs_safety::directory_root(dest)?;
     let file = File::open(zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     for i in 0..zip.len() {
+        crate::operations::check_current()?;
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let out = match entry.enclosed_name() {
-            Some(p) => dest.join(p),
-            None => continue,
-        };
+        if entry.is_dir() && matches!(entry.name(), "." | "./") {
+            continue;
+        }
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err("Archive contains a linked filesystem entry.".into());
+        }
+        let out = fs_safety::checked_join(dest, entry.name())
+            .map_err(|error| format!("Unsafe archive entry {}: {error}", entry.name()))?;
         if entry.is_dir() {
-            fs::create_dir_all(&out).ok();
+            fs::create_dir_all(&out).map_err(|e| e.to_string())?;
         } else {
             if let Some(p) = out.parent() {
-                fs::create_dir_all(p).ok();
+                fs::create_dir_all(p).map_err(|e| e.to_string())?;
             }
             let mut f = File::create(&out).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
@@ -344,63 +397,8 @@ fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn copy_dir(src: &Path, dst: &Path) {
-    if !src.exists() {
-        return;
-    }
-    let entries = match fs::read_dir(src) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            fs::create_dir_all(&to).ok();
-            copy_dir(&from, &to);
-        } else {
-            if let Some(p) = to.parent() {
-                fs::create_dir_all(p).ok();
-            }
-            fs::copy(&from, &to).ok();
-        }
-    }
-}
-
 fn copy_dir_checked(src: &Path, dst: &Path) -> Result<(), String> {
-    if !src.exists() {
-        return Ok(());
-    }
-    let entries = fs::read_dir(src).map_err(|e| {
-        format!(
-            "Could not read {} while copying import files: {e}",
-            src.display()
-        )
-    })?;
-    for entry in entries {
-        let entry = entry.map_err(|e| {
-            format!(
-                "Could not read an entry in {} while copying import files: {e}",
-                src.display()
-            )
-        })?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            fs::create_dir_all(&to)
-                .map_err(|e| format!("Could not create {}: {e}", to.display()))?;
-            copy_dir_checked(&from, &to)?;
-        } else {
-            if let Some(parent) = to.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
-            }
-            fs::copy(&from, &to).map_err(|e| {
-                format!("Could not copy {} to {}: {e}", from.display(), to.display())
-            })?;
-        }
-    }
-    Ok(())
+    fs_safety::copy_tree(src, dst)
 }
 
 /// Protect user-owned and update-sensitive state while an in-place modpack
@@ -408,59 +406,107 @@ fn copy_dir_checked(src: &Path, dst: &Path) -> Result<(), String> {
 /// snapshot; successful updates retain it as a user-visible rollback point.
 struct ModpackUpdateGuard {
     snapshot: snapshots::SnapshotHandle,
-    committed: bool,
 }
 
 impl ModpackUpdateGuard {
-    async fn start(id: &str) -> Result<Self, String> {
+    async fn start(id: &str, plan: &PackWritePlan) -> Result<Self, String> {
+        validate_update_target(id)?;
         let snapshot_id = id.to_string();
-        let snapshot = tauri::async_runtime::spawn_blocking(move || {
-            snapshots::create_modpack_update(&snapshot_id)
+        let roots = plan.roots.values().cloned().collect::<Vec<_>>();
+        let snapshot = crate::operations::blocking(move || {
+            snapshots::create_modpack_update(&snapshot_id, &roots)
         })
         .await
         .map_err(|error| format!("Could not create the pre-update snapshot: {error}"))??;
-        let mut guard = Self {
-            snapshot,
-            committed: false,
-        };
-        let mods_dir = instances::game_dir(id).join("mods");
-        let preparation = (|| -> Result<(), String> {
-            if mods_dir.exists() {
-                fs::remove_dir_all(&mods_dir)
-                    .map_err(|e| format!("Could not prepare the mod set for update: {e}"))?;
-            }
-            fs::create_dir_all(&mods_dir)
-                .map_err(|e| format!("Could not create the staged mod directory: {e}"))
-        })();
-        if let Err(error) = preparation {
-            return match guard.rollback() {
-                Ok(()) => Err(error),
-                Err(rollback) => Err(format!("{error}; rollback failed: {rollback}")),
-            };
-        }
-        Ok(guard)
-    }
-
-    fn commit(&mut self) {
-        self.committed = true;
-        let _ = self.snapshot.commit();
-    }
-
-    fn rollback(&mut self) -> Result<(), String> {
-        let result = self.snapshot.restore().map(|_| ());
-        if result.is_ok() {
-            let _ = self.snapshot.delete();
-        }
-        self.committed = true;
-        result
+        Ok(Self { snapshot })
     }
 }
 
-impl Drop for ModpackUpdateGuard {
-    fn drop(&mut self) {
-        if !self.committed {
-            let _ = self.rollback();
+/// All post-snapshot failures pass through the same awaited rollback. If the
+/// future/process disappears, the journal remains pending for startup recovery.
+async fn finish_update(
+    guard: Option<ModpackUpdateGuard>,
+    result: Result<String, String>,
+) -> Result<String, String> {
+    let Some(guard) = guard else {
+        return result;
+    };
+    let result = match result {
+        Ok(id) => {
+            let snapshot = guard.snapshot.clone();
+            let committed = crate::operations::blocking(move || {
+                crate::operations::check_current()?;
+                snapshot.commit()
+            })
+            .await
+            .and_then(|result| result);
+            committed.map(|()| id)
         }
+        Err(error) => Err(error),
+    };
+    match result {
+        Ok(id) => Ok(id),
+        Err(error) => match crate::operations::blocking(move || guard.snapshot.rollback()).await.and_then(|result| result) {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; rollback failed: {rollback}. The instance is protected until recovery succeeds.")),
+        },
+    }
+}
+
+struct PackWritePlan {
+    roots: BTreeMap<String, String>,
+}
+
+impl PackWritePlan {
+    fn new() -> Self {
+        // The old mod set is replaced; Minecraft installation extracts natives.
+        Self {
+            roots: ["mods", "natives"]
+                .into_iter()
+                .map(|root| (root.into(), root.into()))
+                .collect(),
+        }
+    }
+
+    fn include(&mut self, path: &str) -> Result<(), String> {
+        let root = snapshots::pack_root(path)?;
+        let key = root.to_lowercase();
+        if self.roots.get(&key).is_some_and(|prior| prior != &root) {
+            return Err("Modpack paths contain conflicting root capitalization.".into());
+        }
+        self.roots.insert(key, root);
+        Ok(())
+    }
+
+    fn overrides(&mut self, directory: &Path) -> Result<(), String> {
+        fn walk(plan: &mut PackWritePlan, base: &Path, directory: &Path) -> Result<(), String> {
+            fs_safety::directory_root(directory)?;
+            let entries = match fs::read_dir(directory) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(error.to_string()),
+            };
+            for entry in entries {
+                let entry = entry.map_err(|error| error.to_string())?;
+                let path = entry.path();
+                let relative = path
+                    .strip_prefix(base)
+                    .map_err(|error| error.to_string())?
+                    .to_str()
+                    .ok_or("Unsupported modpack filename encoding.")?
+                    .replace('\\', "/");
+                plan.include(&relative)?;
+                let path = safe_join(base, &relative)?;
+                let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+                if metadata.is_dir() {
+                    walk(plan, base, &path)?;
+                } else if !metadata.is_file() {
+                    return Err("Unsupported modpack override entry.".into());
+                }
+            }
+            Ok(())
+        }
+        walk(self, directory, directory)
     }
 }
 
@@ -477,14 +523,19 @@ async fn mojang_url(mc: &str) -> Result<String, String> {
 }
 
 /// Resolve a path under `game_dir`, rejecting anything that escapes it.
-fn safe_join(game_dir: &Path, rel: &str) -> Option<PathBuf> {
-    let rel = rel.replace('\\', "/");
-    let dest = game_dir.join(&rel);
-    if dest.starts_with(game_dir) {
-        Some(dest)
-    } else {
-        None
+fn safe_join(game_dir: &Path, rel: &str) -> Result<PathBuf, String> {
+    fs_safety::checked_join(game_dir, rel)
+}
+
+fn validate_update_target(id: &str) -> Result<(), String> {
+    let instance = instances::get_instance_by_id(id.to_string())?.ok_or("Instance not found.")?;
+    if instance["externalGameDir"]
+        .as_str()
+        .is_some_and(|path| !path.is_empty())
+    {
+        return Err("Import a managed copy before updating a linked external modpack.".into());
     }
+    Ok(())
 }
 
 fn create_instance(
@@ -523,13 +574,14 @@ fn create_imported_instance_from_stage(
     loader_version: Option<&str>,
     staged_game_dir: &Path,
 ) -> Result<String, String> {
+    crate::operations::check_current()?;
     let instance = create_instance(name, mc, loader, loader_version, "", "", "")?;
     let id = instance["id"]
         .as_str()
         .ok_or("instance has no id")?
         .to_string();
     let result = (|| -> Result<(), String> {
-        let game_dir = instances::resolve_instance_dir(&id).join("minecraft");
+        let game_dir = instances::resolve_instance_dir(&id)?.join("minecraft");
         if game_dir.exists() {
             fs::remove_dir_all(&game_dir)
                 .map_err(|e| format!("Could not replace {}: {e}", game_dir.display()))?;
@@ -545,21 +597,13 @@ fn create_imported_instance_from_stage(
     Ok(id)
 }
 
-async fn finalize(
-    app: &AppHandle,
-    project_id: &str,
-    instance_id: &str,
-    source: &str,
-    proj: &str,
-    ver: &str,
-    timer: &downloader::InstallTimer,
-) {
-    let _ = instances::update_instance(
+fn finalize(instance_id: &str, source: &str, proj: &str, ver: &str) -> Result<(), String> {
+    crate::operations::check_current()?;
+    instances::update_instance(
         instance_id.to_string(),
         json!({ "isInstalled": true, "modpackSource": source, "modpackProjectId": proj, "modpackVersionId": ver }),
-    );
-    progress(app, project_id, "Done", 100.0);
-    done_ok(app, project_id, instance_id, Some(timer.to_json()));
+    )?;
+    Ok(())
 }
 
 /// Fold the stats returned by `install_minecraft` into a modpack-level timer.
@@ -602,26 +646,24 @@ fn resolve_instance(
     project_id: &str,
     version_id: &str,
 ) -> Result<String, String> {
+    crate::operations::check_current()?;
     match existing {
         Some(id) => {
-            let mut patch = json!({ "minecraftVersion": mc });
-            if let Some(l) = loader {
-                patch["modLoader"] = json!(l);
-            }
-            if let Some(v) = loader_version {
-                patch["modLoaderVersion"] = json!(v);
-            }
+            validate_update_target(id)?;
+            let mut patch = json!({ "minecraftVersion": mc, "modLoader": loader, "modLoaderVersion": loader_version, "isInstalled": false });
             if !source.is_empty() {
                 patch["modpackSource"] = json!(source);
                 patch["modpackProjectId"] = json!(project_id);
                 patch["modpackVersionId"] = json!(version_id);
             }
             instances::update_instance(id.to_string(), patch)?;
-            let mods = instances::game_dir(id).join("mods");
+            let mods = instances::game_dir(id)?.join("mods");
             if mods.exists() {
-                let _ = fs::remove_dir_all(&mods);
+                fs::remove_dir_all(&mods)
+                    .map_err(|error| format!("Could not replace the old mod set: {error}"))?;
             }
-            fs::create_dir_all(&mods).ok();
+            fs::create_dir_all(&mods)
+                .map_err(|error| format!("Could not create the mod directory: {error}"))?;
             Ok(id.to_string())
         }
         None => {
@@ -665,7 +707,6 @@ async fn install_modrinth(
             .cloned(),
         None => versions.first().cloned(),
     }
-    .or_else(|| versions.first().cloned())
     .ok_or("No compatible modpack version found.")?;
 
     let files = version["files"].as_array().cloned().unwrap_or_default();
@@ -681,84 +722,95 @@ async fn install_modrinth(
     let archive_sha512 = file["hashes"]["sha512"].as_str().map(String::from);
     let archive_sha1 = file["hashes"]["sha1"].as_str().map(String::from);
 
-    let mc0 = version["game_versions"][0]
+    let stage = PackStage::create()?;
+    let mrpack = stage.0.join("archive.mrpack");
+    let temp = stage.0.join("unpacked");
+    progress(app, &project_id, "Downloading modpack archive", 10.0);
+    let archive_hash = archive_sha512
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(net::ExpectedHash::Sha512)
+        .or_else(|| {
+            archive_sha1
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(net::ExpectedHash::Sha1)
+        });
+    download_to(&archive_url, &mrpack, net::MODRINTH_HOSTS, archive_hash).await?;
+    timer.add(
+        fs::metadata(&mrpack)
+            .map_err(|error| error.to_string())?
+            .len(),
+        1,
+    );
+    progress(app, &project_id, "Inspecting modpack archive", 27.0);
+    unzip(&mrpack, &temp)?;
+    let index: Value = serde_json::from_slice(
+        &fs::read(temp.join("modrinth.index.json"))
+            .map_err(|error| format!("Could not read the Modrinth pack index: {error}"))?,
+    )
+    .map_err(|error| format!("The Modrinth pack index is invalid: {error}"))?;
+    let mc = index["dependencies"]["minecraft"]
         .as_str()
-        .unwrap_or("1.20.1")
-        .to_string();
-    let loader0 = version["loaders"]
+        .filter(|s| !s.is_empty())
+        .ok_or("Modpack index has no Minecraft version.")?;
+    let (loader, loader_version) = loader_from_deps(&index["dependencies"]);
+    let files = index["files"]
         .as_array()
-        .and_then(|a| a.iter().filter_map(Value::as_str).find(|l| *l != "mrpack"))
-        .map(String::from);
-
-    progress(app, &project_id, "Creating instance", 4.0);
+        .ok_or("Modpack index has no valid file list.")?;
+    mrpack_tasks(files, &stage.0.join("validation"))?;
+    let mut plan = PackWritePlan::new();
+    for file in files
+        .iter()
+        .filter(|file| file["env"]["client"].as_str() != Some("unsupported"))
+    {
+        plan.include(
+            file["path"]
+                .as_str()
+                .ok_or("Modpack file is missing its path.")?,
+        )?;
+    }
+    plan.overrides(&safe_join(&temp, "overrides")?)?;
+    plan.overrides(&safe_join(&temp, "client-overrides")?)?;
+    // Every archive destination is validated before a snapshot or live mutation.
     let update_guard = match existing.as_deref() {
-        Some(id) => Some(ModpackUpdateGuard::start(id).await?),
+        Some(id) => Some(ModpackUpdateGuard::start(id, &plan).await?),
         None => None,
     };
-    let id = resolve_instance(
-        existing.as_deref(),
-        &name,
-        &mc0,
-        loader0.as_deref(),
-        None,
-        "modrinth",
-        &project_id,
-        version["id"].as_str().unwrap_or(""),
-    )?;
+    let result = async {
+        let id = resolve_instance(
+            existing.as_deref(),
+            &name,
+            mc,
+            loader.as_deref(),
+            loader_version.as_deref(),
+            "modrinth",
+            &project_id,
+            version["id"].as_str().unwrap_or(""),
+        )?;
 
-    let image = get_json(&format!("https://api.modrinth.com/v2/project/{project_id}"))
-        .await
-        .ok()
-        .and_then(|project| modrinth_project_image(&project));
-    set_instance_image(&id, image);
+        let image = get_json(&format!("https://api.modrinth.com/v2/project/{project_id}"))
+            .await
+            .ok()
+            .and_then(|project| modrinth_project_image(&project));
+        set_instance_image(&id, image);
 
-    let game_dir = instances::resolve_instance_dir(&id).join("minecraft");
-    fs::create_dir_all(game_dir.join("mods")).ok();
+        let game_dir = instances::resolve_instance_dir(&id)?.join("minecraft");
+        fs::create_dir_all(game_dir.join("mods")).map_err(|error| error.to_string())?;
 
-    let cache = paths::data_dir().join("cache");
-    fs::create_dir_all(&cache).ok();
-    let mrpack = cache.join(format!("{id}.mrpack"));
-    let temp = cache.join(format!("mrpack-{id}"));
-
-    let result = install_modrinth_inner(
-        app,
-        &project_id,
-        &id,
-        &archive_url,
-        archive_sha512.as_deref(),
-        archive_sha1.as_deref(),
-        &mrpack,
-        &temp,
-        &game_dir,
-        &mc0,
-        loader0.as_deref(),
-        &timer,
-    )
-    .await;
-    let _ = fs::remove_file(&mrpack);
-    let _ = fs::remove_dir_all(&temp);
-    if let Err(error) = result {
-        if let Some(mut guard) = update_guard {
-            if let Err(rollback) = guard.rollback() {
-                return Err(format!("{error}; rollback failed: {rollback}"));
-            }
-        }
-        return Err(error);
+        install_modrinth_inner(app, &project_id, &id, &temp, &game_dir, &index, &timer).await?;
+        finalize(
+            &id,
+            "modrinth",
+            &project_id,
+            version["id"].as_str().unwrap_or(""),
+        )?;
+        Ok(id)
     }
-    if let Some(mut guard) = update_guard {
-        guard.commit();
-    }
-
-    finalize(
-        app,
-        &project_id,
-        &id,
-        "modrinth",
-        &project_id,
-        version["id"].as_str().unwrap_or(""),
-        &timer,
-    )
     .await;
+    let id = finish_update(update_guard, result).await?;
+    progress(app, &project_id, "Done", 100.0);
+    done_ok(app, &project_id, &id, Some(timer.to_json()));
     Ok(id)
 }
 
@@ -767,46 +819,22 @@ async fn install_modrinth_inner(
     app: &AppHandle,
     project_id: &str,
     id: &str,
-    archive_url: &str,
-    archive_sha512: Option<&str>,
-    archive_sha1: Option<&str>,
-    mrpack: &Path,
     temp: &Path,
     game_dir: &Path,
-    mc0: &str,
-    loader0: Option<&str>,
+    index: &Value,
     timer: &downloader::InstallTimer,
 ) -> Result<(), String> {
-    progress(app, project_id, "Downloading modpack archive", 10.0);
-    let archive_hash = archive_sha512
-        .filter(|s| !s.is_empty())
-        .map(net::ExpectedHash::Sha512)
-        .or_else(|| {
-            archive_sha1
-                .filter(|s| !s.is_empty())
-                .map(net::ExpectedHash::Sha1)
-        });
-    download_to(archive_url, mrpack, net::MODRINTH_HOSTS, archive_hash).await?;
-    timer.add(fs::metadata(mrpack).map(|m| m.len()).unwrap_or(0), 1);
-
-    progress(app, project_id, "Extracting archive", 27.0);
-    unzip(mrpack, temp)?;
-    let index: Value = fs::read_to_string(temp.join("modrinth.index.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .ok_or("modrinth.index.json not found — not a valid Modrinth modpack.")?;
-
     let deps = &index["dependencies"];
-    let mc = deps["minecraft"].as_str().unwrap_or(mc0).to_string();
+    let mc = deps["minecraft"]
+        .as_str()
+        .ok_or("Modpack index has no Minecraft version.")?
+        .to_string();
     let (loader, loader_version) = loader_from_deps(deps);
-    let loader = loader.or_else(|| loader0.map(String::from));
-    let _ = instances::update_instance(
-        id.to_string(),
-        json!({ "minecraftVersion": mc, "modLoader": loader, "modLoaderVersion": loader_version }),
-    );
 
-    let files: Vec<Value> = index["files"].as_array().cloned().unwrap_or_default();
-    let tasks = mrpack_tasks(&files, game_dir);
+    let files = index["files"]
+        .as_array()
+        .ok_or("Modpack index has no valid file list.")?;
+    let tasks = mrpack_tasks(&files, game_dir)?;
     let batch = run_mod_file_batch(app, project_id, tasks, 30.0, 15.0).await;
     timer.add_batch(&batch);
     if let Some(error) = batch.error_summary("mod files") {
@@ -814,12 +842,12 @@ async fn install_modrinth_inner(
     }
 
     progress(app, project_id, "Copying overrides", 46.0);
-    copy_dir(&temp.join("overrides"), game_dir);
-    copy_dir(&temp.join("client-overrides"), game_dir);
+    copy_dir_checked(&safe_join(temp, "overrides")?, game_dir)?;
+    copy_dir_checked(&safe_join(temp, "client-overrides")?, game_dir)?;
 
     progress(app, project_id, "Installing Minecraft…", 50.0);
     let url = mojang_url(&mc).await?;
-    let stats = mc_install::install_minecraft_internal(
+    let stats = mc_install::install_minecraft_for_pack(
         app.clone(),
         id.to_string(),
         mc,
@@ -833,23 +861,40 @@ async fn install_modrinth_inner(
 }
 
 /// Build verified download tasks from a Modrinth index's client-supported files.
-fn mrpack_tasks(files: &[Value], game_dir: &Path) -> Vec<downloader::Task> {
+fn mrpack_tasks(files: &[Value], game_dir: &Path) -> Result<Vec<downloader::Task>, String> {
+    let mut destinations = BTreeSet::new();
     files
         .iter()
         .filter(|f| f["env"]["client"].as_str() != Some("unsupported"))
-        .filter_map(|f| {
-            let path = f["path"].as_str()?;
-            let url = f["downloads"][0].as_str()?;
+        .map(|f| {
+            let path = f["path"]
+                .as_str()
+                .ok_or("Modpack file is missing its path.")?;
+            snapshots::pack_root(path)?;
+            if !destinations.insert(
+                fs_safety::relative_path(path)?
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase(),
+            ) {
+                return Err(format!(
+                    "Modpack index contains duplicate file destinations: {path}"
+                ));
+            }
+            let url = f["downloads"][0]
+                .as_str()
+                .filter(|url| !url.is_empty())
+                .ok_or_else(|| format!("Modpack file {path} is missing its download URL."))?;
+            net::validate_url(url, net::MODRINTH_HOSTS)?;
             let dest = safe_join(game_dir, path)?;
             let hash = downloader::OwnedHash::from_options(
                 f["hashes"]["sha512"].as_str(),
                 f["hashes"]["sha1"].as_str(),
             );
-            Some(
-                downloader::Task::new(url, dest, net::MODRINTH_HOSTS)
-                    .hash(hash)
-                    .existing(downloader::Existing::ReuseIfValid),
-            )
+            Ok(downloader::Task::new(url, dest, net::MODRINTH_HOSTS)
+                .hash(hash)
+                .size(f["fileSize"].as_u64())
+                .existing(downloader::Existing::ReuseIfValid))
         })
         .collect()
 }
@@ -868,7 +913,7 @@ async fn run_mod_file_batch(
     downloader::run(
         tasks,
         downloader::MOD_CONCURRENCY,
-        None,
+        crate::operations::current_cancellation_check(),
         Some(std::sync::Arc::new(move |p: &downloader::BatchProgress| {
             let mb = p.bytes as f64 / (1024.0 * 1024.0);
             progress(
@@ -922,12 +967,38 @@ async fn install_curseforge(
         Err(e) => return Err(format!("Could not resolve modpack download: {e}")),
     };
 
-    let cache = paths::data_dir().join("cache");
-    fs::create_dir_all(&cache).ok();
-    let zip_path = cache.join(format!("cf-{mod_id}-{file_id}.zip"));
-    let temp = cache.join(format!("cf-{mod_id}-{file_id}"));
+    let stage = PackStage::create()?;
+    let zip_path = stage.0.join("archive.zip");
+    let temp = stage.0.join("unpacked");
+    progress(app, &project_id, "Downloading modpack archive", 8.0);
+    download_to(&archive_url, &zip_path, net::CURSEFORGE_HOSTS, None).await?;
+    timer.add(
+        fs::metadata(&zip_path)
+            .map_err(|error| error.to_string())?
+            .len(),
+        1,
+    );
+    progress(app, &project_id, "Inspecting modpack archive", 20.0);
+    unzip(&zip_path, &temp)?;
+    let manifest: Value = serde_json::from_slice(
+        &fs::read(temp.join("manifest.json"))
+            .map_err(|error| format!("Could not read the CurseForge manifest: {error}"))?,
+    )
+    .map_err(|error| format!("The CurseForge manifest is invalid: {error}"))?;
+    manifest["minecraft"]["version"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or("Modpack manifest has no Minecraft version.")?;
+    validate_cf_manifest_files(
+        manifest["files"]
+            .as_array()
+            .ok_or("Modpack manifest has no valid file list.")?,
+    )?;
+    let mut plan = PackWritePlan::new();
+    let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
+    plan.overrides(&safe_join(&temp, overrides)?)?;
     let update_guard = match existing.as_deref() {
-        Some(id) => Some(ModpackUpdateGuard::start(id).await?),
+        Some(id) => Some(ModpackUpdateGuard::start(id, &plan).await?),
         None => None,
     };
 
@@ -937,34 +1008,18 @@ async fn install_curseforge(
         &name,
         mod_id,
         file_id,
-        &archive_url,
-        &zip_path,
         &temp,
+        &manifest,
         existing,
         &timer,
     )
     .await;
-    let _ = fs::remove_file(&zip_path);
-    let _ = fs::remove_dir_all(&temp);
-    match res {
-        Ok(id) => {
-            if let Some(mut guard) = update_guard {
-                guard.commit();
-            }
-            Ok(id)
-        }
-        Err(error) => {
-            if let Some(mut guard) = update_guard {
-                if let Err(rollback) = guard.rollback() {
-                    return Err(format!("{error}; rollback failed: {rollback}"));
-                }
-            }
-            Err(error)
-        }
-    }
+    let id = finish_update(update_guard, res).await?;
+    progress(app, &project_id, "Done", 100.0);
+    done_ok(app, &project_id, &id, Some(timer.to_json()));
+    Ok(id)
 }
 
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 async fn install_curseforge_inner(
     app: &AppHandle,
@@ -972,22 +1027,11 @@ async fn install_curseforge_inner(
     name: &str,
     mod_id: i64,
     file_id: i64,
-    archive_url: &str,
-    zip_path: &Path,
     temp: &Path,
+    manifest: &Value,
     existing: Option<String>,
     timer: &downloader::InstallTimer,
 ) -> Result<String, String> {
-    progress(app, project_id, "Downloading modpack archive", 8.0);
-    download_to(archive_url, zip_path, net::CURSEFORGE_HOSTS, None).await?;
-    timer.add(fs::metadata(zip_path).map(|m| m.len()).unwrap_or(0), 1);
-    progress(app, project_id, "Extracting archive", 20.0);
-    unzip(zip_path, temp)?;
-
-    let manifest: Value = fs::read_to_string(temp.join("manifest.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .ok_or("manifest.json not found — not a valid CurseForge modpack.")?;
     let mc = manifest["minecraft"]["version"]
         .as_str()
         .ok_or("Modpack manifest has no Minecraft version.")?
@@ -1006,20 +1050,22 @@ async fn install_curseforge_inner(
         &file_id.to_string(),
     )?;
     set_instance_image(&id, curseforge_project_image(mod_id).await);
-    let game_dir = instances::resolve_instance_dir(&id).join("minecraft");
+    let game_dir = instances::resolve_instance_dir(&id)?.join("minecraft");
     let mods_dir = game_dir.join("mods");
-    fs::create_dir_all(&mods_dir).ok();
+    fs::create_dir_all(&mods_dir).map_err(|error| error.to_string())?;
 
-    let files: Vec<Value> = manifest["files"].as_array().cloned().unwrap_or_default();
-    download_and_audit_cf_mods(app, project_id, &files, &mods_dir, 26.0, 22.0, timer).await?;
+    let files = manifest["files"]
+        .as_array()
+        .ok_or("Modpack manifest has no valid file list.")?;
+    download_and_audit_cf_mods(app, project_id, files, &mods_dir, 26.0, 22.0, timer).await?;
 
     progress(app, project_id, "Copying overrides", 48.0);
     let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
-    copy_dir(&temp.join(overrides), &game_dir);
+    copy_dir_checked(&safe_join(temp, overrides)?, &game_dir)?;
 
     progress(app, project_id, "Installing Minecraft…", 50.0);
     let url = mojang_url(&mc).await?;
-    let stats = mc_install::install_minecraft_internal(
+    let stats = mc_install::install_minecraft_for_pack(
         app.clone(),
         id.clone(),
         mc,
@@ -1030,16 +1076,7 @@ async fn install_curseforge_inner(
     .await?;
     absorb_mc_stats(timer, &stats);
 
-    finalize(
-        app,
-        project_id,
-        &id,
-        "curseforge",
-        &mod_id.to_string(),
-        &file_id.to_string(),
-        timer,
-    )
-    .await;
+    finalize(&id, "curseforge", &mod_id.to_string(), &file_id.to_string())?;
     Ok(id)
 }
 
@@ -1063,6 +1100,142 @@ fn ftb_targets(version: &Value) -> (Option<String>, Option<String>, Option<Strin
     (mc, loader, loader_ver)
 }
 
+fn ftb_file_path(file: &Value) -> Result<String, String> {
+    let name = file["name"]
+        .as_str()
+        .ok_or("FTB file is missing its name.")?;
+    fs_safety::safe_component(name)?;
+    let folder = file["path"].as_str().unwrap_or("");
+    let relative = if folder.is_empty() {
+        name.to_string()
+    } else {
+        format!("{folder}/{name}")
+    };
+    snapshots::pack_root(&relative)?;
+    Ok(relative)
+}
+
+fn ftb_files(version: &Value) -> Result<Vec<Value>, String> {
+    let files = version["files"]
+        .as_array()
+        .ok_or("FTB version has no valid file list.")?;
+    let mut destinations = BTreeSet::new();
+    files.iter().filter(|file| file["serveronly"].as_bool() != Some(true)).map(|file| {
+        let path = ftb_file_path(file)?;
+        if !destinations.insert(fs_safety::relative_path(&path)?.to_string_lossy().replace('\\', "/").to_lowercase()) {
+            return Err(format!("FTB manifest contains duplicate file destinations: {path}"));
+        }
+        if let Some(url) = file["url"].as_str().filter(|url| !url.is_empty()) {
+            net::validate_url(url, net::FTB_HOSTS)?;
+        } else if file["curseforge"]["project"].as_u64().filter(|id| *id > 0).is_none()
+            || file["curseforge"]["file"].as_u64().filter(|id| *id > 0).is_none()
+        {
+            return Err("FTB required file has neither a download URL nor valid CurseForge identifiers.".into());
+        }
+        Ok(file.clone())
+    }).collect()
+}
+
+fn required_download_bytes(results: Vec<Result<u64, String>>) -> Result<Vec<u64>, String> {
+    let errors: Vec<_> = results
+        .iter()
+        .filter_map(|result| result.as_ref().err())
+        .collect();
+    if !errors.is_empty() {
+        return Err(format!(
+            "{} required pack file(s) failed. {}",
+            errors.len(),
+            errors
+                .iter()
+                .take(3)
+                .map(|error| error.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
+        ));
+    }
+    results.into_iter().collect()
+}
+
+async fn download_ftb_file(
+    app: &AppHandle,
+    project_id: &str,
+    file: &Value,
+    game_dir: &Path,
+) -> Result<u64, String> {
+    let relative = ftb_file_path(file)?;
+    let dest = safe_join(game_dir, &relative)?;
+    let dest_dir = dest.parent().ok_or("FTB file has no destination folder.")?;
+    if let Some(url) = file["url"].as_str().filter(|url| !url.is_empty()) {
+        let hash = file["sha1"].as_str().map(net::ExpectedHash::Sha1);
+        let mut result = download_to(url, &dest, net::FTB_HOSTS, hash).await;
+        if result.is_err() {
+            if let Some(mirror) = file["mirrors"][0].as_str() {
+                result = download_to(mirror, &dest, net::FTB_HOSTS, hash).await;
+            }
+        }
+        result.map_err(|error| format!("{relative}: {error}"))?;
+    } else {
+        // CurseForge may use a different filename. Keep it in private staging
+        // so no unplanned game path can be changed before the verified copy.
+        let stage = PackStage::create()?;
+        let download_dir = &stage.0;
+        let project = file["curseforge"]["project"]
+            .as_u64()
+            .ok_or("Missing CurseForge project.")?;
+        let file_id = file["curseforge"]["file"]
+            .as_u64()
+            .ok_or("Missing CurseForge file.")?;
+        let downloaded = match cf::download_cf_cdn(
+            project,
+            file_id,
+            download_dir,
+            file["sha1"].as_str(),
+            None,
+        )
+        .await
+        {
+            Ok(path) => path,
+            Err(_) => {
+                // Preserve author restrictions: the user downloads restricted
+                // files in the browser; the existing resolver verifies them.
+                let required =
+                    cf::cf_required_files(&[json!({ "projectID": project, "fileID": file_id })])
+                        .await;
+                let expected = required
+                    .first()
+                    .ok_or("Could not resolve the required CurseForge file.")?;
+                if expected.sha1.is_none() {
+                    return Err(format!(
+                        "Cannot verify CurseForge file {project}:{file_id}."
+                    ));
+                }
+                let unresolved =
+                    resolve_blocked_cf_files(app, project_id, download_dir, &required).await;
+                if !unresolved.is_empty()
+                    || !cf::audit_cf_manifest(download_dir, &required).is_empty()
+                {
+                    return Err(format!("Required CurseForge file {project}:{file_id} was not downloaded. Complete the browser download and retry."));
+                }
+                let name = expected
+                    .file_name
+                    .as_deref()
+                    .ok_or("CurseForge file metadata has no filename.")?;
+                safe_join(download_dir, &cf::safe_filename(name))?
+            }
+        };
+        crate::operations::check_current()?;
+        fs::create_dir_all(dest_dir).map_err(|error| error.to_string())?;
+        crate::persistence::atomic_write_with(&dest, |output| -> Result<(), String> {
+            let mut input = File::open(&downloaded).map_err(|error| error.to_string())?;
+            std::io::copy(&mut input, output).map_err(|error| error.to_string())?;
+            Ok(())
+        })?;
+    }
+    fs::metadata(dest)
+        .map(|metadata| metadata.len())
+        .map_err(|error| format!("Required file {relative} is unavailable: {error}"))
+}
+
 async fn install_ftb(
     app: &AppHandle,
     name: String,
@@ -1074,145 +1247,91 @@ async fn install_ftb(
     let timer = downloader::InstallTimer::start();
     progress(app, &project_id, "Fetching version info", 2.0);
     let version = get_json(&format!("{FTB}/modpack/{pack_id}/{version_id}")).await?;
+    let files = ftb_files(&version)?;
     let (mc, loader, loader_version) = ftb_targets(&version);
     let mc = mc.ok_or("This FTB version has no Minecraft target.")?;
+    let mut plan = PackWritePlan::new();
+    for file in &files {
+        plan.include(&ftb_file_path(file)?)?;
+    }
     let update_guard = match existing.as_deref() {
-        Some(id) => Some(ModpackUpdateGuard::start(id).await?),
+        Some(id) => Some(ModpackUpdateGuard::start(id, &plan).await?),
         None => None,
     };
 
-    progress(app, &project_id, "Creating instance", 4.0);
-    let id = resolve_instance(
-        existing.as_deref(),
-        &name,
-        &mc,
-        loader.as_deref(),
-        loader_version.as_deref(),
-        "ftb",
-        &pack_id.to_string(),
-        &version_id.to_string(),
-    )?;
-    set_instance_image(&id, ftb_pack_image(pack_id).await);
-    let game_dir = instances::resolve_instance_dir(&id).join("minecraft");
-    fs::create_dir_all(&game_dir).ok();
+    let result = async {
+        progress(app, &project_id, "Creating instance", 4.0);
+        let id = resolve_instance(
+            existing.as_deref(),
+            &name,
+            &mc,
+            loader.as_deref(),
+            loader_version.as_deref(),
+            "ftb",
+            &pack_id.to_string(),
+            &version_id.to_string(),
+        )?;
+        set_instance_image(&id, ftb_pack_image(pack_id).await);
+        let game_dir = instances::resolve_instance_dir(&id)?.join("minecraft");
+        fs::create_dir_all(&game_dir).map_err(|error| error.to_string())?;
 
-    let files: Vec<Value> = version["files"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter(|f| {
-                    f["serveronly"].as_bool() != Some(true)
-                        && (f["url"].as_str().map(|s| !s.is_empty()).unwrap_or(false)
-                            || f["curseforge"].is_object())
-                })
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-    // Each FTB file is either a direct URL (with an optional mirror) or a
-    // CurseForge project/file pair — a bounded pool downloads them concurrently.
-    // Per-file failures stay non-fatal (matching the old behaviour).
-    use futures_util::StreamExt;
-    let total = files.len().max(1);
-    let counter = AtomicU64::new(0);
-    // Eagerly collected for the same higher-ranked-lifetime reason as the CF pool.
-    let futs: Vec<_> = files
-        .iter()
-        .map(|f| {
-            let game_dir = game_dir.clone();
-            let project_id = project_id.clone();
-            let counter = &counter;
-            async move {
-                let rel = format!(
-                    "{}/{}",
-                    f["path"]
-                        .as_str()
-                        .unwrap_or("")
-                        .trim_start_matches("./")
-                        .trim_start_matches('/'),
-                    f["name"].as_str().unwrap_or("")
-                )
-                .replace("//", "/");
-                let mut got: u64 = 0;
-                if let Some(dest) = safe_join(&game_dir, &rel) {
-                    let dest_dir = dest
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .unwrap_or(game_dir.clone());
-                    if let Some(url) = f["url"].as_str().filter(|s| !s.is_empty()) {
-                        let expected = f["sha1"].as_str().map(net::ExpectedHash::Sha1);
-                        let mut ok = download_to(url, &dest, net::FTB_HOSTS, expected)
-                            .await
-                            .is_ok();
-                        if !ok {
-                            if let Some(mirror) = f["mirrors"][0].as_str() {
-                                let expected = f["sha1"].as_str().map(net::ExpectedHash::Sha1);
-                                ok = download_to(mirror, &dest, net::FTB_HOSTS, expected)
-                                    .await
-                                    .is_ok();
-                            }
-                        }
-                        if ok {
-                            got = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
-                        }
-                    } else if let (Some(p), Some(fl)) = (
-                        f["curseforge"]["project"].as_u64(),
-                        f["curseforge"]["file"].as_u64(),
-                    ) {
-                        if let Ok(path) =
-                            cf::download_cf_cdn(p, fl, &dest_dir, f["sha1"].as_str(), None).await
-                        {
-                            got = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                        }
-                    }
+        // Each FTB file is either a direct URL (with an optional mirror) or a
+        // CurseForge project/file pair — a bounded pool downloads them concurrently.
+        // Every client file is required; aggregate failures before finalization.
+        use futures_util::StreamExt;
+        let total = files.len().max(1);
+        let counter = AtomicU64::new(0);
+        // Eagerly collected for the same higher-ranked-lifetime reason as the CF pool.
+        let futs: Vec<_> = files
+            .iter()
+            .map(|f| {
+                let game_dir = game_dir.clone();
+                let project_id = project_id.clone();
+                let counter = &counter;
+                async move {
+                    let result = download_ftb_file(app, &project_id, f, &game_dir).await;
+                    let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    progress(
+                        app,
+                        &project_id,
+                        &format!("Downloading files ({done}/{total})"),
+                        6.0 + (done as f64 / total as f64) * 42.0,
+                    );
+                    result
                 }
-                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                progress(
-                    app,
-                    &project_id,
-                    &format!("Downloading files ({done}/{total})"),
-                    6.0 + (done as f64 / total as f64) * 42.0,
-                );
-                got
+            })
+            .collect();
+        let outcomes: Vec<Result<u64, String>> = futures_util::stream::iter(futs)
+            .buffer_unordered(downloader::MOD_CONCURRENCY)
+            .collect()
+            .await;
+        let bytes = required_download_bytes(outcomes)?;
+        for got in bytes {
+            if got > 0 {
+                timer.add(got, 1);
             }
-        })
-        .collect();
-    let bytes: Vec<u64> = futures_util::stream::iter(futs)
-        .buffer_unordered(downloader::MOD_CONCURRENCY)
-        .collect()
-        .await;
-    for got in bytes {
-        if got > 0 {
-            timer.add(got, 1);
         }
-    }
 
-    progress(app, &project_id, "Installing Minecraft…", 50.0);
-    let url = mojang_url(&mc).await?;
-    let stats = mc_install::install_minecraft_internal(
-        app.clone(),
-        id.clone(),
-        mc,
-        url,
-        loader,
-        loader_version,
-    )
-    .await?;
-    absorb_mc_stats(&timer, &stats);
+        progress(app, &project_id, "Installing Minecraft…", 50.0);
+        let url = mojang_url(&mc).await?;
+        let stats = mc_install::install_minecraft_for_pack(
+            app.clone(),
+            id.clone(),
+            mc,
+            url,
+            loader,
+            loader_version,
+        )
+        .await?;
+        absorb_mc_stats(&timer, &stats);
 
-    if let Some(mut guard) = update_guard {
-        guard.commit();
+        finalize(&id, "ftb", &pack_id.to_string(), &version_id.to_string())?;
+        Ok(id)
     }
-    finalize(
-        app,
-        &project_id,
-        &id,
-        "ftb",
-        &pack_id.to_string(),
-        &version_id.to_string(),
-        &timer,
-    )
     .await;
+    let id = finish_update(update_guard, result).await?;
+    progress(app, &project_id, "Done", 100.0);
+    done_ok(app, &project_id, &id, Some(timer.to_json()));
     Ok(id)
 }
 
@@ -1220,6 +1339,22 @@ async fn install_ftb(
 
 #[tauri::command]
 pub async fn modpack_install(
+    app: AppHandle,
+    name: String,
+    project_id: String,
+    version_id: Option<String>,
+    existing_instance_id: Option<String>,
+) -> Result<Value, String> {
+    let owner = existing_instance_id.clone();
+    crate::operations::run_optional(
+        owner.as_deref(),
+        crate::operations::Kind::Modpack,
+        modpack_install_owned(app, name, project_id, version_id, existing_instance_id),
+    )
+    .await
+}
+
+async fn modpack_install_owned(
     app: AppHandle,
     name: String,
     project_id: String,
@@ -1245,6 +1380,22 @@ pub async fn modpack_install(
 
 #[tauri::command]
 pub async fn curseforge_install_modpack(
+    app: AppHandle,
+    name: String,
+    mod_id: i64,
+    file_id: i64,
+    existing_instance_id: Option<String>,
+) -> Result<Value, String> {
+    let owner = existing_instance_id.clone();
+    crate::operations::run_optional(
+        owner.as_deref(),
+        crate::operations::Kind::Modpack,
+        curseforge_install_modpack_owned(app, name, mod_id, file_id, existing_instance_id),
+    )
+    .await
+}
+
+async fn curseforge_install_modpack_owned(
     app: AppHandle,
     name: String,
     mod_id: i64,
@@ -1453,8 +1604,10 @@ async fn install_from_file_inner(
         fs::create_dir_all(staged_game_dir.join("mods"))
             .map_err(|e| format!("Could not create staged mods folder: {e}"))?;
 
-        let files: Vec<Value> = index["files"].as_array().cloned().unwrap_or_default();
-        let tasks = mrpack_tasks(&files, &staged_game_dir);
+        let files = index["files"]
+            .as_array()
+            .ok_or("Modpack index has no valid file list.")?;
+        let tasks = mrpack_tasks(&files, &staged_game_dir)?;
         let batch = run_mod_file_batch(app, project_id, tasks, 10.0, 20.0).await;
         timer.add_batch(&batch);
         if let Some(error) = batch.error_summary("mod files") {
@@ -1465,7 +1618,7 @@ async fn install_from_file_inner(
         copy_dir_checked(&root.join("client-overrides"), &staged_game_dir)?;
         progress(app, project_id, "Installing Minecraft…", 38.0);
         let url = mojang_url(&mc).await?;
-        let stats = mc_install::install_minecraft_internal(
+        let stats = mc_install::install_minecraft_for_pack(
             app.clone(),
             stage_id.to_string(),
             mc.clone(),
@@ -1508,10 +1661,10 @@ async fn install_from_file_inner(
         download_and_audit_cf_mods(app, project_id, &files, &mods_dir, 10.0, 25.0, &timer).await?;
         progress(app, project_id, "Copying overrides", 37.0);
         let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
-        copy_dir_checked(&root.join(overrides), &staged_game_dir)?;
+        copy_dir_checked(&safe_join(&root, overrides)?, &staged_game_dir)?;
         progress(app, project_id, "Installing Minecraft…", 42.0);
         let url = mojang_url(&mc).await?;
-        let stats = mc_install::install_minecraft_internal(
+        let stats = mc_install::install_minecraft_for_pack(
             app.clone(),
             stage_id.to_string(),
             mc.clone(),
@@ -1595,7 +1748,7 @@ async fn install_from_file_inner(
     copy_dir_checked(&payload, &staged_game_dir)?;
     progress(app, project_id, "Installing Minecraft…", 52.0);
     let url = mojang_url(&mc).await?;
-    let stats = mc_install::install_minecraft_internal(
+    let stats = mc_install::install_minecraft_for_pack(
         app.clone(),
         stage_id.to_string(),
         mc.clone(),
@@ -1625,26 +1778,37 @@ pub async fn modpack_install_from_file(
     name: Option<String>,
     import_id: Option<String>,
 ) -> Result<Value, String> {
+    crate::operations::run_optional(
+        None,
+        crate::operations::Kind::Modpack,
+        modpack_install_from_file_owned(app, file_path, name, import_id),
+    )
+    .await
+}
+
+async fn modpack_install_from_file_owned(
+    app: AppHandle,
+    file_path: String,
+    name: Option<String>,
+    import_id: Option<String>,
+) -> Result<Value, String> {
     let project_id = import_id
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "file-import".to_string());
-    let cache = paths::data_dir().join("cache");
-    let _ = fs::create_dir_all(&cache);
-    let temp = cache.join(format!("import-{}", uuid::Uuid::new_v4()));
-    let stage_id = format!("import-stage-{}", uuid::Uuid::new_v4());
-    let stage_dir = instances::resolve_instance_dir(&stage_id);
+    let extraction = PackStage::create()?;
+    let temp = extraction.0.join("unpacked");
+    let stage = instances::ImportStage::create()?;
     let r = install_from_file_inner(
         &app,
         &project_id,
         &file_path,
         &temp,
-        &stage_id,
-        &stage_dir,
+        &stage.id,
+        &stage.directory,
         name,
     )
     .await;
-    let _ = fs::remove_dir_all(&temp);
-    let _ = fs::remove_dir_all(&stage_dir);
+    drop(stage);
     match r {
         Ok(id) => Ok(json!({ "id": id })),
         Err(e) => {
@@ -1656,6 +1820,22 @@ pub async fn modpack_install_from_file(
 
 #[tauri::command]
 pub async fn ftb_install_modpack(
+    app: AppHandle,
+    name: String,
+    pack_id: i64,
+    version_id: i64,
+    existing_instance_id: Option<String>,
+) -> Result<Value, String> {
+    let owner = existing_instance_id.clone();
+    crate::operations::run_optional(
+        owner.as_deref(),
+        crate::operations::Kind::Modpack,
+        ftb_install_modpack_owned(app, name, pack_id, version_id, existing_instance_id),
+    )
+    .await
+}
+
+async fn ftb_install_modpack_owned(
     app: AppHandle,
     name: String,
     pack_id: i64,
@@ -1680,6 +1860,119 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("refract-test-{tag}-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn concurrent_import_stages_own_only_their_files() {
+        let root = tmp_dir("pack-stages");
+        let first = PackStage::at(&root).unwrap();
+        let first_path = first.0.clone();
+        let second = PackStage::at(&root).unwrap();
+        assert_ne!(first_path, second.0);
+        fs::write(first.0.join("archive.zip"), b"first").unwrap();
+        fs::write(second.0.join("archive.zip"), b"second").unwrap();
+        drop(first);
+        assert!(!first_path.exists());
+        assert_eq!(fs::read(second.0.join("archive.zip")).unwrap(), b"second");
+        drop(second);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+        fs::remove_dir(&root).unwrap();
+    }
+
+    #[test]
+    fn required_manifest_entries_are_validated_instead_of_dropped() {
+        let root = tmp_dir("manifest-plan");
+        let valid = json!({ "path": "mods/example.jar", "downloads": ["https://cdn.modrinth.com/example.jar"], "fileSize": 10 });
+        assert_eq!(mrpack_tasks(&[valid.clone()], &root).unwrap().len(), 1);
+        for invalid in [
+            json!({ "path": "mods/missing.jar" }),
+            json!({ "downloads": ["https://cdn.modrinth.com/x"] }),
+            json!({ "path": "../escape.jar", "downloads": ["https://cdn.modrinth.com/x"] }),
+        ] {
+            assert!(mrpack_tasks(&[valid.clone(), invalid], &root).is_err());
+        }
+        assert!(
+            mrpack_tasks(&[json!({ "env": { "client": "unsupported" } })], &root)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(safe_join(&root, "../overrides").is_err());
+        let alias = json!({ "path": "./mods/EXAMPLE.jar", "downloads": ["https://cdn.modrinth.com/example.jar"] });
+        assert!(mrpack_tasks(&[valid, alias], &root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ftb_required_failures_and_malformed_entries_stop_success() {
+        assert!(required_download_bytes(vec![Ok(10), Err("missing required mod".into())]).is_err());
+        assert_eq!(
+            required_download_bytes(vec![Ok(10), Ok(0)]).unwrap(),
+            vec![10, 0]
+        );
+        let valid = json!({ "path": "./mods", "name": "file.jar", "url": "https://cdn.feed-the-beast.com/file.jar" });
+        assert_eq!(
+            ftb_files(&json!({ "files": [valid.clone()] }))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(ftb_files(&json!({ "files": [valid, { "name": "required.jar" }] })).is_err());
+        assert!(ftb_files(&json!({ "files": [{ "serveronly": true }] }))
+            .unwrap()
+            .is_empty());
+        assert!(ftb_file_path(&json!({ "path": "../", "name": "file.jar" })).is_err());
+        assert_eq!(
+            ftb_file_path(&json!({ "name": "options.txt" })).unwrap(),
+            "options.txt"
+        );
+        assert!(ftb_files(&json!({ "files": [
+            { "path": "mods", "name": "file.jar", "url": "https://cdn.feed-the-beast.com/file.jar" },
+            { "path": "./mods", "name": "FILE.jar", "url": "https://cdn.feed-the-beast.com/file.jar" }
+        ] })).is_err());
+        assert!(ftb_file_path(&json!({ "path": "saves/world", "name": "level.dat" })).is_err());
+    }
+
+    #[test]
+    fn write_plan_covers_arbitrary_overrides_and_rejects_personal_data() {
+        let root = tmp_dir("pack-write-plan");
+        fs::create_dir_all(root.join("custom-directory/empty")).unwrap();
+        fs::write(root.join("custom-directory/script.txt"), b"script").unwrap();
+        fs::write(root.join("custom-settings.cfg"), b"settings").unwrap();
+        let mut plan = PackWritePlan::new();
+        plan.overrides(&root).unwrap();
+        plan.include("./resourcepacks/example.zip").unwrap();
+        assert_eq!(
+            plan.roots.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec![
+                "custom-directory",
+                "custom-settings.cfg",
+                "mods",
+                "natives",
+                "resourcepacks"
+            ]
+        );
+        assert!(plan.include("MODS/other.jar").is_err());
+        for path in [
+            "saves/world/level.dat",
+            "screenshots/a.png",
+            "logs/latest.log",
+            ".refract-recovery/file",
+        ] {
+            assert!(plan.include(path).is_err());
+        }
+        fs::create_dir(root.join("saves")).unwrap();
+        assert!(PackWritePlan::new().overrides(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_parent_traversal_fails_without_creating_an_escaped_file() {
+        let root = tmp_dir("archive-path");
+        let archive = root.join("unsafe.zip");
+        write_jar(&archive, &[("../escape.txt", "unsafe")]);
+        assert!(unzip(&archive, &root.join("extracted")).is_err());
+        assert!(!root.join("escape.txt").exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn write_jar(path: &Path, entries: &[(&str, &str)]) {

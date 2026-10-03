@@ -412,7 +412,9 @@ pub async fn wait_for_downloaded_cf_file(
 ) -> Option<PathBuf> {
     let total = timeout.as_secs();
     for elapsed in 0..=total {
-        if take_cancelled(required.project, required.file) {
+        if crate::operations::check_current().is_err()
+            || take_cancelled(required.project, required.file)
+        {
             return None;
         }
         let probe = required.clone();
@@ -451,15 +453,30 @@ pub async fn curseforge_install_blocked(
     file_id: u64,
     r#mod: Value,
 ) -> Result<Value, String> {
+    let owner = instance_id.clone();
+    crate::operations::run(&owner, crate::operations::Kind::Mutation, async move {
+        curseforge_install_blocked_owned(app, instance_id, mod_id, file_id, r#mod).await
+    })
+    .await
+}
+
+async fn curseforge_install_blocked_owned(
+    app: AppHandle,
+    instance_id: String,
+    mod_id: u64,
+    file_id: u64,
+    r#mod: Value,
+) -> Result<Value, String> {
     let timer = downloader::InstallTimer::start();
     // Clear any stale cancel from a previous attempt.
     let _ = take_cancelled(mod_id, file_id);
 
     emit_blocked(&app, mod_id, file_id, "resolving", None);
     let required = cf_required_file(mod_id, file_id).await;
+    crate::operations::check_current()?;
     let display = cf_display_name(&required);
 
-    let mods_dir = mods::game_dir(&instance_id).join("mods");
+    let mods_dir = mods::game_dir(&instance_id)?.join("mods");
     fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
 
     // The file may already sit in Downloads from an earlier attempt.
@@ -488,6 +505,7 @@ pub async fn curseforge_install_blocked(
         .await;
     }
 
+    crate::operations::check_current()?;
     let Some(src) = found else {
         emit_blocked(&app, mod_id, file_id, "timeout", None);
         return Err(format!(

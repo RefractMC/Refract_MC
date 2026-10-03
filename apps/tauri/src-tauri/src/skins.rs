@@ -75,6 +75,7 @@ pub fn skins_list() -> Vec<SavedSkin> {
 
 #[tauri::command]
 pub fn skins_add(name: String, source_path: String, variant: String) -> Result<SavedSkin, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let source = Path::new(&source_path);
     if !is_png_path(source) {
         return Err("Only PNG skin files are supported.".into());
@@ -103,6 +104,7 @@ pub fn skins_add(name: String, source_path: String, variant: String) -> Result<S
 
 #[tauri::command]
 pub fn skins_delete(id: String) -> Result<(), String> {
+    let _maintenance = crate::maintenance::shared()?;
     let skins = list_saved_skins();
     if let Some(skin) = skins.iter().find(|s| s.id == id) {
         let _ = fs::remove_file(skin_path(&skin.filename));
@@ -127,7 +129,11 @@ pub fn skins_file_to_data_url(full_path: String) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn skins_apply(skin_id: String, account_uuid: String) -> Result<(), String> {
+pub async fn skins_apply(
+    skin_id: String,
+    account_uuid: String,
+) -> Result<(), crate::error::IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
     let skin = list_saved_skins()
         .into_iter()
         .find(|s| s.id == skin_id)
@@ -142,6 +148,7 @@ pub async fn skins_apply(skin_id: String, account_uuid: String) -> Result<(), St
 
 fn account_type(uuid: &str) -> Option<String> {
     config::read()
+        .ok()?
         .get("accounts")
         .and_then(Value::as_array)
         .and_then(|a| {
@@ -195,7 +202,12 @@ pub async fn fetch_skin_texture_url(uuid: String) -> Option<String> {
 /// Upload a skin PNG for a Microsoft account. Offline accounts signal OFFLINE_ONLY
 /// so the renderer can save the image as a local avatar instead.
 #[tauri::command]
-pub async fn upload_skin(uuid: String, image_path: String, variant: String) -> Result<(), String> {
+pub async fn upload_skin(
+    uuid: String,
+    image_path: String,
+    variant: String,
+) -> Result<(), crate::error::IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
     if account_type(&uuid).as_deref() != Some("microsoft") {
         return Err("OFFLINE_ONLY".into());
     }
@@ -208,42 +220,26 @@ pub async fn upload_skin(uuid: String, image_path: String, variant: String) -> R
     let form = reqwest::multipart::Form::new()
         .text("variant", variant)
         .part("file", part);
-    let res = reqwest::Client::new()
-        .post(format!("{MC_PROFILE}/skins"))
-        .bearer_auth(token)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !res.status().is_success() {
-        let status = res.status();
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        let msg = v["errorMessage"].as_str().or(v["error"].as_str());
-        return Err(msg
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("Skin upload failed: HTTP {status}")));
-    }
+    auth::profile_request(
+        auth::service_client()?
+            .post(format!("{MC_PROFILE}/skins"))
+            .bearer_auth(token)
+            .multipart(form),
+    )
+    .await?;
     Ok(())
 }
 
 /// List a Microsoft account's capes (with each image inlined as a data URL).
 #[tauri::command]
-pub async fn fetch_capes(uuid: String) -> Result<Vec<Value>, String> {
+pub async fn fetch_capes(uuid: String) -> Result<Vec<Value>, crate::error::IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
     if account_type(&uuid).as_deref() != Some("microsoft") {
         return Ok(vec![]);
     }
     let (token, _) = auth::mc_token(&uuid).await?;
-    let client = reqwest::Client::new();
-    let res = client
-        .get(MC_PROFILE)
-        .bearer_auth(&token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !res.status().is_success() {
-        return Ok(vec![]);
-    }
-    let profile: Value = res.json().await.map_err(|e| e.to_string())?;
+    let client = auth::service_client()?;
+    let profile = auth::profile_request(client.get(MC_PROFILE).bearer_auth(&token)).await?;
     let mut out = Vec::new();
     for c in profile["capes"].as_array().cloned().unwrap_or_default() {
         let mut entry = c.clone();
@@ -264,32 +260,21 @@ pub async fn fetch_capes(uuid: String) -> Result<Vec<Value>, String> {
 
 /// Activate a cape by id, or hide the active cape when `cape_id` is null.
 #[tauri::command]
-pub async fn set_cape(uuid: String, cape_id: Option<String>) -> Result<(), String> {
+pub async fn set_cape(uuid: String, cape_id: Option<String>) -> Result<(), crate::error::IpcError> {
+    let _maintenance = crate::maintenance::shared()?;
     if account_type(&uuid).as_deref() != Some("microsoft") {
         return Err("Offline accounts cannot manage capes".into());
     }
     let (token, _) = auth::mc_token(&uuid).await?;
-    let client = reqwest::Client::new();
+    let client = auth::service_client()?;
     let url = format!("{MC_PROFILE}/capes/active");
-    let res = match &cape_id {
-        None => client.delete(&url).bearer_auth(&token).send().await,
-        Some(id) => {
-            client
-                .put(&url)
-                .bearer_auth(&token)
-                .json(&json!({ "capeId": id }))
-                .send()
-                .await
-        }
-    }
-    .map_err(|e| e.to_string())?;
-    if !res.status().is_success() && res.status().as_u16() != 204 {
-        let status = res.status();
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        let msg = v["errorMessage"].as_str().or(v["error"].as_str());
-        return Err(msg
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("Failed to update cape: HTTP {status}")));
-    }
+    let request = match &cape_id {
+        None => client.delete(&url).bearer_auth(&token),
+        Some(id) => client
+            .put(&url)
+            .bearer_auth(&token)
+            .json(&json!({ "capeId": id })),
+    };
+    auth::profile_request(request).await?;
     Ok(())
 }

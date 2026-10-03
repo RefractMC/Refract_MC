@@ -1,10 +1,14 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { createSettingsWriter } from '@/lib/settings-writer'
+import { useAppUpdate } from '@/hooks/use-app-update'
 import { createPortal } from 'react-dom'
 import type React from 'react'
 import { analyticsAvailable, api, type AppConfig, type SafeAccount } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { ThemesDialog } from '@/components/settings/ThemesDialog'
+import { ResetLauncherButton } from '@/components/settings/ResetLauncherButton'
 import { useThemeStore, type ThemePreference } from '@/stores/theme'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
@@ -26,14 +30,6 @@ type ConfirmAction = {
   body: string
   confirmLabel: string
   run: () => Promise<void>
-}
-
-type AppUpdateState = {
-  phase: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
-  version?: string
-  percent?: number
-  retry?: 'check' | 'download' | 'install'
-  error?: string
 }
 
 function FontFamilyPicker({
@@ -242,6 +238,7 @@ function ConfirmActionModal({
 }
 
 function Settings() {
+  const queryClient = useQueryClient()
   const t = useT()
   const analyticsDisabled = !analyticsAvailable
   const languagePreference = useLanguageStore((s) => s.languagePreference)
@@ -261,22 +258,33 @@ function Settings() {
   const setFontPreference = useThemeStore((state) => state.setFontPreference)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
+  const [savingSettings, setSavingSettings] = useState(0)
+  const settingsAlive = useRef(true)
+  const configRef = useRef(config)
+  configRef.current = config
+  const settingsWriter = useRef(createSettingsWriter(async (key, value) => {
+    return api.config.set(key, value)
+  }))
+  useEffect(() => {
+    settingsAlive.current = true
+    return () => { settingsAlive.current = false }
+  }, [])
   const [accounts, setAccounts] = useState<SafeAccount[]>([])
   const [activeAccount, setActiveAccount] = useState<SafeAccount | null>(null)
   const [cfKeyDraft, setCfKeyDraft] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmActionBusy, setConfirmActionBusy] = useState(false)
   const [themesOpen, setThemesOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const [memoryMb, setMemoryMb] = useState<number>(2048)
+  const [memoryPending, setMemoryPending] = useState(false)
   const [memoryMaxMb, setMemoryMaxMb] = useState<number>(16384)
   const [installedFonts, setInstalledFonts] = useState<string[]>(COMMON_FONT_FAMILIES)
   const [fontsLoading, setFontsLoading] = useState(true)
   const memorySaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const memorySaveVersion = useRef(0)
   const [javas, setJavas] = useState<JavaInstallation[]>([])
   const [managedJavas, setManagedJavas] = useState<JavaInstallation[]>([])
   const [javaLoading, setJavaLoading] = useState(true)
@@ -287,7 +295,8 @@ function Settings() {
   const [logs, setLogs] = useState<Array<{ time: string; level: 'info' | 'warn' | 'error'; source: string; message: string }>>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
-  const [appUpdate, setAppUpdate] = useState<AppUpdateState>({ phase: 'idle' })
+  const appUpdater = useAppUpdate()
+  const appUpdate = appUpdater.status
   const avatars = useAvatarStore((s) => s.avatars)
   const setAvatarStore = useAvatarStore((s) => s.setAvatar)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
@@ -317,12 +326,40 @@ function Settings() {
     setActiveAccount(nextActive)
   }
 
+  async function saveSetting(key: string, value: unknown, message?: string) {
+    if (settingsAlive.current) {
+      setSavingSettings(count => count + 1)
+      setError(null)
+    }
+    try {
+      const saved = await settingsWriter.current(key, value)
+      queryClient.setQueryData(['config'], saved)
+      if (settingsAlive.current) {
+        setConfig(saved)
+        configRef.current = saved
+        if (message) showToast(message)
+      }
+      return true
+    } catch {
+      if (settingsAlive.current) setError(t.windowLifecycle.saveFailed)
+      return false
+    } finally {
+      if (settingsAlive.current) setSavingSettings(count => count - 1)
+    }
+  }
+
   function handleMemoryChange(mb: number) {
     const safeMb = clampMemoryMb(mb, memoryMaxMb)
+    const version = ++memorySaveVersion.current
     setMemoryMb(safeMb)
+    setMemoryPending(true)
     if (memorySaveTimeout.current) clearTimeout(memorySaveTimeout.current)
-    memorySaveTimeout.current = setTimeout(() => {
-      api.config.set('defaultMemoryMb', safeMb).catch(() => {})
+    memorySaveTimeout.current = setTimeout(async () => {
+      const saved = await saveSetting('defaultMemoryMb', safeMb)
+      if (!saved && settingsAlive.current && memorySaveVersion.current === version) {
+        setMemoryMb(configRef.current?.defaultMemoryMb ?? 2048)
+      }
+      if (settingsAlive.current && memorySaveVersion.current === version) setMemoryPending(false)
     }, 400)
   }
 
@@ -345,7 +382,7 @@ function Settings() {
       const [all, managed] = await Promise.all([api.mc.java(), api.java.managedList()])
       setJavas(all)
       setManagedJavas(managed)
-    } catch { setJavas([]); setManagedJavas([]) }
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setJavaLoading(false) }
   }
 
@@ -416,32 +453,15 @@ function Settings() {
   }
 
   useEffect(() => {
-    const unsub = api.java.onProgress(({ major, step, percent }) => {
-      setJavaDownloading(prev => new Map(prev).set(major, { step, percent }))
+    const unsub = api.java.onProgress(({ major, step, percent, state }) => {
+      setJavaDownloading(prev => {
+        const next = new Map(prev)
+        if (state === 'succeeded' || state === 'failed') next.delete(major)
+        else next.set(major, { step, percent })
+        return next
+      })
     })
     return () => unsub()
-  }, [])
-
-  useEffect(() => {
-    if (!__APP_UPDATER_ENABLED__) return
-    const unAvailable = api.updater.onAvailable(({ version }) => {
-      setAppUpdate({ phase: 'available', version })
-    })
-    const unProgress = api.updater.onProgress(({ percent }) => {
-      setAppUpdate(current => ({
-        phase: 'downloading',
-        version: current.version,
-        percent,
-      }))
-    })
-    const unDownloaded = api.updater.onDownloaded(() => {
-      setAppUpdate(current => ({ phase: 'ready', version: current.version }))
-    })
-    return () => {
-      unAvailable()
-      unProgress()
-      unDownloaded()
-    }
   }, [])
 
   // Defer Java scan by 3 s so settings page renders instantly
@@ -470,73 +490,31 @@ function Settings() {
     window.setTimeout(() => setToast(null), 2600)
   }
 
-  async function checkForAppUpdate() {
-    setAppUpdate({ phase: 'checking' })
-    try {
-      const result = await api.updater.check()
-      setAppUpdate(result.available && result.version
-        ? { phase: 'available', version: result.version }
-        : { phase: 'current' })
-    } catch (error) {
-      setAppUpdate({
-        phase: 'error',
-        retry: 'check',
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  async function downloadAppUpdate() {
-    const version = appUpdate.version
-    if (!version) return
-    setAppUpdate({ phase: 'downloading', version, percent: 0 })
-    try {
-      await api.updater.download()
-      setAppUpdate({ phase: 'ready', version })
-    } catch (error) {
-      setAppUpdate({
-        phase: 'error',
-        version,
-        retry: 'download',
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  async function installAppUpdate() {
-    const version = appUpdate.version
-    if (!version) return
-    setAppUpdate({ phase: 'installing', version })
-    try {
-      await api.updater.install()
-    } catch (error) {
-      setAppUpdate({
-        phase: 'error',
-        version,
-        retry: 'install',
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
   function runAppUpdateAction() {
+    if (!appUpdater.connected) { void appUpdater.refresh(); return }
     if (appUpdate.phase === 'ready' || appUpdate.retry === 'install') {
-      void installAppUpdate()
+      void appUpdater.run(api.updater.install)
     } else if (appUpdate.phase === 'available' || appUpdate.retry === 'download') {
-      void downloadAppUpdate()
+      void appUpdater.run(api.updater.download)
     } else {
-      void checkForAppUpdate()
+      void appUpdater.run(api.updater.check)
     }
   }
 
   function appUpdateStatusText(): string {
+    if (__APP_UPDATER_ENABLED__ && appUpdater.connected === null) return t.settings.checkingForUpdates
+    if (__APP_UPDATER_ENABLED__ && appUpdater.connected === false) return t.appUpdateStatus.disconnected
+    if (appUpdate.slow) return t.appUpdateStatus.slowHint
+    if (appUpdater.actionError) return t.settings.appUpdateFailed(appUpdater.actionError)
     switch (appUpdate.phase) {
       case 'checking': return t.settings.checkingForUpdates
       case 'current': return t.settings.appUpToDate
       case 'available': return t.settings.appUpdateAvailable(appUpdate.version ?? '')
-      case 'downloading': return t.settings.downloadingAppUpdate(appUpdate.percent ?? 0)
+      case 'downloading': return appUpdate.percent === undefined
+        ? t.appUpdateStatus.downloadingUnknown : t.settings.downloadingAppUpdate(appUpdate.percent)
       case 'ready': return t.settings.appUpdateReady
       case 'installing': return t.settings.restartingForUpdate
+      case 'restarting': return t.settings.restartingForUpdate
       case 'error': return t.settings.appUpdateFailed(appUpdate.error ?? t.settings.unknownError)
       default: return __APP_UPDATER_ENABLED__
         ? t.settings.appUpdatesNote
@@ -545,9 +523,10 @@ function Settings() {
   }
 
   function appUpdateButtonLabel(): string {
+    if (!appUpdater.connected) return t.appUpdateStatus.refresh
     if (appUpdate.phase === 'checking') return t.settings.checking
     if (appUpdate.phase === 'downloading') return t.settings.downloading
-    if (appUpdate.phase === 'installing') return t.settings.restarting
+    if (appUpdate.phase === 'installing' || appUpdate.phase === 'restarting') return t.settings.restarting
     if (appUpdate.phase === 'ready' || appUpdate.retry === 'install') {
       return t.settings.restartAndUpdate
     }
@@ -798,8 +777,7 @@ function Settings() {
                   <Button
                     variant="primary"
                     onClick={async () => {
-                      await api.config.set('curseforgeApiKey', cfKeyDraft.trim() || undefined)
-                      showToast(t.settings.curseforgeKeySaved)
+                      await saveSetting('curseforgeApiKey', cfKeyDraft.trim() || undefined, t.settings.curseforgeKeySaved)
                     }}
                     style={{ height: 32 }}
                   >
@@ -814,49 +792,50 @@ function Settings() {
             <div style={{ display:'grid', gap:12 }}>
               <Field label={t.settings.closeToTray} note={t.settings.closeToTrayNote}>
                 <Segmented>
-                  <SegmentButton active={!!(config?.minimizeToTray)} disabled={false} onClick={() => { api.config.set('minimizeToTray', true).catch(() => {}); setConfig(c => c ? { ...c, minimizeToTray: true } : c); showToast(t.settings.closeToTrayOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={!(config?.minimizeToTray)} disabled={false} onClick={() => { api.config.set('minimizeToTray', false).catch(() => {}); setConfig(c => c ? { ...c, minimizeToTray: false } : c); showToast(t.settings.closeToTrayOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!!(config?.minimizeToTray)} disabled={savingSettings > 0} onClick={() => { void saveSetting('minimizeToTray', true, t.settings.closeToTrayOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={!(config?.minimizeToTray)} disabled={savingSettings > 0} onClick={() => { void saveSetting('minimizeToTray', false, t.settings.closeToTrayOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
               <Field label={t.settings.startMinimized} note={t.settings.startMinimizedNote}>
                 <Segmented>
-                  <SegmentButton active={!!(config?.startMinimized)} disabled={false} onClick={() => { api.config.set('startMinimized', true).catch(() => {}); setConfig(c => c ? { ...c, startMinimized: true } : c); showToast(t.settings.startMinimizedOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={!(config?.startMinimized)} disabled={false} onClick={() => { api.config.set('startMinimized', false).catch(() => {}); setConfig(c => c ? { ...c, startMinimized: false } : c); showToast(t.settings.startMinimizedOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!!(config?.startMinimized)} disabled={savingSettings > 0} onClick={() => { void saveSetting('startMinimized', true, t.settings.startMinimizedOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={!(config?.startMinimized)} disabled={savingSettings > 0} onClick={() => { void saveSetting('startMinimized', false, t.settings.startMinimizedOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
               <Field label={t.settings.hideOnLaunch} note={t.settings.hideOnLaunchNote}>
                 <Segmented>
-                  <SegmentButton active={!!(config?.launchMinimizesToTray)} disabled={false} onClick={() => { api.config.set('launchMinimizesToTray', true).catch(() => {}); setConfig(c => c ? { ...c, launchMinimizesToTray: true } : c); showToast(t.settings.hideOnLaunchOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={!(config?.launchMinimizesToTray)} disabled={false} onClick={() => { api.config.set('launchMinimizesToTray', false).catch(() => {}); setConfig(c => c ? { ...c, launchMinimizesToTray: false } : c); showToast(t.settings.hideOnLaunchOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!!(config?.launchMinimizesToTray)} disabled={savingSettings > 0} onClick={() => { void saveSetting('launchMinimizesToTray', true, t.settings.hideOnLaunchOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={!(config?.launchMinimizesToTray)} disabled={savingSettings > 0} onClick={() => { void saveSetting('launchMinimizesToTray', false, t.settings.hideOnLaunchOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
               <Field label={t.settings.reopenOnExit} note={t.settings.reopenOnExitNote}>
                 <Segmented>
-                  <SegmentButton active={!!(config?.reopenOnGameExit)} disabled={false} onClick={() => { api.config.set('reopenOnGameExit', true).catch(() => {}); setConfig(c => c ? { ...c, reopenOnGameExit: true } : c); showToast(t.settings.reopenOnExitOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={!(config?.reopenOnGameExit)} disabled={false} onClick={() => { api.config.set('reopenOnGameExit', false).catch(() => {}); setConfig(c => c ? { ...c, reopenOnGameExit: false } : c); showToast(t.settings.reopenOnExitOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!!(config?.reopenOnGameExit)} disabled={savingSettings > 0} onClick={() => { void saveSetting('reopenOnGameExit', true, t.settings.reopenOnExitOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={!(config?.reopenOnGameExit)} disabled={savingSettings > 0} onClick={() => { void saveSetting('reopenOnGameExit', false, t.settings.reopenOnExitOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
               <Field label={t.settings.showCat} note={t.settings.showCatNote}>
                 <Segmented>
-                  <SegmentButton active={!!(config?.showCat)} disabled={false} onClick={() => { api.config.set('showCat', true).catch(() => {}); setConfig(c => c ? { ...c, showCat: true } : c); showToast(t.settings.showCatOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={!(config?.showCat)} disabled={false} onClick={() => { api.config.set('showCat', false).catch(() => {}); setConfig(c => c ? { ...c, showCat: false } : c); showToast(t.settings.showCatOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!!(config?.showCat)} disabled={savingSettings > 0} onClick={() => { void saveSetting('showCat', true, t.settings.showCatOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={!(config?.showCat)} disabled={savingSettings > 0} onClick={() => { void saveSetting('showCat', false, t.settings.showCatOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
             </div>
+          <Button variant="outline" onClick={() => { void api.window.quit().catch(() => setError(t.windowLifecycle.window)) }} style={{ marginTop: 12 }}>{t.windowLifecycle.quitLauncher}</Button>
           </Panel>
 
           <Panel title={t.privacy.title}>
             <div style={{ display:'grid', gap:12 }}>
               <Field label={t.privacy.analytics} note={analyticsDisabled ? t.privacy.analyticsUnavailable : t.privacy.analyticsNote}>
                 <Segmented>
-                  <SegmentButton active={!analyticsDisabled && config?.analyticsEnabled !== false} disabled={analyticsDisabled} onClick={() => { if (analyticsDisabled) return; api.config.set('analyticsEnabled', true).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: true } : c); showToast(t.privacy.analyticsOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={analyticsDisabled || config?.analyticsEnabled === false} disabled={analyticsDisabled} onClick={() => { if (analyticsDisabled) return; api.config.set('analyticsEnabled', false).catch(() => {}); setConfig(c => c ? { ...c, analyticsEnabled: false } : c); showToast(t.privacy.analyticsOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={!analyticsDisabled && config?.analyticsEnabled !== false} disabled={analyticsDisabled || savingSettings > 0} onClick={() => { if (analyticsDisabled) return; void saveSetting('analyticsEnabled', true, t.privacy.analyticsOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={analyticsDisabled || config?.analyticsEnabled === false} disabled={analyticsDisabled || savingSettings > 0} onClick={() => { if (analyticsDisabled) return; void saveSetting('analyticsEnabled', false, t.privacy.analyticsOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
               <Field label={t.privacy.disableDiscordPresence} note={t.privacy.disableDiscordPresenceNote}>
                 <Segmented>
-                  <SegmentButton active={config?.disableDiscordPresence !== true} disabled={false} onClick={() => { api.config.set('disableDiscordPresence', false).catch(() => {}); setConfig(c => c ? { ...c, disableDiscordPresence: false } : c); showToast(t.privacy.disableDiscordPresenceOn) }}>{t.settings.on}</SegmentButton>
-                  <SegmentButton active={config?.disableDiscordPresence === true} disabled={false} onClick={() => { api.config.set('disableDiscordPresence', true).catch(() => {}); setConfig(c => c ? { ...c, disableDiscordPresence: true } : c); showToast(t.privacy.disableDiscordPresenceOff) }}>{t.settings.off}</SegmentButton>
+                  <SegmentButton active={config?.disableDiscordPresence !== true} disabled={savingSettings > 0} onClick={() => { void saveSetting('disableDiscordPresence', false, t.privacy.disableDiscordPresenceOn) }}>{t.settings.on}</SegmentButton>
+                  <SegmentButton active={config?.disableDiscordPresence === true} disabled={savingSettings > 0} onClick={() => { void saveSetting('disableDiscordPresence', true, t.privacy.disableDiscordPresenceOff) }}>{t.settings.off}</SegmentButton>
                 </Segmented>
               </Field>
             </div>
@@ -1182,9 +1161,10 @@ function Settings() {
               variant={appUpdate.phase === 'ready' ? 'primary' : 'secondary'}
               onClick={runAppUpdateAction}
               disabled={
-                appUpdate.phase === 'checking'
+                appUpdater.busy || appUpdater.connected === null || (appUpdater.connected && (appUpdate.phase === 'checking'
                 || appUpdate.phase === 'downloading'
                 || appUpdate.phase === 'installing'
+                || appUpdate.phase === 'restarting'))
               }
               style={{ flexShrink:0 }}
             >
@@ -1321,38 +1301,7 @@ function Settings() {
               {t.settings.deleteAllDataDesc}
             </div>
           </div>
-          {!confirmDelete ? (
-            <Button
-              variant="danger"
-              onClick={() => setConfirmDelete(true)}
-              style={{ height: 34, flexShrink: 0 }}
-            >
-              {t.settings.deleteAllDataBtn}
-            </Button>
-          ) : (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{t.settings.deleteAllSure}</span>
-              <Button
-                variant="danger"
-                onClick={async () => {
-                  setDeleting(true)
-                  try { await api.launcher.deleteAll() } catch { setDeleting(false); setConfirmDelete(false) }
-                }}
-                disabled={deleting}
-                style={{ height: 34 }}
-              >
-                {deleting ? t.settings.deleting : t.settings.deleteAllConfirm}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => setConfirmDelete(false)}
-                disabled={deleting}
-                style={{ height: 34 }}
-              >
-                {t.settings.cancel}
-              </Button>
-            </div>
-          )}
+          <ResetLauncherButton disabled={memoryPending || savingSettings > 0 || appUpdate.phase === 'installing' || appUpdate.phase === 'restarting'} />
         </div>
       </section>
 

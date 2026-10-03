@@ -1,21 +1,19 @@
 //! Rust port of `launcher.ts` launchInstance + `core/launcher` buildLaunchCommand.
 //! Builds the JVM/game argv from the saved version JSON, resolves a Java
 //! executable, spawns the game and streams stdout/stderr as `mc://log`, emitting
-//! `mc://exit` on close. Live children are tracked by PID so stop/isRunning work.
-//!
-//! Scope (#25.3): vanilla launch with an offline account. Loader overlays
-//! (Fabric/Forge/Quilt — #25.2) and the real Microsoft token chain (#25.4)
-//! extend this; both are gated with a clear error until ported.
+//! `mc://exit` on close. Native operation ownership covers preparation and hooks;
+//! generation-matched watchers own live children, stop requests and runtime leases.
 
-use crate::{auth, config, instances, paths, rules};
+use crate::error::IpcError;
+use crate::{auth, config, instances, operations, paths, rules};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 #[cfg(target_os = "windows")]
@@ -23,11 +21,154 @@ const CP_SEP: &str = ";";
 #[cfg(not(target_os = "windows"))]
 const CP_SEP: &str = ":";
 
-/// instance id → live child PID. The Child itself is moved into a watcher thread
-/// (it owns the blocking `wait()`); stop kills by PID, isRunning checks presence.
-fn pids() -> &'static Mutex<HashMap<String, u32>> {
-    static R: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+type StopReply = tokio::sync::oneshot::Sender<Result<(), String>>;
+
+#[derive(Clone)]
+struct Session {
+    id: String,
+    stop: mpsc::SyncSender<StopReply>,
+}
+
+/// The watcher alone owns the Child. Stop requests never discard session state
+/// or kill an unowned/recycled PID.
+fn sessions() -> &'static Mutex<HashMap<String, Session>> {
+    static R: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+trait SupervisedChild {
+    fn poll(&mut self) -> Result<Option<i32>, String>;
+    fn stop(&mut self) -> Result<(), String>;
+}
+
+impl SupervisedChild for std::process::Child {
+    fn poll(&mut self) -> Result<Option<i32>, String> {
+        self.try_wait()
+            .map(|status| status.map(|status| status.code().unwrap_or(-1)))
+            .map_err(|error| format!("Could not check Minecraft process: {error}"))
+    }
+    fn stop(&mut self) -> Result<(), String> {
+        // Keep ownership of the target Child throughout the request. Preserve
+        // Windows tree termination and Unix SIGTERM (allowing game cleanup).
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("taskkill");
+            command.args(["/PID", &self.id().to_string(), "/T", "/F"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = Command::new("kill");
+            command.args(["-TERM", &self.id().to_string()]);
+            command
+        };
+        crate::procutil::hide_window(&mut command);
+        let mut request = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("Could not request Minecraft stop: {error}"))?;
+        let started = std::time::Instant::now();
+        loop {
+            match request.try_wait() {
+                Ok(Some(status)) => {
+                    if status.success() || self.try_wait().is_ok_and(|status| status.is_some()) {
+                        return Ok(());
+                    }
+                    return Err(format!(
+                        "Could not stop Minecraft: termination command failed ({status})."
+                    ));
+                }
+                Ok(None) if started.elapsed() < Duration::from_secs(5) => {
+                    thread::sleep(Duration::from_millis(20))
+                }
+                result => {
+                    let _ = request.kill();
+                    let _ = request.wait();
+                    return Err(match result {
+                        Err(error) => format!("Could not check Minecraft stop request: {error}"),
+                        _ => "Minecraft stop request timed out; the game remains tracked.".into(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn supervise(
+    child: &mut impl SupervisedChild,
+    requests: mpsc::Receiver<StopReply>,
+    operation: &operations::Operation,
+) -> (i32, bool) {
+    let mut replies = Vec::new();
+    let mut stopped = false;
+    let mut cancellation_handled = false;
+    let mut reported_wait_error = false;
+    loop {
+        match child.poll() {
+            Ok(Some(code)) => {
+                for reply in replies.into_iter().chain(requests.try_iter()) {
+                    let _ = reply.send(Ok(()));
+                }
+                return (code, stopped);
+            }
+            Ok(None) => reported_wait_error = false,
+            Err(error) => {
+                // A failed observation does not prove process exit. Retain the
+                // session and its runtime lease, and keep accepting stop.
+                if !reported_wait_error {
+                    crate::log::log_line("error", "process-watch", &error);
+                }
+                reported_wait_error = true;
+            }
+        }
+        if !cancellation_handled && operation.check().is_err() {
+            cancellation_handled = true;
+            operation.state(operations::State::Stopping);
+            match child.stop() {
+                Ok(()) => stopped = true,
+                Err(error) => {
+                    operation.state(operations::State::Running);
+                    crate::log::log_line("error", "process-stop", &error);
+                }
+            }
+        }
+        match requests.recv_timeout(Duration::from_millis(100)) {
+            Ok(reply) => {
+                if stopped {
+                    replies.push(reply);
+                    continue;
+                }
+                operation.state(operations::State::Stopping);
+                match child.stop() {
+                    Ok(()) => {
+                        stopped = true;
+                        replies.push(reply);
+                    }
+                    Err(error) => {
+                        operation.state(operations::State::Running);
+                        let _ = reply.send(Err(error));
+                    }
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => thread::sleep(Duration::from_millis(100)),
+        }
+    }
+}
+
+fn finalize_session(instance_id: &str, session_id: &str) -> bool {
+    if let Ok(mut sessions) = sessions().lock() {
+        if sessions
+            .get(instance_id)
+            .is_some_and(|session| session.id == session_id)
+        {
+            sessions.remove(instance_id);
+            return true;
+        }
+    }
+    false
 }
 
 fn validate_java_executable(path: &str) -> Result<(), String> {
@@ -121,24 +262,6 @@ fn resolve_args(
     out
 }
 
-/// "group:artifact:version[:classifier@ext]" → relative jar path.
-fn maven_to_path(name: &str) -> String {
-    let parts: Vec<&str> = name.split(':').collect();
-    let group = parts.first().copied().unwrap_or("");
-    let artifact = parts.get(1).copied().unwrap_or("");
-    let version = parts.get(2).copied().unwrap_or("");
-    let group_path = group.replace('.', "/");
-    let fname = if let Some(ce) = parts.get(3) {
-        let mut it = ce.split('@');
-        let classifier = it.next().unwrap_or("");
-        let ext = it.next().unwrap_or("jar");
-        format!("{artifact}-{version}-{classifier}.{ext}")
-    } else {
-        format!("{artifact}-{version}.jar")
-    };
-    format!("{group_path}/{artifact}/{version}/{fname}")
-}
-
 /// "group:artifact(:classifier)" — drops the version so two versions of the same
 /// artifact dedupe, but keeps the classifier so a natives jar stays distinct.
 fn maven_key(name: &str) -> String {
@@ -161,7 +284,7 @@ fn build_classpath(
     overlay: Option<&Value>,
     libs_dir: &Path,
     client_jar: &Path,
-) -> String {
+) -> Result<String, String> {
     let mut jars: Vec<String> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     // Vanilla libs first, then the loader overlay appended so its versions of a
@@ -169,26 +292,24 @@ fn build_classpath(
     let mut all: Vec<Value> = version_json["libraries"]
         .as_array()
         .cloned()
-        .unwrap_or_default();
+        .ok_or("Minecraft metadata has no valid library list. Repair this instance.")?;
     if let Some(ov) = overlay {
-        all.extend(ov["libraries"].as_array().cloned().unwrap_or_default());
+        all.extend(
+            ov["libraries"]
+                .as_array()
+                .ok_or("Loader metadata has no valid library list. Repair this instance.")?
+                .iter()
+                .cloned(),
+        );
     }
     for lib in all {
-        if !rules::library_allowed(&lib) {
+        if !crate::minecraft_metadata::library_allowed(&lib)? {
             continue;
         }
-        let name = lib.get("name").and_then(Value::as_str).unwrap_or("");
-        let jar_path: Option<PathBuf> = if name.is_empty() {
-            None
-        } else {
-            if let Some(p) = lib["downloads"]["artifact"]["path"].as_str() {
-                Some(libs_dir.join(p))
-            } else if lib.get("url").and_then(Value::as_str).is_some() {
-                Some(libs_dir.join(maven_to_path(name)))
-            } else {
-                Some(libs_dir.join(maven_to_path(name)))
-            }
-        };
+        let jar_path = crate::minecraft_metadata::library_artifact_path(&lib, libs_dir)?;
+        let name = lib["name"]
+            .as_str()
+            .ok_or("Library has no valid name. Repair this instance.")?;
         if let Some(jp) = jar_path {
             let key = maven_key(name);
             let val = jp.to_string_lossy().to_string();
@@ -202,7 +323,7 @@ fn build_classpath(
         }
     }
     jars.push(client_jar.to_string_lossy().to_string());
-    jars.join(CP_SEP)
+    Ok(jars.join(CP_SEP))
 }
 
 /// Split a user JVM-args string into argv tokens, honouring single/double quotes.
@@ -359,7 +480,8 @@ fn build_command(
         .as_str()
         .unwrap_or("legacy")
         .to_string();
-    let classpath = build_classpath(version_json, overlay, libs_dir, client_jar);
+    crate::fs_safety::safe_component(&asset_index)?;
+    let classpath = build_classpath(version_json, overlay, libs_dir, client_jar)?;
 
     let features = HashMap::from([
         ("is_demo_user".to_string(), false),
@@ -535,6 +657,7 @@ fn run_hook(
     command: &str,
     cwd: &Path,
     env: &[(String, String)],
+    censor: Arc<crate::log_privacy::Censor>,
 ) -> Result<i32, String> {
     #[cfg(target_os = "windows")]
     let mut cmd = {
@@ -549,25 +672,40 @@ fn run_hook(
         c
     };
     crate::procutil::hide_window(&mut cmd);
-    let output = cmd
+    let mut child = cmd
         .current_dir(cwd)
         .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("{label} command failed to start: {e}"))?;
-    let code = output.status.code().unwrap_or(-1);
-    for (bytes, stream) in [(&output.stdout, "stdout"), (&output.stderr, "stderr")] {
-        for line in String::from_utf8_lossy(bytes).lines() {
-            let _ = app.emit(
-                "mc://log",
-                LogPayload {
-                    instance_id: instance_id.to_string(),
-                    line: format!("[{label}] {line}\n"),
-                    stream: stream.to_string(),
-                },
-            );
-        }
+    let out = child.stdout.take().map(|reader| {
+        pump(
+            app.clone(),
+            instance_id.into(),
+            reader,
+            "stdout",
+            censor.clone(),
+            Some(label.into()),
+        )
+    });
+    let err = child.stderr.take().map(|reader| {
+        pump(
+            app.clone(),
+            instance_id.into(),
+            reader,
+            "stderr",
+            censor,
+            Some(label.into()),
+        )
+    });
+    let result = child
+        .wait()
+        .map_err(|_| format!("Could not wait for the {label} command."));
+    for worker in [out, err].into_iter().flatten() {
+        let _ = worker.join();
     }
-    Ok(code)
+    Ok(result?.code().unwrap_or(-1))
 }
 
 // ── log/exit payloads + streaming ────────────────────────────────────────────
@@ -592,52 +730,81 @@ fn pump<R: std::io::Read + Send + 'static>(
     instance_id: String,
     reader: R,
     stream: &'static str,
-) {
+    censor: Arc<crate::log_privacy::Censor>,
+    label: Option<String>,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        for line in BufReader::new(reader).lines().map_while(Result::ok) {
+        let emit = |line: String| {
             let _ = app.emit(
                 "mc://log",
                 LogPayload {
                     instance_id: instance_id.clone(),
-                    line: format!("{line}\n"),
+                    line: match &label {
+                        Some(label) => format!("[{label}] {line}\n"),
+                        None => format!("{line}\n"),
+                    },
                     stream: stream.to_string(),
                 },
             );
-        }
-    });
+        };
+        crate::log_privacy::filtered_output(reader, &censor, emit);
+    })
 }
 
 // ── commands ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn is_running(instance_id: String) -> bool {
-    pids()
+    sessions()
         .lock()
         .map(|m| m.contains_key(&instance_id))
         .unwrap_or(false)
 }
 
 #[tauri::command]
-pub fn stop_minecraft(instance_id: String) -> Result<(), String> {
-    let pid = pids()
+pub async fn stop_minecraft(instance_id: String) -> Result<(), String> {
+    stop_session(instance_id, None).await
+}
+
+pub(crate) async fn stop_operation(
+    instance_id: String,
+    operation_id: String,
+) -> Result<(), String> {
+    stop_session(instance_id, Some(operation_id)).await
+}
+
+async fn stop_session(instance_id: String, expected: Option<String>) -> Result<(), String> {
+    let session = sessions()
         .lock()
         .map_err(|_| "Minecraft process tracker is unavailable.".to_string())?
         .get(&instance_id)
-        .copied();
-    if let Some(pid) = pid {
-        #[cfg(windows)]
-        {
-            let mut cmd = Command::new("taskkill");
-            crate::procutil::hide_window(&mut cmd);
-            let _ = cmd.args(["/PID", &pid.to_string(), "/T", "/F"]).output();
+        .cloned();
+    if let Some(session) = session {
+        if expected.as_ref().is_some_and(|id| *id != session.id) {
+            return Err("This operation no longer owns the running Minecraft session.".into());
         }
-        #[cfg(not(windows))]
-        let _ = Command::new("kill").arg(pid.to_string()).output();
-        pids()
-            .lock()
-            .map_err(|_| "Minecraft process tracker is unavailable.".to_string())?
-            .remove(&instance_id);
-        crate::discord::clear_game_activity(&instance_id);
+        let (reply, response) = tokio::sync::oneshot::channel();
+        session
+            .stop
+            .try_send(reply)
+            .map_err(|error| format!("Could not request Minecraft stop: {error}"))?;
+        return tokio::time::timeout(Duration::from_secs(10), response)
+            .await
+            .map_err(|_| {
+                "Minecraft has not confirmed exit. It remains tracked; try stopping it again."
+                    .to_string()
+            })?
+            .map_err(|_| {
+                "Minecraft process watcher is unavailable; the session remains tracked.".to_string()
+            })?;
+    }
+    if let Some(record) = operations::operations_list()?.into_iter().find(|record| {
+        record.instance_id.as_deref() == Some(instance_id.as_str())
+            && expected.as_ref().is_none_or(|id| *id == record.id)
+            && record.kind == operations::Kind::Launch
+            && record.state == operations::State::Preparing
+    }) {
+        operations::request_cancel(&record.id)?;
     }
     Ok(())
 }
@@ -648,15 +815,28 @@ pub async fn launch_minecraft(
     instance_id: String,
     quick_play: Option<QuickPlay>,
     offline: Option<bool>,
-) -> Result<(), String> {
-    if is_running(instance_id.clone()) {
-        return Err("Instance is already running.".into());
-    }
+) -> Result<(), IpcError> {
+    let operation = operations::Operation::begin(&instance_id, operations::Kind::Launch)?;
+    let context_id = instance_id.clone();
+    operation
+        .owning_scope(|operation| launch_owned(app, instance_id, quick_play, offline, operation))
+        .await
+        .map_err(|error| error.with_operation("launch", &context_id))
+}
+
+async fn launch_owned(
+    app: AppHandle,
+    instance_id: String,
+    quick_play: Option<QuickPlay>,
+    offline: Option<bool>,
+    mut operation: operations::Operation,
+) -> Result<(), IpcError> {
+    operation.check()?;
 
     // Active account → auth fields. Microsoft/Yggdrasil accounts get a real
     // Minecraft token refreshed in Rust; offline accounts use the placeholder
     // token expected by the Minecraft launcher profile.
-    let cfg = config::read();
+    let cfg = config::read()?;
     let active = cfg
         .get("activeAccountId")
         .and_then(Value::as_str)
@@ -691,17 +871,7 @@ pub async fn launch_minecraft(
     // network, but multiplayer servers and skins won't work for the session.
     let force_offline = offline.unwrap_or(false);
     let auth = if (acc_type == "microsoft" || acc_type == "yggdrasil") && !force_offline {
-        let (token, xuid) = auth::mc_token(&uuid).await.map_err(|e| {
-            if e == "AUTH_EXPIRED" {
-                if acc_type == "yggdrasil" {
-                    "Your Yggdrasil session expired - please sign in again.".to_string()
-                } else {
-                    "Your Microsoft session expired - please sign in again.".to_string()
-                }
-            } else {
-                e
-            }
-        })?;
+        let (token, xuid) = auth::mc_token(&uuid).await?;
         Auth {
             username,
             uuid,
@@ -729,7 +899,8 @@ pub async fn launch_minecraft(
         }
     };
 
-    let instance = instances::get_instance_by_id(instance_id.clone())
+    operation.check()?;
+    let instance = instances::get_instance_by_id(instance_id.clone())?
         .ok_or(format!("Instance not found: {instance_id}"))?;
     let instance_name = instance
         .get("name")
@@ -774,75 +945,41 @@ pub async fn launch_minecraft(
     // Loaders launch via their saved overlay profile. Forge/NeoForge overlays are
     // produced by the installer processor step.
     let overlay: Option<Value> = match loader.as_str() {
-        "fabric" | "quilt" => {
-            let p = paths::versions_dir()
-                .join(format!("{mc_version}-{loader}"))
-                .join(format!("{mc_version}-{loader}.json"));
-            let j = std::fs::read_to_string(&p)
-                .ok()
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok());
-            if j.is_none() {
-                return Err(format!(
-                    "{loader} is not fully installed for this instance. Please reinstall."
-                ));
-            }
-            j
-        }
-        "forge" | "neoforge" => {
-            // Loader JSON is keyed by loader+version; fall back to loader-only and
-            // the legacy "<mc>-forge" path.
-            let lv = instance.get("modLoaderVersion").and_then(Value::as_str);
-            let mut candidates: Vec<PathBuf> = Vec::new();
-            if let Some(v) = lv {
-                let tag = format!("{loader}-{v}");
-                candidates.push(
-                    paths::versions_dir()
-                        .join(format!("{mc_version}-{tag}"))
-                        .join(format!("{mc_version}-{tag}.json")),
-                );
-            }
-            candidates.push(
-                paths::versions_dir()
-                    .join(format!("{mc_version}-{loader}"))
-                    .join(format!("{mc_version}-{loader}.json")),
-            );
-            candidates.push(
-                paths::versions_dir()
-                    .join(format!("{mc_version}-forge"))
-                    .join(format!("{mc_version}-forge.json")),
-            );
-            let found = candidates.iter().find_map(|p| {
-                std::fs::read_to_string(p)
-                    .ok()
-                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-            });
-            if found.is_none() {
-                return Err(format!(
-                    "{loader} is not fully installed for this instance. Please reinstall."
-                ));
-            }
-            found
-        }
-        _ => None,
+        "fabric" | "quilt" | "forge" | "neoforge" => Some(crate::loader_profiles::load(
+            &mc_version,
+            &loader,
+            instance.get("modLoaderVersion").and_then(Value::as_str),
+        )?),
+        "vanilla" => None,
+        _ => return Err("This instance uses an unsupported mod loader.".into()),
     };
 
     let required_java =
         crate::java::required_for_launch(&mc_version, &loader, &version_json, overlay.as_ref());
     // Resolve a compatible runtime, auto-downloading a Temurin JRE if none qualifies.
-    let java_exe = crate::java::resolve_or_provision(
+    let java_runtime = crate::java::resolve_or_provision(
         &app,
         required_java,
         instance.get("javaPath").and_then(Value::as_str),
     )
     .await?;
+    operation.check()?;
+    let java_exe = java_runtime.executable.clone();
     validate_java_executable(&java_exe)?;
 
-    let inst_dir = instances::resolve_instance_dir(&instance_id);
-    let game_dir = instance
-        .get("externalGameDir")
-        .and_then(Value::as_str)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| inst_dir.join("minecraft"));
+    let inst_dir = instances::resolve_instance_dir(&instance_id)?;
+    let game_dir = instances::game_dir(&instance_id)?;
+    let mut censor = crate::log_privacy::Censor::local();
+    if auth.access_token != "offline" {
+        censor.add(&auth.access_token, "<ACCESS TOKEN>");
+    }
+    for value in [&auth.username, &auth.uuid, &auth.xuid] {
+        censor.add(value, "<ACCOUNT>");
+    }
+    censor.add(&auth.uuid.replace('-', ""), "<ACCOUNT>");
+    censor.path(&inst_dir, "<INSTANCE>");
+    censor.path(&game_dir, "<GAME>");
+    let censor = Arc::new(censor);
     std::fs::create_dir_all(game_dir.join("mods")).ok();
     std::fs::create_dir_all(game_dir.join("saves")).ok();
 
@@ -897,18 +1034,20 @@ pub async fn launch_minecraft(
         let id2 = instance_id.clone();
         let dir2 = game_dir.clone();
         let env2 = hook_env.clone();
-        let code = tauri::async_runtime::spawn_blocking(move || {
-            run_hook(&app2, &id2, "pre-launch", &pre, &dir2, &env2)
+        let censor2 = censor.clone();
+        let code = crate::operations::blocking(move || {
+            run_hook(&app2, &id2, "pre-launch", &pre, &dir2, &env2, censor2)
         })
         .await
         .map_err(|e| e.to_string())??;
         if code != 0 {
-            return Err(format!(
-                "Pre-launch command exited with code {code} — launch aborted."
-            ));
+            return Err(
+                format!("Pre-launch command exited with code {code} - launch aborted.").into(),
+            );
         }
     }
 
+    operation.check()?;
     let cmd = build_command(
         &mc_version,
         &version_json,
@@ -930,6 +1069,12 @@ pub async fn launch_minecraft(
 
     let mut launch_cmd = Command::new(exe);
     crate::procutil::hide_window(&mut launch_cmd);
+    // Acquire tracking before spawning: a poisoned tracker must not leave an
+    // untracked child and release its Java lease.
+    let mut active = sessions()
+        .lock()
+        .map_err(|_| "Minecraft process tracker is unavailable.")?;
+    operation.check()?;
     let mut child = launch_cmd
         .args(args)
         .current_dir(&game_dir)
@@ -938,18 +1083,37 @@ pub async fn launch_minecraft(
         .spawn()
         .map_err(|e| format!("failed to launch Minecraft: {e}"))?;
 
-    let pid = child.id();
+    let (stop, requests) = mpsc::sync_channel(8);
+    active.insert(
+        instance_id.clone(),
+        Session {
+            id: operation.id().into(),
+            stop,
+        },
+    );
+    drop(active);
+    operation.state(operations::State::Running);
+    crate::window_lifecycle::game_started(&app, operation.id());
     if let Some(out) = child.stdout.take() {
-        pump(app.clone(), instance_id.clone(), out, "stdout");
+        pump(
+            app.clone(),
+            instance_id.clone(),
+            out,
+            "stdout",
+            censor.clone(),
+            None,
+        );
     }
     if let Some(err) = child.stderr.take() {
-        pump(app.clone(), instance_id.clone(), err, "stderr");
+        pump(
+            app.clone(),
+            instance_id.clone(),
+            err,
+            "stderr",
+            censor.clone(),
+            None,
+        );
     }
-    pids()
-        .lock()
-        .map_err(|_| "Minecraft process tracker is unavailable.".to_string())?
-        .insert(instance_id.clone(), pid);
-
     let _ = instances::update_instance(
         instance_id.clone(),
         serde_json::json!({ "lastPlayed": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true) }),
@@ -963,19 +1127,24 @@ pub async fn launch_minecraft(
         })),
     );
 
-    // Watcher owns the Child and blocks on wait(); on exit it clears the PID and
-    // notifies the renderer so the UI flips back from "running".
+    // Only the matching watcher finalizes a confirmed exit. Preparation and
+    // post-exit hooks retain operation ownership as well as the Java lease.
     let app_exit = app.clone();
     let id_exit = instance_id.clone();
     let started = std::time::Instant::now();
     thread::spawn(move || {
-        let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
-        if let Ok(mut pids) = pids().lock() {
-            pids.remove(&id_exit);
+        let _java_runtime = java_runtime;
+        let (code, stopped) = supervise(&mut child, requests, &operation);
+        if finalize_session(&id_exit, operation.id()) {
+            crate::discord::clear_game_activity(&id_exit);
+            crate::window_lifecycle::game_exited(&app_exit, operation.id());
         }
-        crate::discord::clear_game_activity(&id_exit);
         // Record the session so playtime totals and the daily streak update.
-        crate::instances::record_playtime(id_exit.clone(), started.elapsed().as_secs());
+        if let Err(error) = operation.sync_scope(|| {
+            crate::instances::record_playtime(id_exit.clone(), started.elapsed().as_secs())
+        }) {
+            crate::log::log_line("error", "playtime-save", &error);
+        }
         if let Some(post) = post_cmd {
             let _ = run_hook(
                 &app_exit,
@@ -984,8 +1153,16 @@ pub async fn launch_minecraft(
                 &post,
                 &game_dir,
                 &hook_env,
+                censor,
             );
         }
+        operation.finish(&if stopped {
+            Err(operations::CANCELLED.into())
+        } else if code == 0 {
+            Ok(())
+        } else {
+            Err(format!("Minecraft exited with code {code}."))
+        });
         let _ = app_exit.emit(
             "mc://exit",
             ExitPayload {
@@ -1002,6 +1179,140 @@ pub async fn launch_minecraft(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn supervised_process_child() {
+        if std::env::var("REFRACT_PROCESS_STOP_TEST").as_deref() == Ok("sleep") {
+            thread::sleep(Duration::from_secs(30));
+        }
+    }
+
+    #[test]
+    fn native_stop_targets_only_the_owned_test_child() {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "launch::tests::supervised_process_child",
+                "--nocapture",
+            ])
+            .env("REFRACT_PROCESS_STOP_TEST", "sleep")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        crate::procutil::hide_window(&mut command);
+        let mut child = command.spawn().unwrap();
+        let started = std::time::Instant::now();
+        let stopped = child.stop();
+        if stopped.is_err() {
+            // Even an OS/sandbox failure must not leave the fixture running.
+            let _ = child.kill();
+        }
+        child.wait().unwrap();
+        stopped.unwrap();
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn failed_stop_retains_session_and_success_waits_for_exit() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+        struct Process {
+            running: bool,
+            fail: Arc<AtomicBool>,
+        }
+        impl SupervisedChild for Process {
+            fn poll(&mut self) -> Result<Option<i32>, String> {
+                Ok((!self.running).then_some(0))
+            }
+            fn stop(&mut self) -> Result<(), String> {
+                if self.fail.load(Ordering::Acquire) {
+                    return Err("Injected stop failure".into());
+                }
+                self.running = false;
+                Ok(())
+            }
+        }
+        let fixture = crate::instances::TestInstance::new();
+        let id = fixture.id.clone();
+        let mut operation = operations::Operation::begin(&id, operations::Kind::Launch).unwrap();
+        let operation_id = operation.id().to_string();
+        operation.state(operations::State::Running);
+        let fail = Arc::new(AtomicBool::new(true));
+        let process = Process {
+            running: true,
+            fail: fail.clone(),
+        };
+        let (stop, requests) = mpsc::sync_channel(8);
+        sessions().lock().unwrap().insert(
+            id.clone(),
+            Session {
+                id: operation_id.clone(),
+                stop,
+            },
+        );
+        let watcher_id = id.clone();
+        let watcher = thread::spawn(move || {
+            let mut process = process;
+            let result = supervise(&mut process, requests, &operation);
+            assert_eq!(result, (0, true));
+            assert!(finalize_session(&watcher_id, operation.id()));
+            operation.finish(&Err::<(), _>(operations::CANCELLED.into()));
+        });
+        tauri::async_runtime::block_on(async {
+            assert!(stop_minecraft(id.clone())
+                .await
+                .unwrap_err()
+                .contains("Injected stop failure"));
+            assert!(is_running(id.clone()));
+            assert_eq!(
+                operations::operations_get(operation_id.clone())
+                    .unwrap()
+                    .unwrap()
+                    .state,
+                operations::State::Running
+            );
+            assert!(operations::Operation::begin(&id, operations::Kind::Mutation).is_err());
+            fail.store(false, Ordering::Release);
+            stop_minecraft(id.clone()).await.unwrap();
+        });
+        watcher.join().unwrap();
+        assert!(!is_running(id));
+        assert_eq!(
+            operations::operations_get(operation_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            operations::State::Cancelled
+        );
+    }
+
+    #[test]
+    fn delayed_old_watcher_cannot_finalize_a_new_session() {
+        let fixture = crate::instances::TestInstance::new();
+        let id = fixture.id.clone();
+        let (stop, requests) = mpsc::sync_channel(8);
+        sessions().lock().unwrap().insert(
+            id.clone(),
+            Session {
+                id: "new-session".into(),
+                stop,
+            },
+        );
+        assert!(!finalize_session(&id, "old-session"));
+        assert!(is_running(id.clone()));
+        tauri::async_runtime::block_on(async {
+            assert!(stop_operation(id.clone(), "old-session".into())
+                .await
+                .is_err());
+        });
+        assert!(matches!(
+            requests.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert!(finalize_session(&id, "new-session"));
+    }
 
     fn auth() -> Auth {
         Auth {

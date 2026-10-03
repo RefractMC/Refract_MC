@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell } from '@/components/ui/Icon'
 import { api } from '@/lib/api'
+import { useAppUpdate } from '@/hooks/use-app-update'
 import { useT, type T } from '@/i18n'
 
 const LAST_SEEN_KEY = 'refract.notifications.lastSeen'
@@ -38,14 +39,6 @@ function WinBtn({ onClick, danger, children }: { onClick: () => void; danger?: b
 
 type ActivityEntry = { id: string; label: string; ts: number }
 
-type UpdateState = {
-  version: string
-  phase: 'pending' | 'downloading' | 'ready' | 'installing' | 'error'
-  percent: number
-  failedAction?: 'download' | 'install'
-  error?: string
-}
-
 export function TitleBar() {
   const t = useT()
   const [isMaximized, setIsMaximized] = useState(false)
@@ -54,21 +47,23 @@ export function TitleBar() {
   const [lastSeen, setLastSeen] = useState<number>(() => Number(localStorage.getItem(LAST_SEEN_KEY) ?? 0))
   const [bellHover, setBellHover] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const updater = useAppUpdate()
+  const [dismissedVersion, setDismissedVersion] = useState<string>()
+  const nativeUpdate = updater.status
+  const activeUpdate = ['downloading', 'installing', 'restarting'].includes(nativeUpdate.phase)
+  const update = nativeUpdate.version &&
+    !['idle', 'checking', 'current'].includes(nativeUpdate.phase) &&
+    (dismissedVersion !== nativeUpdate.version || activeUpdate || nativeUpdate.phase === 'error')
+    ? {
+      ...nativeUpdate, version: nativeUpdate.version,
+      phase: updater.actionError && !activeUpdate ? 'error' : nativeUpdate.phase,
+      error: updater.actionError ?? nativeUpdate.error,
+      retry: nativeUpdate.retry ?? (nativeUpdate.phase === 'ready' ? 'install' : 'download'),
+    } : null
 
   useEffect(() => {
     api.window.isMaximized().then(setIsMaximized).catch(() => {})
     return api.window.onMaximizedChange(setIsMaximized)
-  }, [])
-
-  useEffect(() => {
-    if (!__APP_UPDATER_ENABLED__) return
-    const unA = api.updater.onAvailable(({ version }) => {
-      setUpdate({ version, phase: 'pending', percent: 0 })
-    })
-    const unP = api.updater.onProgress(({ percent }) => setUpdate(u => u ? { ...u, phase: 'downloading', percent } : null))
-    const unD = api.updater.onDownloaded(() => setUpdate(u => u ? { ...u, phase: 'ready', percent: 100 } : null))
-    return () => { unA(); unP(); unD() }
   }, [])
 
   useEffect(() => {
@@ -101,31 +96,11 @@ export function TitleBar() {
   }
 
   async function downloadUpdate() {
-    setUpdate(current => current ? { ...current, phase: 'downloading', percent: 0 } : null)
-    try {
-      await api.updater.download()
-    } catch (error) {
-      setUpdate(current => current ? {
-        ...current,
-        phase: 'error',
-        failedAction: 'download',
-        error: error instanceof Error ? error.message : String(error),
-      } : null)
-    }
+    await updater.run(api.updater.download)
   }
 
   async function installUpdate() {
-    setUpdate(current => current ? { ...current, phase: 'installing' } : null)
-    try {
-      await api.updater.install()
-    } catch (error) {
-      setUpdate(current => current ? {
-        ...current,
-        phase: 'error',
-        failedAction: 'install',
-        error: error instanceof Error ? error.message : String(error),
-      } : null)
-    }
+    await updater.run(api.updater.install)
   }
 
   return (
@@ -157,24 +132,24 @@ export function TitleBar() {
           {update.phase === 'ready' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--grass)', fontWeight: 600 }}>{t.titleBar.versionDownloaded(update.version)}</span>
-              <button onClick={() => void installUpdate()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
+              <button disabled={updater.busy || !updater.connected} onClick={() => void installUpdate()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--grass)', color: '#000', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
                 {t.titleBar.restartNow}
               </button>
-              <button onClick={() => setUpdate(null)} title={t.titleBar.restartLater} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'transparent', color: 'var(--ink-4)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
+              <button onClick={() => setDismissedVersion(update.version)} title={t.titleBar.restartLater} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'transparent', color: 'var(--ink-4)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
                 {t.titleBar.later}
               </button>
             </>
-          ) : update.phase === 'installing' ? (
+          ) : update.phase === 'installing' || update.phase === 'restarting' ? (
             <span style={{ fontSize: 10, color: 'var(--grass)', fontWeight: 600 }}>
-              {t.titleBar.installing}
+              {update.slow ? t.appUpdateStatus.slow : t.titleBar.installing}
             </span>
           ) : update.phase === 'downloading' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>v{update.version}</span>
               <div style={{ width: 48, height: 3, background: 'var(--surface-3)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${update.percent}%`, background: 'var(--accent)', transition: 'width 300ms linear', borderRadius: 2 }} />
+                <div style={{ height: '100%', width: `${update.percent ?? 0}%`, background: 'var(--accent)', transition: 'width 300ms linear', borderRadius: 2 }} />
               </div>
-              <span style={{ fontSize: 10, color: 'var(--ink-4)', minWidth: 26, textAlign: 'right' }}>{update.percent}%</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-4)', minWidth: 26, textAlign: 'right' }}>{update.percent === undefined ? t.appUpdateStatus.downloadingUnknown : `${update.percent}%`}</span>
             </>
           ) : update.phase === 'error' ? (
             <>
@@ -185,7 +160,8 @@ export function TitleBar() {
                 {t.titleBar.updateFailed}
               </span>
               <button
-                onClick={() => void (update.failedAction === 'install' ? installUpdate() : downloadUpdate())}
+                disabled={updater.busy || !updater.connected}
+                onClick={() => void updater.run(update.retry === 'install' ? api.updater.install : update.retry === 'check' ? api.updater.check : api.updater.download)}
                 style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}
               >
                 {t.titleBar.retry}
@@ -194,10 +170,10 @@ export function TitleBar() {
           ) : (
             <>
               <span style={{ fontSize: 10, color: 'var(--ink-3)', fontWeight: 600 }}>{t.titleBar.versionAvailable(update.version)}</span>
-              <button onClick={() => void downloadUpdate()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
+              <button disabled={updater.busy || !updater.connected} onClick={() => void downloadUpdate()} style={{ height: 16, padding: '0 6px', fontSize: 10, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', lineHeight: 1 }}>
                 {t.titleBar.update}
               </button>
-              <button onClick={() => setUpdate(null)} title={t.titleBar.stayCurrent} style={{ height: 16, width: 16, fontSize: 12, background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button onClick={() => setDismissedVersion(update.version)} title={t.titleBar.stayCurrent} style={{ height: 16, width: 16, fontSize: 12, background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 ✕
               </button>
             </>

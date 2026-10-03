@@ -72,6 +72,7 @@ pub fn create_play_shortcut(
     label: String,
     quick_play: Option<QuickPlay>,
 ) -> Result<String, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let desktop = dirs::desktop_dir().ok_or("Couldn't find the Desktop folder.")?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let name = sanitize_label(&label);
