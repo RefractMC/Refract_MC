@@ -123,7 +123,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     description = "Fast, open-source Minecraft launcher built with Tauri and React";
     homepage = "https://refractmc.net";
     license = lib.licenses.gpl3Only;
-    mainProgram = "refract-tauri";
+    mainProgram = "refract";
     platforms = lib.platforms.linux;
   };
 })

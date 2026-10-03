@@ -163,6 +163,26 @@ jobs:
           releaseAssetNamePattern: "Refract_[version]_[platform]_[arch][setup][ext]"
           args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }}
 
+      - name: Verify the canonical executable name
+        shell: bash
+        run: |
+          BUNDLE="apps/tauri/src-tauri/target/release/bundle"
+          case "${{ runner.os }}" in
+            Windows)
+              test -f apps/tauri/src-tauri/target/release/refract.exe
+              ;;
+            macOS)
+              test -x "$BUNDLE"/macos/Refract.app/Contents/MacOS/refract
+              ;;
+            Linux)
+              dpkg-deb -c "$BUNDLE"/deb/*.deb | grep -qE ' (\./)?usr/bin/refract$'
+              appimage=$(ls "$BUNDLE"/appimage/*.AppImage)
+              chmod +x "$appimage"
+              (cd "$RUNNER_TEMP" && "$appimage" --appimage-extract usr/bin/refract >/dev/null)
+              test -x "$RUNNER_TEMP/squashfs-root/usr/bin/refract"
+              ;;
+          esac
+
       - name: Prepare stable release filenames
         shell: bash
         env:

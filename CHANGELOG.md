@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+* Standardized the application executable name as `refract` (`refract.exe` on Windows). Custom scripts and Linux window rules using `refract-tauri` need updating.
+
 ### Added
 
 * Local instance notes, preserved when duplicating an instance.
@@ -13,10 +17,12 @@
 
 ### Fixes
 
+* Improve Linux rendering stability while keeping accelerated compositing available.
 * Preserve installed mods, resource packs, shaders, and datapacks when replacements fail, including disabled files.
 * Make saved mod profiles and mod removal report failures clearly and recover interrupted changes.
 * Stop incomplete Minecraft and modpack installs from being marked as successful; report missing or invalid required files.
 * Repair missing or corrupt cached Minecraft assets and restore the asset layouts used by older versions.
+* Correct Minecraft library and launch rules for operating systems, architectures, and launcher features.
 * Reject unsafe archives and show errors when required import, export, or backup files cannot be copied.
 * Keep the correct loader version for each instance and verify downloaded Java before using it.
 * Prevent conflicting changes to the same instance or shared game folder, and keep games tracked until they actually exit.

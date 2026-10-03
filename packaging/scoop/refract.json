@@ -17,7 +17,7 @@
     "args": ["/S"]
   },
   "shortcuts": [
-    ["Refract.exe", "Refract"]
+    ["refract.exe", "Refract"]
   ],
   "checkver": {
     "github": "https://github.com/RefractMC/Refract_MC"

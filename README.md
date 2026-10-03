@@ -84,18 +84,13 @@ themes, Discord Rich Presence, and Java Edition license verification.
 
 ## Download
 
-<a href="https://repology.org/project/refract-launcher/versions">
-  <img
-    src="https://repology.org/badge/vertical-allrepos/refract-launcher.svg?exclude_unsupported=1"
-    alt="Packaging status"
-  />
-</a>
-
 ### Linux and macOS install script
 
 ```sh
 curl -fsSL https://refractmc.net/install.sh | sh
 ````
+
+The Linux script is powered by [mget](https://github.com/modrexio/mget).
 
 ### Direct downloads
 
