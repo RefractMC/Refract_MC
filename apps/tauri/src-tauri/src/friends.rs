@@ -83,37 +83,55 @@ fn persist(friends: &[Friend]) -> Result<(), String> {
 }
 
 async fn lookup_minecraft(username: &str) -> Result<MojangProfile, String> {
+    validate_username(username)?;
     let url = format!(
         "https://api.mojang.com/users/profiles/minecraft/{}",
         username
     );
-    let res = reqwest::get(url).await.map_err(|e| e.to_string())?;
-    let status = res.status();
-    if status.as_u16() == 404 {
-        return Err(format!("Player \"{username}\" not found."));
-    }
-    if !status.is_success() {
-        return Err(format!("Mojang API error: {status}"));
-    }
-    res.json::<MojangProfile>().await.map_err(|e| e.to_string())
+    let value = crate::downloader::get_json(
+        &url,
+        &["api.mojang.com"],
+        crate::operations::current_cancellation_check(),
+    )
+    .await?;
+    checked_profile(value, username)
 }
 
-fn hyphenate_uuid(raw: &str) -> String {
-    if raw.len() != 32 {
-        return raw.to_string();
+fn validate_username(username: &str) -> Result<(), String> {
+    // Retain legacy short usernames while refusing path/query characters.
+    if username.is_empty()
+        || username.len() > 16
+        || !username
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return Err("Minecraft username must contain 1-16 letters, numbers or underscores.".into());
     }
-    format!(
-        "{}-{}-{}-{}-{}",
-        &raw[0..8],
-        &raw[8..12],
-        &raw[12..16],
-        &raw[16..20],
-        &raw[20..32]
-    )
+    Ok(())
+}
+
+fn checked_profile(value: Value, requested_name: &str) -> Result<MojangProfile, String> {
+    let mut profile: MojangProfile = serde_json::from_value(value)
+        .map_err(|_| "Mojang returned an invalid player profile.".to_string())?;
+    validate_username(&profile.name)?;
+    if !profile.name.eq_ignore_ascii_case(requested_name) {
+        return Err("Mojang returned a profile for a different username.".into());
+    }
+    profile.id = hyphenate_uuid(&profile.id)?;
+    Ok(profile)
+}
+
+fn hyphenate_uuid(raw: &str) -> Result<String, String> {
+    if !matches!(raw.len(), 32 | 36) {
+        return Err("Mojang returned an invalid player UUID.".into());
+    }
+    uuid::Uuid::parse_str(raw)
+        .map(|id| id.hyphenated().to_string())
+        .map_err(|_| "Mojang returned an invalid player UUID.".into())
 }
 
 fn active_account_uuid() -> Option<String> {
-    let cfg = config::read();
+    let cfg = config::read().ok()?;
     let active_id = cfg.get("activeAccountId").and_then(Value::as_str)?;
     cfg.get("accounts")
         .and_then(Value::as_array)
@@ -139,13 +157,14 @@ pub fn friends_list() -> Vec<Friend> {
 
 #[tauri::command]
 pub async fn friends_add(username: String) -> Result<Friend, String> {
+    let _maintenance = crate::maintenance::shared()?;
     let name = username.trim();
     if name.is_empty() {
         return Err("Username is required.".into());
     }
 
     let profile = lookup_minecraft(name).await?;
-    let uuid = hyphenate_uuid(&profile.id);
+    let uuid = profile.id;
 
     if active_account_uuid().as_deref() == Some(uuid.as_str()) {
         return Err("You can't add yourself as a friend.".into());
@@ -169,6 +188,7 @@ pub async fn friends_add(username: String) -> Result<Friend, String> {
 
 #[tauri::command]
 pub fn friends_remove(uuid: String) -> Result<(), String> {
+    let _maintenance = crate::maintenance::shared()?;
     let friends: Vec<Friend> = load()
         .into_iter()
         .filter(|friend| friend.uuid != uuid)
@@ -178,6 +198,7 @@ pub fn friends_remove(uuid: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn friends_update_note(uuid: String, note: String) -> Result<(), String> {
+    let _maintenance = crate::maintenance::shared()?;
     let mut friends = load();
     if let Some(friend) = friends.iter_mut().find(|friend| friend.uuid == uuid) {
         let trimmed = note.trim();
@@ -185,4 +206,47 @@ pub fn friends_update_note(uuid: String, note: String) -> Result<(), String> {
         persist(&friends)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn compact_and_hyphenated_uuids_normalize_without_byte_slicing() {
+        let compact = "0123456789ABCDEF0123456789ABCDEF";
+        let expected = "01234567-89ab-cdef-0123-456789abcdef";
+        assert_eq!(hyphenate_uuid(compact).unwrap(), expected);
+        assert_eq!(hyphenate_uuid(expected).unwrap(), expected);
+        let unicode_at_boundary = format!("{}é{}", "a".repeat(7), "a".repeat(23));
+        assert_eq!(unicode_at_boundary.len(), 32);
+        for invalid in [
+            unicode_at_boundary,
+            "g".repeat(32),
+            "a".repeat(64),
+            String::new(),
+        ] {
+            assert!(hyphenate_uuid(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn provider_profiles_require_the_requested_name_and_a_valid_uuid() {
+        let uuid = "0123456789abcdef0123456789abcdef";
+        assert!(checked_profile(json!({"id": uuid, "name": "Player_1"}), "player_1").is_ok());
+        assert!(checked_profile(json!({"id": uuid, "name": "OtherPlayer"}), "Player_1").is_err());
+        assert!(checked_profile(json!({"id": "invalid", "name": "Player_1"}), "Player_1").is_err());
+        assert!(checked_profile(json!({"id": uuid, "name": "../Player"}), "Player_1").is_err());
+        assert!(checked_profile(json!({"id": uuid}), "Player_1").is_err());
+        for invalid in [
+            "../Player",
+            "Player?query",
+            "Player#fragment",
+            "é",
+            "12345678901234567",
+        ] {
+            assert!(validate_username(invalid).is_err());
+        }
+    }
 }
