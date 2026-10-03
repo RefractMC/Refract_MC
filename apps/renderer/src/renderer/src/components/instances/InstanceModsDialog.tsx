@@ -942,7 +942,14 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
               entry={entry}
               isBusy={busy.has(entry.filename)}
               selected={selectedMods.has(entry.filename)}
-              onSelect={() => setSelectedMods(prev => { const n = new Set(prev); n.has(entry.filename) ? n.delete(entry.filename) : n.add(entry.filename); return n })}
+              onSelect={() =>
+                setSelectedMods(prev => {
+                  const next = new Set(prev)
+                  if (next.has(entry.filename)) next.delete(entry.filename)
+                  else next.add(entry.filename)
+                  return next
+                })
+              }
               onToggle={() => handleToggle(entry)}
               onDelete={() => handleDelete(entry)}
             />

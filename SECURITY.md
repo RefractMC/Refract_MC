@@ -76,3 +76,16 @@ Validation: targeted `cargo tree -i` checks, `cargo test --locked` on Windows,
 `pnpm audit --prod`, and `cargo audit --ignore RUSTSEC-2024-0429 --ignore
 RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195`. Linux/macOS runtime testing is
 still required; inspecting a cross-platform dependency graph is not execution.
+
+## JavaScript tooling review - 2026-10-03
+
+The full `pnpm audit`, including development tools, identified five advisories.
+The workspace overrides now require `js-yaml >=4.3.2` and `brace-expansion 5.0.12`.
+These resolve [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh)
+and the brace-expansion recursion and CPU exhaustion advisories.
+The TypeScript ESLint parser and plugin now use 8.71.0, which supports the existing
+ESLint 8.57 and TypeScript 5.9 versions and replaces the old globby/micromatch/braces
+dependency path with tinyglobby. The unpatched
+[braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) is removed from
+the lockfile rather than ignored. The full JavaScript audit reports no known
+vulnerabilities. The existing Rust exceptions above remain unchanged.

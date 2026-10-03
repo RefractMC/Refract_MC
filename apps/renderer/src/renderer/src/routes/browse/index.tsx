@@ -339,7 +339,13 @@ function DepsModal({ target, onClose, onConfirm, onSkip }: {
   const optional        = target.deps.filter(d => d.type === 'optional' && !d.alreadyInstalled)
   const already         = target.deps.filter(d => d.alreadyInstalled)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const toggle = (k: string) => setPicked(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })
+  const toggle = (key: string) =>
+    setPicked(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   const total = requiredMissing.length + picked.size
 
   return (
