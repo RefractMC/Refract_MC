@@ -846,7 +846,9 @@ mod tests {
 
         let mut declared = serde_json::Map::new();
         declared.insert(
-            output.to_string_lossy().into_owned(),
+            // Unquoted leading '/' denotes an installer resource in Forge data.
+            // Quote literal paths so this fixture also works on Unix.
+            format!("'{}'", output.display()),
             json!("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"),
         );
         let processor = json!({ "outputs": Value::Object(declared) });
@@ -859,6 +861,7 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(specs[0].0, output);
         assert!(processor_outputs_match(&specs).unwrap());
         fs::write(&output, b"corrupt").unwrap();
         assert!(!processor_outputs_match(&specs).unwrap());
@@ -876,10 +879,7 @@ mod tests {
         let root = temp_dir("hash-token");
         let output = root.join("patched.jar");
         let mut declared = serde_json::Map::new();
-        declared.insert(
-            output.to_string_lossy().into_owned(),
-            json!("{PATCHED_SHA}"),
-        );
+        declared.insert(format!("'{}'", output.display()), json!("{PATCHED_SHA}"));
         let processor = json!({ "outputs": Value::Object(declared) });
         let data = json!({
             "PATCHED_SHA": {
@@ -894,6 +894,7 @@ mod tests {
             &root,
         )
         .unwrap();
+        assert_eq!(specs[0].0, output);
         assert_eq!(specs[0].1, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
     }
 
@@ -903,7 +904,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let output = root.join("patched.jar");
         let mut declared = serde_json::Map::new();
-        declared.insert(output.to_string_lossy().into_owned(), json!("not-a-sha1"));
+        declared.insert(format!("'{}'", output.display()), json!("not-a-sha1"));
         let processor = json!({ "outputs": Value::Object(declared) });
         assert!(processor_output_specs(
             &processor,
