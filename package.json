@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter @refract/tauri-poc dev",
     "build": "pnpm --filter @refract/tauri-poc build",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint apps/renderer/src/renderer apps/renderer/tests apps/tauri/*.ts packages --ext .ts,.tsx",
+    "check:contracts": "node scripts/check-contracts.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

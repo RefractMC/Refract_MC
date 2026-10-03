@@ -6,7 +6,8 @@
   "homepage": "https://github.com/RefractMC/Refract_MC",
   "private": true,
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node tests/run.mjs"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.2.3",
