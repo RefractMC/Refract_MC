@@ -13,9 +13,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = "2.13"
 tauri-plugin-process = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -27,7 +27,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 futures-util = "0.3"
 # Already in the tree via tauri/reqwest; direct dep for sleep in retry/backoff
 # and the Downloads-folder poll of the blocked-mod resolver.
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync", "process", "io-util"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 # Production token storage: an iota_stronghold vault unlocked by a random master
