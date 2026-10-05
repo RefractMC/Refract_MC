@@ -290,7 +290,7 @@ declare global {
       modpack: {
         install: (name: string, projectId: string, versionId?: string) => Promise<import('@refract/core').Instance>
         openFileDialog: () => Promise<string | null>
-        installFromFile: (filePath: string, name?: string, importId?: string) => Promise<import('@refract/core').Instance>
+        installFromFile: (filePath: string, name?: string, importId?: string, minecraftVersion?: string) => Promise<import('./lib/file-import').FileImportResult>
         checkUpdate: (instanceId: string) => Promise<{ hasUpdate: boolean; latestVersionId: string; latestName: string } | null>
         update: (instanceId: string) => Promise<void>
         onProgress: (cb: (data: { projectId: string; step: string; percent: number }) => void) => () => void

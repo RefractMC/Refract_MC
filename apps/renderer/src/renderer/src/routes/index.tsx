@@ -11,6 +11,7 @@ import { useT, type T } from '@/i18n'
 import { ChevLeftIcon, ChevRightIcon } from '@/components/ui/BlockIcons'
 import { EmptyLibrary, InstanceCard, requiredJava } from '@/components/library/InstanceCard'
 import { CreateInstanceDialog } from '@/components/instances/CreateInstanceDialog'
+import { ImportVersionPicker } from '@/components/instances/ImportVersionPicker'
 import { EditInstanceDialog } from '@/components/instances/EditInstanceDialog'
 import { InstanceModsDialog } from '@/components/instances/InstanceModsDialog'
 import { SocialServersDialog } from '@/components/instances/SocialServersDialog'
@@ -22,6 +23,7 @@ import { useInstances, useCreateInstance, useUpdateInstance, useDeleteInstance }
 import { analyticsAvailable, api, type AppConfig, type QuickPlayTarget } from '@/lib/api'
 import { logger } from '@/lib/logger'
 import { authErrorMessage, authRecoveryAction } from '@/lib/auth-errors'
+import { applyFileImportResult, FileImportResultError, type FileImportState } from '@/lib/file-import'
 import { useThemeStore } from '@/stores/theme'
 import { useLanguageStore } from '@/stores/language'
 import { consumeSocialJoin, createSocialInvite, createSocialInviteLink, findE4mcAddress, onSocialJoin, prepareE4mc, type SocialJoinTarget } from '@/lib/social-invites'
@@ -32,17 +34,6 @@ export const Route = createFileRoute('/')({
 })
 
 type ExternalInstance = import('../env').ExternalInstance
-
-type FileImportState = {
-  importId: string
-  step: string
-  percent: number
-  name: string
-  filePath: string
-  status: 'importing' | 'done' | 'error'
-  instanceId?: string
-  error?: string
-}
 
 type CrashReportData = {
   text: string
@@ -969,10 +960,10 @@ function Library() {
     })
     const unsubDone = api.modpack.onDone(({ projectId, instanceId, error }) => {
       setFileImport(prev => {
-        if (prev?.importId !== projectId) return prev
+        if (prev?.importId !== projectId || prev.status !== 'importing') return prev
         if (error) return { ...prev, status: 'error', step: t.home.importFailedShort, error }
         if (instanceId) return { ...prev, status: 'done', step: t.home.readyToPlay, percent: 100, instanceId }
-        return { ...prev, status: 'done', step: t.home.importComplete, percent: 100 }
+        return prev
       })
       if (instanceId) {
         void queryClient.invalidateQueries({ queryKey: ['instances'] })
@@ -982,15 +973,21 @@ function Library() {
     return () => { unsubProg(); unsubDone() }
   }, [])
 
-  async function handleImportFile(filePath: string): Promise<void> {
-    const importId = `file-import-${Date.now()}`
+  async function handleImportFile(filePath: string, minecraftVersion?: string): Promise<void> {
+    const importId = `file-import-${crypto.randomUUID()}`
     const name = filePath.replace(/\\/g, '/').split('/').pop()?.replace(/\.(mrpack|zip)$/i, '') ?? t.home.importedPack
-    setFileImport({ importId, step: t.home.starting, percent: 0, name, filePath, status: 'importing' })
+    setFileImport({ importId, step: t.home.starting, percent: 0, name, filePath, minecraftVersion, status: 'importing' })
     try {
-      await api.modpack.installFromFile(filePath, name, importId)
+      const result = await api.modpack.installFromFile(filePath, name, importId, minecraftVersion)
+      setFileImport(prev => applyFileImportResult(prev, importId, result, t.home.importVersionRequired, t.home.readyToPlay))
+      if (result.status === 'installed') void queryClient.invalidateQueries({ queryKey: ['instances'] })
     } catch (e) {
-      setFileImport(prev => prev?.importId === importId
-        ? { ...prev, status: 'error', step: t.home.importFailedShort, error: e instanceof Error ? e.message : t.home.unknownError }
+      const error = e instanceof FileImportResultError
+        ? t.home.importResultInvalid
+        : e instanceof Error ? e.message : t.home.unknownError
+      if (e instanceof FileImportResultError) void queryClient.invalidateQueries({ queryKey: ['instances'] })
+      setFileImport(prev => prev?.importId === importId && prev.status === 'importing'
+        ? { ...prev, status: 'error', step: t.home.importFailedShort, error }
         : prev
       )
     }
@@ -1883,7 +1880,7 @@ function Library() {
             <div style={{ background:'var(--surface-2)', borderRadius:'var(--radius)', padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
                 <div style={{ fontSize:13, fontWeight:700, color:tone, letterSpacing:'.02em' }}>
-                  {fileImport.status === 'done' ? t.home.importComplete : fileImport.status === 'error' ? t.home.importFailedShort : t.home.importingModpack}
+                  {fileImport.status === 'done' ? t.home.importComplete : fileImport.status === 'error' ? t.home.importFailedShort : fileImport.status === 'needsVersion' ? t.home.importVersionRequired : t.home.importingModpack}
                 </div>
                 <span style={{ fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize:12, color:tone }}>{Math.round(fileImport.percent)}%</span>
               </div>
@@ -1894,6 +1891,18 @@ function Library() {
               <div style={{ fontSize:11, color:fileImport.status === 'error' ? 'var(--lava)' : 'var(--ink-4)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                 {fileImport.error ?? fileImport.step}
               </div>
+              {fileImport.status === 'needsVersion' && (
+                <ImportVersionPicker
+                  key={fileImport.importId}
+                  value={fileImport.minecraftVersion ?? ''}
+                  onChange={minecraftVersion => setFileImport(prev =>
+                    prev?.importId === fileImport.importId && prev.status === 'needsVersion'
+                      ? { ...prev, minecraftVersion }
+                      : prev
+                  )}
+                  onConfirm={() => { void handleImportFile(fileImport.filePath, fileImport.minecraftVersion) }}
+                />
+              )}
               {fileImport.status !== 'importing' && (
                 <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
                   {fileImport.status === 'done' && fileImport.instanceId && (
@@ -1907,7 +1916,7 @@ function Library() {
                     </Button>
                   )}
                   {fileImport.status === 'error' && (
-                    <Button variant="secondary" size="sm" onClick={() => { void handleImportFile(fileImport.filePath) }}>
+                    <Button variant="secondary" size="sm" onClick={() => { void handleImportFile(fileImport.filePath, fileImport.minecraftVersion) }}>
                       {t.home.retry}
                     </Button>
                   )}

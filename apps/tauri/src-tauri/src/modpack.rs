@@ -6,22 +6,23 @@
 //! new instance id, or an error) over `modpack://done`.
 
 use crate::cf::{self, CfRequiredFile};
-use crate::{
-    config, downloader, external, fs_safety, instances, mc_install, mods, net, paths, snapshots,
-};
-use flate2::read::GzDecoder;
+use crate::{config, downloader, fs_safety, instances, mc_install, mods, net, paths, snapshots};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 const FTB: &str = "https://api.modpacks.ch/public";
 const MOJANG_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
+
+#[path = "modpack_import.rs"]
+mod local_import;
+use local_import::{Outcome as FileImportOutcome, Payload as ImportPayload};
 
 /// Every import owns its archive and extraction directory, even when two
 /// instances install the same pack. Dropping a future cannot clean another
@@ -262,8 +263,8 @@ async fn resolve_blocked_cf_files(
 
 fn validate_cf_manifest_files(manifest_files: &[Value]) -> Result<(), String> {
     for file in manifest_files {
-        if file["projectID"].as_u64().filter(|id| *id > 0).is_none()
-            || file["fileID"].as_u64().filter(|id| *id > 0).is_none()
+        if file["projectID"].as_i64().filter(|id| *id > 0).is_none()
+            || file["fileID"].as_i64().filter(|id| *id > 0).is_none()
         {
             return Err(
                 "CurseForge manifest contains a file without valid project/file identifiers."
@@ -863,6 +864,23 @@ async fn install_modrinth_inner(
 /// Build verified download tasks from a Modrinth index's client-supported files.
 fn mrpack_tasks(files: &[Value], game_dir: &Path) -> Result<Vec<downloader::Task>, String> {
     let mut destinations = BTreeSet::new();
+    for file in files {
+        if let Some(env) = file.get("env") {
+            let env = env
+                .as_object()
+                .ok_or("Modpack file env must be an object.")?;
+            for side in ["client", "server"] {
+                if env.get(side).is_some_and(|value| {
+                    !matches!(
+                        value.as_str(),
+                        Some("required" | "optional" | "unsupported")
+                    )
+                }) {
+                    return Err(format!("Modpack file has an invalid {side} environment."));
+                }
+            }
+        }
+    }
     files
         .iter()
         .filter(|f| f["env"]["client"].as_str() != Some("unsupported"))
@@ -887,13 +905,24 @@ fn mrpack_tasks(files: &[Value], game_dir: &Path) -> Result<Vec<downloader::Task
                 .ok_or_else(|| format!("Modpack file {path} is missing its download URL."))?;
             net::validate_url(url, net::MODRINTH_HOSTS)?;
             let dest = safe_join(game_dir, path)?;
+            for (kind, length) in [("sha1", 40), ("sha512", 128)] {
+                f["hashes"][kind]
+                    .as_str()
+                    .filter(|hash| {
+                        hash.len() == length && hash.bytes().all(|b| b.is_ascii_hexdigit())
+                    })
+                    .ok_or_else(|| format!("Modpack file {path} has no valid {kind} hash."))?;
+            }
+            let size = f["fileSize"]
+                .as_u64()
+                .ok_or_else(|| format!("Modpack file {path} has no valid fileSize."))?;
             let hash = downloader::OwnedHash::from_options(
                 f["hashes"]["sha512"].as_str(),
                 f["hashes"]["sha1"].as_str(),
             );
             Ok(downloader::Task::new(url, dest, net::MODRINTH_HOSTS)
                 .hash(hash)
-                .size(f["fileSize"].as_u64())
+                .size(Some(size))
                 .existing(downloader::Existing::ReuseIfValid))
         })
         .collect()
@@ -1490,267 +1519,109 @@ fn detect_loader_from_mods(game_dir: &Path) -> Option<String> {
     }
 }
 
-/// Read the Minecraft version out of a world's level.dat (Data.Version.Name).
-fn mc_version_from_saves(game_dir: &Path) -> Option<String> {
-    #[derive(serde::Deserialize)]
-    struct Level {
-        #[serde(rename = "Data")]
-        data: Option<LevelData>,
-    }
-    #[derive(serde::Deserialize)]
-    struct LevelData {
-        #[serde(rename = "Version")]
-        version: Option<LevelVersion>,
-    }
-    #[derive(serde::Deserialize)]
-    struct LevelVersion {
-        #[serde(rename = "Name")]
-        name: Option<String>,
-    }
-
-    let entries = fs::read_dir(game_dir.join("saves")).ok()?;
-    for world in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
-        let Ok(raw) = fs::read(world.join("level.dat")) else {
-            continue;
-        };
-        let mut bytes = Vec::new();
-        if GzDecoder::new(&raw[..]).read_to_end(&mut bytes).is_err() {
-            bytes = raw; // some tools write level.dat uncompressed
-        }
-        if let Ok(level) = fastnbt::from_bytes::<Level>(&bytes) {
-            if let Some(name) = level.data.and_then(|d| d.version).and_then(|v| v.name) {
-                if !name.is_empty() {
-                    return Some(name);
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Exact Minecraft version pinned in a fabric.mod.json "depends" entry, if any
-/// jar declares one (ranges like ">=1.20" are ignored).
-fn mc_version_from_fabric_mods(game_dir: &Path) -> Option<String> {
-    let entries = fs::read_dir(game_dir.join("mods")).ok()?;
-    for jar in entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().map(|x| x == "jar").unwrap_or(false))
-        .take(32)
-    {
-        let Some(bytes) = mods::read_zip_entry(&jar, "fabric.mod.json") else {
-            continue;
-        };
-        let Ok(meta) = serde_json::from_slice::<Value>(&bytes) else {
-            continue;
-        };
-        let Some(dep) = meta["depends"]["minecraft"].as_str() else {
-            continue;
-        };
-        let pin = dep.trim().trim_start_matches('=').trim();
-        if pin.starts_with(|c: char| c.is_ascii_digit())
-            && pin.contains('.')
-            && pin.chars().all(|c| c.is_ascii_digit() || c == '.')
-        {
-            return Some(pin.to_string());
-        }
-    }
-    None
-}
-
-/// Latest release id from the Mojang manifest.
-async fn latest_release() -> Result<String, String> {
-    let manifest = get_json(MOJANG_MANIFEST).await?;
-    manifest["latest"]["release"]
-        .as_str()
-        .map(String::from)
-        .ok_or_else(|| "Mojang manifest has no latest release.".into())
-}
-
+#[allow(clippy::too_many_arguments)]
 async fn install_from_file_inner(
     app: &AppHandle,
     project_id: &str,
     file_path: &str,
-    temp: &Path,
-    stage_id: &str,
-    stage_dir: &Path,
+    extraction: Arc<PackStage>,
+    stage: Arc<instances::ImportStage>,
     name_opt: Option<String>,
-) -> Result<String, String> {
+    minecraft_version: Option<String>,
+) -> Result<FileImportOutcome, String> {
     let timer = downloader::InstallTimer::start();
     progress(app, project_id, "Extracting archive", 2.0);
-    unzip(Path::new(file_path), temp)
-        .map_err(|e| format!("Could not extract {}: {e}", file_path))?;
-    // Some exports wrap the pack in a top-level folder — detect the real root.
-    let root = unwrap_single_folder(temp);
-    let staged_game_dir = stage_dir.join("minecraft");
-    let pick_name = |fallback: Option<&str>| {
-        name_opt
-            .clone()
-            .filter(|n| !n.trim().is_empty())
-            .or_else(|| fallback.map(String::from))
-            .unwrap_or_else(|| "Imported Modpack".into())
-    };
-
-    // Modrinth .mrpack
-    if let Some(index) = fs::read_to_string(root.join("modrinth.index.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-    {
-        let deps = &index["dependencies"];
-        let mc = deps["minecraft"].as_str().unwrap_or("1.20.1").to_string();
-        let (loader, lv) = loader_from_deps(deps);
-        let name = pick_name(index["name"].as_str());
-        progress(app, project_id, "Staging import", 5.0);
-        fs::create_dir_all(staged_game_dir.join("mods"))
-            .map_err(|e| format!("Could not create staged mods folder: {e}"))?;
-
-        let files = index["files"]
-            .as_array()
-            .ok_or("Modpack index has no valid file list.")?;
-        let tasks = mrpack_tasks(&files, &staged_game_dir)?;
-        let batch = run_mod_file_batch(app, project_id, tasks, 10.0, 20.0).await;
-        timer.add_batch(&batch);
-        if let Some(error) = batch.error_summary("mod files") {
-            return Err(error);
-        }
-        progress(app, project_id, "Copying overrides", 32.0);
-        copy_dir_checked(&root.join("overrides"), &staged_game_dir)?;
-        copy_dir_checked(&root.join("client-overrides"), &staged_game_dir)?;
-        progress(app, project_id, "Installing Minecraft…", 38.0);
-        let url = mojang_url(&mc).await?;
-        let stats = mc_install::install_minecraft_for_pack(
-            app.clone(),
-            stage_id.to_string(),
-            mc.clone(),
-            url,
-            loader.clone(),
-            lv.clone(),
-        )
-        .await?;
-        absorb_mc_stats(&timer, &stats);
-        progress(app, project_id, "Creating instance", 96.0);
-        let id = create_imported_instance_from_stage(
-            &name,
-            &mc,
-            loader.as_deref(),
-            lv.as_deref(),
-            &staged_game_dir,
+    let source = PathBuf::from(file_path);
+    let temp = extraction.0.join("unpacked");
+    let staged_game_dir = stage.directory.join("minecraft");
+    let planning_game_dir = staged_game_dir.clone();
+    let owners = (extraction.clone(), stage.clone());
+    let (root, plan) = crate::operations::blocking(move || {
+        let _owners = owners;
+        unzip(&source, &temp).map_err(|error| format!("Could not extract archive: {error}"))?;
+        let root = unwrap_single_folder(&temp);
+        let plan = local_import::inspect(
+            &root,
+            &source,
+            &planning_game_dir,
+            minecraft_version.as_deref(),
         )?;
-        progress(app, project_id, "Done", 100.0);
-        done_ok(app, project_id, &id, Some(timer.to_json()));
-        return Ok(id);
-    }
-
-    // CurseForge zip
-    if let Some(manifest) = fs::read_to_string(root.join("manifest.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-    {
-        let mc = manifest["minecraft"]["version"]
-            .as_str()
-            .unwrap_or("1.20.1")
-            .to_string();
-        let (loader, lv) = parse_cf_loader(&manifest);
-        let name = pick_name(manifest["name"].as_str());
-        progress(app, project_id, "Staging import", 5.0);
-        let mods_dir = staged_game_dir.join("mods");
-        fs::create_dir_all(&mods_dir)
-            .map_err(|e| format!("Could not create staged mods folder: {e}"))?;
-
-        let files: Vec<Value> = manifest["files"].as_array().cloned().unwrap_or_default();
-        download_and_audit_cf_mods(app, project_id, &files, &mods_dir, 10.0, 25.0, &timer).await?;
-        progress(app, project_id, "Copying overrides", 37.0);
-        let overrides = manifest["overrides"].as_str().unwrap_or("overrides");
-        copy_dir_checked(&safe_join(&root, overrides)?, &staged_game_dir)?;
-        progress(app, project_id, "Installing Minecraft…", 42.0);
-        let url = mojang_url(&mc).await?;
-        let stats = mc_install::install_minecraft_for_pack(
-            app.clone(),
-            stage_id.to_string(),
-            mc.clone(),
-            url,
-            loader.clone(),
-            lv.clone(),
-        )
-        .await?;
-        absorb_mc_stats(&timer, &stats);
-        progress(app, project_id, "Creating instance", 96.0);
-        let id = create_imported_instance_from_stage(
-            &name,
-            &mc,
-            loader.as_deref(),
-            lv.as_deref(),
-            &staged_game_dir,
-        )?;
-        progress(app, project_id, "Done", 100.0);
-        done_ok(app, project_id, &id, Some(timer.to_json()));
-        return Ok(id);
-    }
-
-    // Plain zip — a Refract or MultiMC/Prism instance export, or a bare game
-    // folder. Detect the layout, loader and Minecraft version instead of
-    // assuming vanilla.
-    progress(app, project_id, "Detecting pack type", 4.0);
-
-    // Refract instance export: instance.json + minecraft/ at the root.
-    let refract = fs::read_to_string(root.join("instance.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .filter(|_| root.join("minecraft").is_dir());
-
-    let (name, mc, loader, lv, payload) = if let Some(inst) = refract {
-        (
-            pick_name(inst["name"].as_str()),
-            inst["minecraftVersion"].as_str().map(String::from),
-            inst["modLoader"].as_str().map(String::from),
-            inst["modLoaderVersion"]
-                .as_str()
-                .filter(|v| !v.is_empty())
-                .map(String::from),
-            root.join("minecraft"),
-        )
-    } else if let Some(meta) = external::parse_mmc_export(&root) {
-        // MultiMC/Prism instance export: instance.cfg + mmc-pack.json.
-        (
-            pick_name(Some(&meta.name)),
-            Some(meta.minecraft_version),
-            meta.mod_loader,
-            meta.mod_loader_version,
-            meta.game_dir,
-        )
-    } else {
-        // Bare game folder, possibly under a .minecraft/ or minecraft/ subdir.
-        let payload = [".minecraft", "minecraft"]
-            .iter()
-            .map(|s| root.join(s))
-            .find(|p| p.is_dir() && !root.join("mods").exists() && !root.join("saves").exists())
-            .unwrap_or_else(|| root.clone());
-        let stem = Path::new(file_path)
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string());
-        (
-            pick_name(stem.as_deref()),
-            mc_version_from_saves(&payload).or_else(|| mc_version_from_fabric_mods(&payload)),
-            detect_loader_from_mods(&payload),
-            None,
-            payload,
-        )
+        Ok::<_, String>((root, plan))
+    })
+    .await??;
+    let Some(mc) = plan.minecraft else {
+        // No download, game-file copy or published instance precedes the user's
+        // explicit version choice. The disposable extraction is then removed.
+        return Ok(FileImportOutcome::NeedsVersion);
     };
-    let mc = match mc {
-        Some(v) => v,
-        None => latest_release().await?,
-    };
-
-    progress(app, project_id, "Staging import", 8.0);
-    fs::create_dir_all(&staged_game_dir)
-        .map_err(|e| format!("Could not create staged game folder: {e}"))?;
-    progress(app, project_id, "Copying files", 10.0);
-    copy_dir_checked(&payload, &staged_game_dir)?;
-    progress(app, project_id, "Installing Minecraft…", 52.0);
+    let name = name_opt
+        .filter(|name| !name.trim().is_empty())
+        .or(plan.name)
+        .unwrap_or_else(|| {
+            Path::new(file_path)
+                .file_stem()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Imported Modpack".into())
+        });
+    // Resolve the declared/selected version before downloading pack content.
     let url = mojang_url(&mc).await?;
+    let loader = plan.loader;
+    let lv = plan.loader_version;
+    crate::operations::check_current()?;
+    fs::create_dir_all(staged_game_dir.join("mods"))
+        .map_err(|error| format!("Could not create staged mods folder: {error}"))?;
+    match plan.payload {
+        ImportPayload::Modrinth(tasks) => {
+            let batch = run_mod_file_batch(app, project_id, tasks, 10.0, 25.0).await;
+            timer.add_batch(&batch);
+            if let Some(error) = batch.error_summary("mod files") {
+                return Err(error);
+            }
+            progress(app, project_id, "Copying overrides", 37.0);
+            let staged_game = staged_game_dir.clone();
+            let owners = (extraction.clone(), stage.clone());
+            crate::operations::blocking(move || {
+                let _owners = owners;
+                copy_dir_checked(&safe_join(&root, "overrides")?, &staged_game)?;
+                copy_dir_checked(&safe_join(&root, "client-overrides")?, &staged_game)
+            })
+            .await??;
+        }
+        ImportPayload::Curseforge { files, overrides } => {
+            download_and_audit_cf_mods(
+                app,
+                project_id,
+                &files,
+                &staged_game_dir.join("mods"),
+                10.0,
+                25.0,
+                &timer,
+            )
+            .await?;
+            progress(app, project_id, "Copying overrides", 37.0);
+            let staged_game = staged_game_dir.clone();
+            let owners = (extraction.clone(), stage.clone());
+            crate::operations::blocking(move || {
+                let _owners = owners;
+                copy_dir_checked(&overrides, &staged_game)
+            })
+            .await??;
+        }
+        ImportPayload::Folder(payload) => {
+            progress(app, project_id, "Copying files", 10.0);
+            let staged_game = staged_game_dir.clone();
+            let owners = (extraction.clone(), stage.clone());
+            crate::operations::blocking(move || {
+                let _owners = owners;
+                copy_dir_checked(&payload, &staged_game)
+            })
+            .await??;
+        }
+    }
+    progress(app, project_id, "Installing Minecraft", 52.0);
     let stats = mc_install::install_minecraft_for_pack(
         app.clone(),
-        stage_id.to_string(),
+        stage.id.clone(),
         mc.clone(),
         url,
         loader.clone(),
@@ -1768,7 +1639,7 @@ async fn install_from_file_inner(
     )?;
     progress(app, project_id, "Done", 100.0);
     done_ok(app, project_id, &id, Some(timer.to_json()));
-    Ok(id)
+    Ok(FileImportOutcome::Installed { id })
 }
 
 #[tauri::command]
@@ -1777,11 +1648,12 @@ pub async fn modpack_install_from_file(
     file_path: String,
     name: Option<String>,
     import_id: Option<String>,
-) -> Result<Value, String> {
+    minecraft_version: Option<String>,
+) -> Result<FileImportOutcome, String> {
     crate::operations::run_optional(
         None,
         crate::operations::Kind::Modpack,
-        modpack_install_from_file_owned(app, file_path, name, import_id),
+        modpack_install_from_file_owned(app, file_path, name, import_id, minecraft_version),
     )
     .await
 }
@@ -1791,26 +1663,25 @@ async fn modpack_install_from_file_owned(
     file_path: String,
     name: Option<String>,
     import_id: Option<String>,
-) -> Result<Value, String> {
+    minecraft_version: Option<String>,
+) -> Result<FileImportOutcome, String> {
     let project_id = import_id
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "file-import".to_string());
-    let extraction = PackStage::create()?;
-    let temp = extraction.0.join("unpacked");
-    let stage = instances::ImportStage::create()?;
+    let extraction = Arc::new(PackStage::create()?);
+    let stage = Arc::new(instances::ImportStage::create()?);
     let r = install_from_file_inner(
         &app,
         &project_id,
         &file_path,
-        &temp,
-        &stage.id,
-        &stage.directory,
+        extraction,
+        stage,
         name,
+        minecraft_version,
     )
     .await;
-    drop(stage);
     match r {
-        Ok(id) => Ok(json!({ "id": id })),
+        Ok(outcome) => Ok(outcome),
         Err(e) => {
             done_err(&app, &project_id, &e);
             Err(e)
@@ -1882,7 +1753,7 @@ mod tests {
     #[test]
     fn required_manifest_entries_are_validated_instead_of_dropped() {
         let root = tmp_dir("manifest-plan");
-        let valid = json!({ "path": "mods/example.jar", "downloads": ["https://cdn.modrinth.com/example.jar"], "fileSize": 10 });
+        let valid = json!({ "path": "mods/example.jar", "downloads": ["https://cdn.modrinth.com/example.jar"], "fileSize": 10, "hashes": { "sha1": "a".repeat(40), "sha512": "a".repeat(128) } });
         assert_eq!(mrpack_tasks(&[valid.clone()], &root).unwrap().len(), 1);
         for invalid in [
             json!({ "path": "mods/missing.jar" }),
@@ -2029,26 +1900,6 @@ mod tests {
         assert_eq!(detect_loader_from_mods(&game), None);
         fs::create_dir_all(game.join("mods")).unwrap();
         assert_eq!(detect_loader_from_mods(&game), None);
-        let _ = fs::remove_dir_all(&game);
-    }
-
-    #[test]
-    fn fabric_mc_pin_exact_only() {
-        let game = tmp_dir("mcpin");
-        let mods = game.join("mods");
-        fs::create_dir_all(&mods).unwrap();
-        // Range dep is ignored…
-        write_jar(
-            &mods.join("a.jar"),
-            &[("fabric.mod.json", r#"{"depends":{"minecraft":">=1.20"}}"#)],
-        );
-        assert_eq!(mc_version_from_fabric_mods(&game), None);
-        // …an exact pin wins.
-        write_jar(
-            &mods.join("b.jar"),
-            &[("fabric.mod.json", r#"{"depends":{"minecraft":"1.20.1"}}"#)],
-        );
-        assert_eq!(mc_version_from_fabric_mods(&game), Some("1.20.1".into()));
         let _ = fs::remove_dir_all(&game);
     }
 }

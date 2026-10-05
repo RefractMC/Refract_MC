@@ -24,6 +24,7 @@
 * Repair missing or corrupt cached Minecraft assets and restore the asset layouts used by older versions.
 * Correct Minecraft library and launch rules for operating systems, architectures, and launcher features.
 * Reject unsafe archives and show errors when required import, export, or backup files cannot be copied.
+* Reject broken modpack manifests and ask you to choose a Minecraft version for archives without reliable version metadata.
 * Keep the correct loader version for each instance and verify downloaded Java before using it.
 * Prevent conflicting changes to the same instance or shared game folder, and keep games tracked until they actually exit.
 * Protect saved settings, accounts, and instance records from failed writes and concurrent changes.

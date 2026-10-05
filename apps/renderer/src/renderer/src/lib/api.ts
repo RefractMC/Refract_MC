@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
 import { logger, setNativeLogWriter } from './logger'
 import { ownSubscription } from './subscription'
+import { parseFileImportResult } from './file-import'
 import { createUpdateLifecycle } from './update-lifecycle'
 import { parseUpdateMetadata } from './update-metadata'
 import { createUpdateStatusReader, createUpdateStatusStore, emptyUpdateStatus } from './update-status'
@@ -1118,8 +1119,9 @@ function createTauriApi(): RefractAPI {
         const p = await dialogOpen({ multiple: false, filters: [{ name: 'Modpack', extensions: ['mrpack', 'zip'] }] })
         return typeof p === 'string' ? p : null
       }) as RefractAPI['modpack']['openFileDialog'],
-      installFromFile: ((filePath: string, name?: string, importId?: string) =>
-        tinvoke('modpack_install_from_file', { filePath, name, importId })) as RefractAPI['modpack']['installFromFile'],
+      installFromFile: ((filePath: string, name?: string, importId?: string, minecraftVersion?: string) =>
+        tinvoke('modpack_install_from_file', { filePath, name, importId, minecraftVersion })
+          .then(parseFileImportResult)) as RefractAPI['modpack']['installFromFile'],
       checkUpdate: (async (instanceId: string) => {
         const inst = (await tinvoke('get_instance_by_id', { id: instanceId })) as (Instance & { modpackSource?: string; modpackProjectId?: string; modpackVersionId?: string }) | null
         if (!inst?.modpackSource || !inst.modpackProjectId) return null

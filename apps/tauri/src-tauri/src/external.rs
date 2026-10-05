@@ -144,27 +144,6 @@ fn parse_mmc_instance(
     })
 }
 
-/// Metadata parsed from an extracted MultiMC/Prism instance export, for the
-/// zip importer in `modpack.rs`.
-pub(crate) struct MmcExport {
-    pub name: String,
-    pub minecraft_version: String,
-    pub mod_loader: Option<String>,
-    pub mod_loader_version: Option<String>,
-    pub game_dir: PathBuf,
-}
-
-pub(crate) fn parse_mmc_export(dir: &Path) -> Option<MmcExport> {
-    let ext = parse_mmc_instance(dir, "multimc", "MultiMC / Prism")?;
-    Some(MmcExport {
-        name: ext.name,
-        minecraft_version: ext.minecraft_version,
-        mod_loader: ext.mod_loader,
-        mod_loader_version: ext.mod_loader_version,
-        game_dir: PathBuf::from(ext.game_dir),
-    })
-}
-
 fn scan_mmc(base_dir: PathBuf, source: &str, source_name: &str) -> Vec<ExternalInstance> {
     subdirs(base_dir)
         .into_iter()
