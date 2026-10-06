@@ -89,3 +89,23 @@ dependency path with tinyglobby. The unpatched
 [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) is removed from
 the lockfile rather than ignored. The full JavaScript audit reports no known
 vulnerabilities. The existing Rust exceptions above remain unchanged.
+
+## JavaScript serialization and source-map review - 2026-10-05
+
+The main-push audit reported two Seroval advisories and one source-map-js advisory.
+The workspace now requires `seroval >=1.6.8` within version 1 and
+`source-map-js >=1.2.2` within version 1. The lockfile resolves those exact versions.
+Seroval remains compatible with router-core's `^1.5.4` requirement and the existing
+seroval-plugins `^1.0` peer requirement. Other dependency versions remain unchanged.
+
+Seroval resolves the upstream [thenable-assimilation advisory](https://github.com/lxsmnsyc/seroval/security/advisories/GHSA-p6vx-979v-rg4c)
+and [typed-array allocation advisory](https://github.com/lxsmnsyc/seroval/security/advisories/GHSA-jp82-f5mq-hwhp).
+source-map-js uses the upstream [1.2.2 security release](https://github.com/7rulnik/source-map-js/releases/tag/v1.2.2)
+for the [indexed source-map advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+No audit exception was added.
+
+Both the full `pnpm audit` and `pnpm audit --prod` report no known vulnerabilities.
+Frozen-lockfile installation, renderer typecheck, renderer regressions (44 passed),
+IPC/locale validation, full lint (zero errors, 20 existing warnings) and the production
+renderer build passed with the patched graph. The existing Rust exceptions remain
+unchanged; native runtime and UI smoke testing remain separate acceptance work.

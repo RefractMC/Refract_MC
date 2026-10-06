@@ -690,6 +690,12 @@ Current audit exceptions:
 
 The exact active ignores live in `.github/workflows/security-audit.yml`; revisit and remove them when upstream releases allow it.
 
+JavaScript security floors live in `pnpm-workspace.yaml`. The October 5 audit follow-up
+requires Seroval 1.6.8 or newer within version 1 and source-map-js 1.2.2 or newer within
+version 1; the lockfile resolves those versions without changing the router or build-tool
+versions. The full and production JavaScript audits pass. See `SECURITY.md` for the
+upstream advisories and compatibility review.
+
 ## External services
 
 | Service | Use |
