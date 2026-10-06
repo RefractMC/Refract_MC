@@ -212,8 +212,21 @@ function FriendsPanel() {
   const [myUsername, setMyUsername] = useState<string | null>(null)
   const [skinTarget, setSkinTarget] = useState<Friend | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const mutationRef = useRef(false)
+  const refreshId = useRef(0)
+  const alive = useRef(true)
+
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+      refreshId.current += 1
+    }
+  }, [])
 
   const refreshFriends = useCallback(async (showRefreshing = false) => {
+    if (mutationRef.current) return
+    const requestId = ++refreshId.current
     if (showRefreshing) setRefreshing(true)
     else setListLoading(true)
     setError(null)
@@ -222,13 +235,18 @@ function FriendsPanel() {
         api.friends.list(),
         api.auth.active().catch(() => null),
       ])
+      if (!alive.current || requestId !== refreshId.current) return
       setFriends(list as Friend[])
       setMyUsername(active?.username ?? null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : t.sidebar.refreshFriendsFailed)
+      if (alive.current && requestId === refreshId.current) {
+        setError(err instanceof Error ? err.message : t.sidebar.refreshFriendsFailed)
+      }
     } finally {
-      if (showRefreshing) setRefreshing(false)
-      else setListLoading(false)
+      if (alive.current && requestId === refreshId.current) {
+        setRefreshing(false)
+        setListLoading(false)
+      }
     }
   }, [t.sidebar.refreshFriendsFailed])
 
@@ -236,10 +254,34 @@ function FriendsPanel() {
     void refreshFriends(false)
   }, [refreshFriends])
 
-  const handleNoteChange = useCallback(async (uuid: string, note: string) => {
-    await api.friends.updateNote(uuid, note).catch(() => {})
-    setFriends(prev => prev.map(f => f.uuid === uuid ? { ...f, note: note.trim() || undefined } : f))
-  }, [])
+  async function changeFriend(action: () => Promise<void>, fallback: string): Promise<boolean> {
+    if (mutationRef.current || listLoading || refreshing) return false
+    mutationRef.current = true
+    refreshId.current += 1
+    setLoading(true)
+    setError(null)
+    try {
+      await action()
+      return true
+    } catch (err) {
+      if (alive.current) setError(err instanceof Error ? err.message : fallback)
+      return false
+    } finally {
+      mutationRef.current = false
+      if (alive.current) setLoading(false)
+    }
+  }
+
+  async function handleNoteChange(uuid: string, note: string): Promise<boolean> {
+    return changeFriend(async () => {
+      await api.friends.updateNote(uuid, note)
+      if (alive.current) {
+        setFriends(prev => prev.map(f =>
+          f.uuid === uuid ? { ...f, note: note.trim() || undefined } : f
+        ))
+      }
+    }, t.sidebar.saveNoteFailed)
+  }
 
   function startAdd() {
     setAdding(true)
@@ -262,25 +304,20 @@ function FriendsPanel() {
       setError(t.sidebar.selfAddError)
       return
     }
-    setLoading(true)
-    setError(null)
-    try {
+    await changeFriend(async () => {
       const friend = await api.friends.add(name) as Friend
+      if (!alive.current) return
       setFriends(prev => [...prev, friend])
       setAdding(false)
       setInput('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t.sidebar.addFriendFailed)
-    } finally {
-      setLoading(false)
-    }
+    }, t.sidebar.addFriendFailed)
   }
 
   async function removeFriend(uuid: string) {
-    try {
+    await changeFriend(async () => {
       await api.friends.remove(uuid)
-      setFriends(prev => prev.filter(f => f.uuid !== uuid))
-    } catch { /* ignore */ }
+      if (alive.current) setFriends(prev => prev.filter(f => f.uuid !== uuid))
+    }, t.sidebar.removeFriendFailed)
   }
 
   return (
@@ -294,7 +331,7 @@ function FriendsPanel() {
           <button
             onClick={() => void refreshFriends(true)}
             title={t.sidebar.refreshFriends}
-            disabled={refreshing || listLoading}
+            disabled={loading || refreshing || listLoading}
             style={{
               background: 'none', border: '1px solid var(--border-r)',
               color: refreshing || listLoading ? 'var(--ink-5)' : 'var(--ink-4)',
@@ -310,6 +347,7 @@ function FriendsPanel() {
           {!adding && (
             <button
               onClick={startAdd}
+              disabled={loading || refreshing || listLoading}
               title={t.sidebar.addFriendTitle}
               style={{
                 background: 'none', border: '1px solid var(--border-r)',
@@ -380,10 +418,14 @@ function FriendsPanel() {
               <X size={13} />
             </button>
           </div>
-          {error && (
-            <div style={{ fontSize: 10, color: 'var(--lava)', lineHeight: 1.3 }}>{error}</div>
-          )}
         </form>
+      )}
+
+      {error && (
+        <div role="alert" style={{
+          padding: '0 6px 8px', fontSize: 10, color: 'var(--lava)',
+          lineHeight: 1.3, overflowWrap: 'anywhere',
+        }}>{error}</div>
       )}
 
       {/* Friend list */}
@@ -391,7 +433,7 @@ function FriendsPanel() {
         <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
           {t.sidebar.loadingFriends}
         </div>
-      ) : friends.length === 0 && !adding ? (
+      ) : friends.length === 0 && !adding && !error ? (
         <div style={{ padding: '6px 8px 4px', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.4 }}>
           {t.sidebar.noFriends}{' '}
           <button
@@ -403,7 +445,14 @@ function FriendsPanel() {
         </div>
       ) : (
         friends.map(friend => (
-          <FriendRow key={friend.uuid} friend={friend} onRemove={() => removeFriend(friend.uuid)} onNoteChange={(note) => handleNoteChange(friend.uuid, note)} onSkinClick={() => setSkinTarget(friend)} />
+          <FriendRow
+            key={friend.uuid}
+            friend={friend}
+            busy={loading || listLoading || refreshing}
+            onRemove={() => void removeFriend(friend.uuid)}
+            onNoteChange={(note) => handleNoteChange(friend.uuid, note)}
+            onSkinClick={() => setSkinTarget(friend)}
+          />
         ))
       )}
       {skinTarget && <SkinPopup friend={skinTarget} onClose={() => setSkinTarget(null)} />}
@@ -411,10 +460,11 @@ function FriendsPanel() {
   )
 }
 
-function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
+function FriendRow({ friend, busy, onRemove, onNoteChange, onSkinClick }: {
   friend: Friend
+  busy: boolean
   onRemove: () => void
-  onNoteChange: (note: string) => void
+  onNoteChange: (note: string) => Promise<boolean>
   onSkinClick: () => void
 }) {
   const t = useT()
@@ -425,6 +475,8 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
   const [noteDraft, setNoteDraft]   = useState(friend.note ?? '')
   const [copied, setCopied]         = useState<string | null>(null)
   const noteRef = useRef<HTMLInputElement>(null)
+  const noteSaving = useRef(false)
+  const noteDismissed = useRef(false)
   const nameMcUrl = 'https://namemc.com/profile/' + friend.uuid
 
   function copy(text: string, key: string) {
@@ -456,15 +508,26 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
   }, [friend.uuid])
 
   function startNote() {
+    if (busy) return
+    noteDismissed.current = false
     setNoteDraft(friend.note ?? '')
     setEditingNote(true)
     setTimeout(() => noteRef.current?.focus(), 0)
   }
 
-  function commitNote() {
-    setEditingNote(false)
+  async function commitNote() {
+    if (noteSaving.current || noteDismissed.current) return
     const trimmed = noteDraft.trim()
-    if (trimmed !== (friend.note ?? '')) onNoteChange(trimmed)
+    if (trimmed === (friend.note ?? '')) {
+      setEditingNote(false)
+      return
+    }
+    noteSaving.current = true
+    try {
+      if (await onNoteChange(trimmed)) setEditingNote(false)
+    } finally {
+      noteSaving.current = false
+    }
   }
 
   return (
@@ -523,10 +586,10 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
             <ActionBtn title={t.sidebar.copyWhitelistCommand} active={copied === 'wl'} onClick={() => copy('/whitelist add ' + friend.username, 'wl')}>
               <UserAdd size={11} />
             </ActionBtn>
-            <ActionBtn title={t.sidebar.addNote} onClick={startNote}>
+            <ActionBtn title={t.sidebar.addNote} disabled={busy} onClick={startNote}>
               <Edit size={11} />
             </ActionBtn>
-            <ActionBtn title={t.sidebar.removeFriend} danger onClick={onRemove}>
+            <ActionBtn title={t.sidebar.removeFriend} disabled={busy} danger onClick={onRemove}>
               <UserRemove size={11} />
             </ActionBtn>
           </div>
@@ -538,9 +601,17 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
         <input
           ref={noteRef}
           value={noteDraft}
+          disabled={busy}
+          aria-label={t.sidebar.addNote}
           onChange={e => setNoteDraft(e.target.value)}
-          onBlur={commitNote}
-          onKeyDown={e => { if (e.key === 'Enter') commitNote(); if (e.key === 'Escape') { setEditingNote(false) } }}
+          onBlur={() => void commitNote()}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); void commitNote() }
+            if (e.key === 'Escape') {
+              noteDismissed.current = true
+              setEditingNote(false)
+            }
+          }}
           placeholder={t.sidebar.notePlaceholder}
           style={{ marginTop: 4, width: '100%', fontSize: 10, padding: '2px 5px', background: 'var(--bg)', border: '1px solid var(--accent)', color: 'var(--ink)', borderRadius: 2, outline: 'none', boxSizing: 'border-box' }}
         />
@@ -554,14 +625,23 @@ function FriendRow({ friend, onRemove, onNoteChange, onSkinClick }: {
   )
 }
 
-function ActionBtn({ title, onClick, children, danger, active }: { title: string; onClick: () => void; children: React.ReactNode; danger?: boolean; active?: boolean }) {
+function ActionBtn({ title, onClick, children, danger, active, disabled }: {
+  title: string
+  onClick: () => void
+  children: React.ReactNode
+  danger?: boolean
+  active?: boolean
+  disabled?: boolean
+}) {
   return (
     <button
       onClick={e => { e.stopPropagation(); onClick() }}
       title={title}
+      disabled={disabled}
       style={{
         width: 18, height: 18, padding: 0, border: 'none',
         background: active ? 'var(--grass)' : 'transparent',
+        opacity: disabled ? 0.5 : 1,
         color: active ? '#fff' : danger ? 'var(--lava)' : 'var(--ink-4)',
         cursor: 'pointer', borderRadius: 2, fontSize: 11, lineHeight: 1,
         display: 'flex', alignItems: 'center', justifyContent: 'center',

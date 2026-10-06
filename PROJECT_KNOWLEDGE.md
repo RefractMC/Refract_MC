@@ -520,7 +520,8 @@ folder so a retry cleans the previous interrupted stage. Reset includes the snap
 subtree under exclusive maintenance; reset crash recovery remains unfinished.
 
 `persistence.rs` writes unique sibling temporary files, syncs them and replaces the
-destination without deleting the old file first. Config, instance registry, Java registry and instance JSON
+destination without deleting the old file first. Config, instance registry, Java registry,
+friends, activity and instance JSON
 keep a `.bak` containing the previous committed document. Recovery preserves damaged
 bytes in `.corrupt-<uuid>` files, restores a valid backup and reports local diagnostics;
 unrecoverable corruption returns an error. Config/account updates are serialized per
@@ -611,7 +612,15 @@ ancestor/check-use races and native/cross-platform export verification remain op
 
 Friend lookup uses the bounded metadata transport, checks requested/returned usernames,
 and parses compact or hyphenated UUIDs with the UUID library before persistence.
-Friend-store serialization and corruption handling still need migration.
+Friend records and recent activity now use complete serialized JSON mutations with
+last-good backups. Typed reads recover malformed records as a whole or report an error;
+they never silently discard individual friends or replace damaged history with an empty
+list. Friend updates retain legacy name/date aliases and unknown fields, and compare
+compact and hyphenated player IDs consistently. The sidebar reports failed note/removal
+changes and retains unsaved note drafts. Activity uses a shared query cache for the home
+and titlebar panels, invalidates it only after committed writes and offers reload on errors.
+The browser activity preview also rejects corrupt data and localStorage write failures.
+Saved-skin file/manifest transactions remain pending.
 
 The shared `Instance` model includes:
 

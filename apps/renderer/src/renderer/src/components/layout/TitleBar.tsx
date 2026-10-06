@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell } from '@/components/ui/Icon'
+import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
 import { useAppUpdate } from '@/hooks/use-app-update'
+import { useActivity } from '@/hooks/use-activity'
 import { useT, type T } from '@/i18n'
 
 const LAST_SEEN_KEY = 'refract.notifications.lastSeen'
@@ -37,13 +39,13 @@ function WinBtn({ onClick, danger, children }: { onClick: () => void; danger?: b
   )
 }
 
-type ActivityEntry = { id: string; label: string; ts: number }
-
 export function TitleBar() {
   const t = useT()
   const [isMaximized, setIsMaximized] = useState(false)
   const [open, setOpen] = useState(false)
-  const [entries, setEntries] = useState<ActivityEntry[]>([])
+  const activityQuery = useActivity()
+  const entries = activityQuery.data ?? []
+  const { refetch: refreshActivity } = activityQuery
   const [lastSeen, setLastSeen] = useState<number>(() => Number(localStorage.getItem(LAST_SEEN_KEY) ?? 0))
   const [bellHover, setBellHover] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -67,8 +69,8 @@ export function TitleBar() {
   }, [])
 
   useEffect(() => {
-    api.activity.list().then(setEntries).catch(() => {})
-  }, [open])
+    if (open) void refreshActivity()
+  }, [open, refreshActivity])
 
   useEffect(() => {
     if (!open) return
@@ -235,7 +237,16 @@ export function TitleBar() {
               )}
             </div>
             <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-              {entries.length === 0 ? (
+              {activityQuery.isError && (
+                <div role="alert" style={{ margin: 12, fontSize: 12, color: 'var(--lava)' }}>
+                  {t.activityStorage.loadFailed}{' '}
+                  <Button size="sm" variant="ghost" disabled={activityQuery.isFetching}
+                    onClick={() => void refreshActivity()}>
+                    {t.activityStorage.retry}
+                  </Button>
+                </div>
+              )}
+              {entries.length === 0 && !activityQuery.isError ? (
                 <div style={{ margin: 12, minHeight: 76, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed var(--border-r)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>
                   {t.titleBar.noRecentActivity}
                 </div>

@@ -2,11 +2,10 @@
 //! Mirrors `apps/renderer/src/main/ipc/friends.ipc.ts` and uses the same
 //! `<data_dir>/friends.json` file so the launcher keeps one shared friends list.
 
-use crate::{config, paths};
+use crate::{config, paths, persistence};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,8 +37,24 @@ fn value_string(value: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn normalize_friend(value: &Value) -> Option<Friend> {
-    let uuid = value_string(value, "uuid")?;
+fn normalize_friend(value: &Value) -> Result<Friend, String> {
+    if !value.is_object() {
+        return Err("A saved friend is not an object.".into());
+    }
+    let uuid = value_string(value, "uuid").ok_or("A saved friend has no player UUID.")?;
+    for key in ["username", "name", "playerName", "note"] {
+        if value
+            .get(key)
+            .is_some_and(|value| !value.is_null() && !value.is_string())
+        {
+            return Err(format!("A saved friend's {key} is invalid."));
+        }
+    }
+    for key in ["addedAt", "added_at"] {
+        if value.get(key).is_some_and(|value| value.as_u64().is_none()) {
+            return Err("A saved friend's added date is invalid.".into());
+        }
+    }
     let username = value_string(value, "username")
         .or_else(|| value_string(value, "name"))
         .or_else(|| value_string(value, "playerName"))
@@ -51,7 +66,7 @@ fn normalize_friend(value: &Value) -> Option<Friend> {
         .unwrap_or_else(now_ms);
     let note = value_string(value, "note");
 
-    Some(Friend {
+    Ok(Friend {
         uuid,
         username,
         added_at,
@@ -59,27 +74,84 @@ fn normalize_friend(value: &Value) -> Option<Friend> {
     })
 }
 
-fn load() -> Vec<Friend> {
-    let path = friends_path();
-    if !path.exists() {
-        return Vec::new();
-    }
+// Validate the entire document during deserialization so semantic corruption
+// also uses the last-good backup. Keep legacy aliases and unknown record fields.
+#[derive(Default, Serialize)]
+#[serde(transparent)]
+struct FriendsStore(Vec<Value>);
 
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|value| {
-            value
-                .as_array()
-                .map(|items| items.iter().filter_map(normalize_friend).collect())
-        })
-        .unwrap_or_default()
+impl<'de> Deserialize<'de> for FriendsStore {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let records = Vec::<Value>::deserialize(deserializer)?;
+        for record in &records {
+            normalize_friend(record).map_err(serde::de::Error::custom)?;
+        }
+        Ok(Self(records))
+    }
 }
 
-fn persist(friends: &[Friend]) -> Result<(), String> {
-    fs::create_dir_all(paths::data_dir()).map_err(|e| e.to_string())?;
-    let text = serde_json::to_string_pretty(friends).map_err(|e| e.to_string())?;
-    fs::write(friends_path(), text).map_err(|e| e.to_string())
+fn list_at(path: &Path) -> Result<Vec<Friend>, String> {
+    let store: FriendsStore = persistence::read_json(path, FriendsStore::default)?;
+    store.0.iter().map(normalize_friend).collect()
+}
+
+fn same_uuid(left: &str, right: &str) -> bool {
+    match (uuid::Uuid::parse_str(left), uuid::Uuid::parse_str(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+fn add_at(path: &Path, friend: Friend) -> Result<Friend, String> {
+    persistence::update_json(path, FriendsStore::default, |store| {
+        if store.0.iter().any(|record| {
+            record["uuid"]
+                .as_str()
+                .is_some_and(|id| same_uuid(id.trim(), &friend.uuid))
+        }) {
+            return Err(format!(
+                "{} is already in your friends list.",
+                friend.username
+            ));
+        }
+        store
+            .0
+            .push(serde_json::to_value(&friend).map_err(|error| error.to_string())?);
+        Ok(friend)
+    })
+}
+
+fn remove_at(path: &Path, id: &str) -> Result<(), String> {
+    persistence::update_json(path, FriendsStore::default, |store| {
+        store.0.retain(|record| {
+            !record["uuid"]
+                .as_str()
+                .is_some_and(|uuid| same_uuid(uuid.trim(), id))
+        });
+        Ok(())
+    })
+}
+
+fn update_note_at(path: &Path, id: &str, note: &str) -> Result<(), String> {
+    persistence::update_json(path, FriendsStore::default, |store| {
+        let record = store
+            .0
+            .iter_mut()
+            .find(|record| {
+                record["uuid"]
+                    .as_str()
+                    .is_some_and(|uuid| same_uuid(uuid.trim(), id))
+            })
+            .ok_or("This friend no longer exists. Refresh your friends list.")?;
+        let fields = record.as_object_mut().ok_or("Invalid friend record.")?;
+        let note = note.trim();
+        if note.is_empty() {
+            fields.remove("note");
+        } else {
+            fields.insert("note".into(), Value::String(note.into()));
+        }
+        Ok(())
+    })
 }
 
 async fn lookup_minecraft(username: &str) -> Result<MojangProfile, String> {
@@ -130,17 +202,20 @@ fn hyphenate_uuid(raw: &str) -> Result<String, String> {
         .map_err(|_| "Mojang returned an invalid player UUID.".into())
 }
 
-fn active_account_uuid() -> Option<String> {
-    let cfg = config::read().ok()?;
-    let active_id = cfg.get("activeAccountId").and_then(Value::as_str)?;
-    cfg.get("accounts")
+fn active_account_uuid() -> Result<Option<String>, String> {
+    let cfg = config::read()?;
+    let Some(active_id) = cfg.get("activeAccountId").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    Ok(cfg
+        .get("accounts")
         .and_then(Value::as_array)
         .and_then(|accounts| {
             accounts.iter().find_map(|account| {
                 let uuid = account.get("uuid").and_then(Value::as_str)?;
-                (uuid == active_id).then(|| uuid.to_string())
+                same_uuid(uuid, active_id).then(|| uuid.to_string())
             })
-        })
+        }))
 }
 
 fn now_ms() -> u64 {
@@ -151,8 +226,8 @@ fn now_ms() -> u64 {
 }
 
 #[tauri::command]
-pub fn friends_list() -> Vec<Friend> {
-    load()
+pub fn friends_list() -> Result<Vec<Friend>, String> {
+    list_at(&friends_path())
 }
 
 #[tauri::command]
@@ -166,13 +241,8 @@ pub async fn friends_add(username: String) -> Result<Friend, String> {
     let profile = lookup_minecraft(name).await?;
     let uuid = profile.id;
 
-    if active_account_uuid().as_deref() == Some(uuid.as_str()) {
+    if active_account_uuid()?.is_some_and(|active| same_uuid(&active, &uuid)) {
         return Err("You can't add yourself as a friend.".into());
-    }
-
-    let mut friends = load();
-    if friends.iter().any(|friend| friend.uuid == uuid) {
-        return Err(format!("{} is already in your friends list.", profile.name));
     }
 
     let friend = Friend {
@@ -181,32 +251,24 @@ pub async fn friends_add(username: String) -> Result<Friend, String> {
         added_at: now_ms(),
         note: None,
     };
-    friends.push(friend.clone());
-    persist(&friends)?;
-    Ok(friend)
+    add_at(&friends_path(), friend)
 }
 
 #[tauri::command]
 pub fn friends_remove(uuid: String) -> Result<(), String> {
     let _maintenance = crate::maintenance::shared()?;
-    let friends: Vec<Friend> = load()
-        .into_iter()
-        .filter(|friend| friend.uuid != uuid)
-        .collect();
-    persist(&friends)
+    remove_at(&friends_path(), &uuid)
 }
 
 #[tauri::command]
 pub fn friends_update_note(uuid: String, note: String) -> Result<(), String> {
     let _maintenance = crate::maintenance::shared()?;
-    let mut friends = load();
-    if let Some(friend) = friends.iter_mut().find(|friend| friend.uuid == uuid) {
-        let trimmed = note.trim();
-        friend.note = (!trimmed.is_empty()).then(|| trimmed.to_string());
-        persist(&friends)?;
-    }
-    Ok(())
+    update_note_at(&friends_path(), &uuid, &note)
 }
+
+#[cfg(test)]
+#[path = "friends_store_tests.rs"]
+mod store_tests;
 
 #[cfg(test)]
 mod tests {

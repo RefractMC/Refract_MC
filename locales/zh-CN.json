@@ -1,4 +1,9 @@
 {
+  "activityStorage": {
+    "loadFailed": "无法加载已保存的活动记录。",
+    "saveFailed": "操作已完成，但无法保存活动记录。",
+    "retry": "重新加载活动"
+  },
   "appUpdateStatus": {
     "slow": "更新耗时较长",
     "slowHint": "安装耗时超出预期。请检查是否有系统权限提示，并在安装程序完成前保持 Refract 开启。状态会自动刷新；若安装失败，将提供重试选项。",
@@ -111,7 +116,9 @@
     "editNote": "点击编辑备注",
     "notePlaceholder": "添加备注…",
     "refreshFriendsFailed": "刷新好友失败。",
-    "addFriendFailed": "添加好友失败。"
+    "addFriendFailed": "添加好友失败。",
+    "saveNoteFailed": "无法保存备注。草稿仍可用于重试。",
+    "removeFriendFailed": "无法移除此好友。"
   },
   "social": {
     "worldInvite": "世界邀请",

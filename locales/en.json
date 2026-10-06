@@ -1,4 +1,9 @@
 {
+  "activityStorage": {
+    "loadFailed": "Could not load saved activity.",
+    "saveFailed": "The action finished, but its activity entry could not be saved.",
+    "retry": "Reload activity"
+  },
   "appUpdateStatus": {
     "slow": "Update is taking longer",
     "slowHint": "Installation is taking longer than expected. Check for a system permission prompt and keep Refract open while the installer finishes. Status refreshes automatically; retry becomes available if installation fails.",
@@ -110,6 +115,8 @@
     "notePlaceholder": "Add a note…",
     "refreshFriendsFailed": "Failed to refresh friends.",
     "addFriendFailed": "Failed to add friend.",
+    "saveNoteFailed": "Could not save this note. Your draft is still available to retry.",
+    "removeFriendFailed": "Could not remove this friend.",
     "collapse": "Collapse menu",
     "expand": "Expand menu"
   },

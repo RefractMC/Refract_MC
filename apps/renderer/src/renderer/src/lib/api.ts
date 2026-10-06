@@ -6,6 +6,7 @@ import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialo
 import { logger, setNativeLogWriter } from './logger'
 import { ownSubscription } from './subscription'
 import { parseFileImportResult } from './file-import'
+import { addPreviewActivity, readPreviewActivity } from './activity-storage'
 import { createUpdateLifecycle } from './update-lifecycle'
 import { parseUpdateMetadata } from './update-metadata'
 import { createUpdateStatusReader, createUpdateStatusStore, emptyUpdateStatus } from './update-status'
@@ -413,12 +414,10 @@ function createBrowserApi(): RefractAPI {
       onMaximizedChange: () => () => undefined,
     },
     activity: {
-      list: async () => readJson<Array<{ id: string; label: string; ts: number }>>('refract.activity', []),
+      list: async () => readPreviewActivity(localStorage),
       add: async (label: string) => {
         const entry = { id: crypto.randomUUID(), label, ts: Date.now() }
-        const entries = [entry, ...readJson<typeof entry[]>('refract.activity', [])].slice(0, 50)
-        writeJson('refract.activity', entries)
-        return entry
+        return addPreviewActivity(localStorage, entry)
       },
     },
     news: {

@@ -3,11 +3,11 @@
 //! Activity entries are stored in `<data_dir>/activity.json`, matching the
 //! launcher so the titlebar and home activity panels share the same data.
 
-use crate::paths;
+use crate::{paths, persistence};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::path::Path;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityEntry {
     id: String,
@@ -24,30 +24,28 @@ fn now_ms() -> i64 {
 }
 
 #[tauri::command]
-pub fn activity_list() -> Vec<ActivityEntry> {
-    fs::read_to_string(activity_path())
-        .ok()
-        .and_then(|text| serde_json::from_str::<Vec<ActivityEntry>>(&text).ok())
-        .unwrap_or_default()
+pub fn activity_list() -> Result<Vec<ActivityEntry>, String> {
+    persistence::read_json(&activity_path(), Vec::new)
 }
 
-#[tauri::command]
-pub fn activity_add(label: String) -> Result<ActivityEntry, String> {
-    let _maintenance = crate::maintenance::shared()?;
+fn add_at(path: &Path, label: String) -> Result<ActivityEntry, String> {
     let entry = ActivityEntry {
         id: uuid::Uuid::new_v4().to_string(),
         label,
         ts: now_ms(),
     };
-    let mut entries = activity_list();
-    entries.insert(0, entry.clone());
-    entries.truncate(50);
-
-    if let Some(parent) = activity_path().parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(text) = serde_json::to_string_pretty(&entries) {
-        let _ = fs::write(activity_path(), text);
-    }
-    Ok(entry)
+    persistence::update_json(path, Vec::<ActivityEntry>::new, |entries| {
+        entries.insert(0, entry.clone());
+        entries.truncate(50);
+        Ok(entry)
+    })
 }
+
+#[tauri::command]
+pub fn activity_add(label: String) -> Result<ActivityEntry, String> {
+    add_at(&activity_path(), label)
+}
+
+#[cfg(test)]
+#[path = "activity_tests.rs"]
+mod tests;

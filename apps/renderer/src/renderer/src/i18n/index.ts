@@ -30,6 +30,7 @@ function i(template: string, params: Record<string, string | number>): string {
 
 function build(l: Locale) {
   return {
+    activityStorage: { ...l.activityStorage },
     settingsReset: { ...l.settingsReset },
     windowLifecycle: { ...l.windowLifecycle },
     appUpdateStatus: { ...l.appUpdateStatus },

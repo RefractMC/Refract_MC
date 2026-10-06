@@ -28,6 +28,7 @@
 * Keep the correct loader version for each instance and verify downloaded Java before using it.
 * Prevent conflicting changes to the same instance or shared game folder, and keep games tracked until they actually exit.
 * Protect saved settings, accounts, and instance records from failed writes and concurrent changes.
+* Preserve friends and activity after failed saves or overlapping changes; show storage errors and keep unsaved friend notes available to retry.
 * Preserve sign-in credentials when credential storage is unavailable, and explain when to retry or sign in again.
 * Honor startup, tray, launch-minimize, and reopen-on-exit preferences, with a taskbar fallback when a tray is unavailable.
 * Improve update download, installation, and restart recovery; offer retry or quit without updating after failures.

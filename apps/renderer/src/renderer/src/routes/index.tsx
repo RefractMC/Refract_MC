@@ -3,6 +3,7 @@ import { appendConsoleLines } from '@/lib/log-buffer'
 import { safeLogDocument } from '@/lib/log-safety'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { useActivity, useRecordActivity } from '@/hooks/use-activity'
 import { useState, useEffect, useRef } from 'react'
 import type React from 'react'
 import type { Instance, JavaInstallation, MinecraftVersion } from '@refract/core'
@@ -725,7 +726,9 @@ function Library() {
   const [carouselTab, setCarouselTab] = useState<'recent' | 'pinned' | 'all'>('recent')
   const [carouselPage, setCarouselPage] = useState(0)
   const [activeAccount, setActiveAccount] = useState<ActiveAccount>(null)
-  const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const activityQuery = useActivity()
+  const activity = activityQuery.data ?? []
+  const activityMutation = useRecordActivity()
   const [, setTick] = useState(0)
   const [installing, setInstalling] = useState<{ instanceId: string; name: string } | null>(null)
   const [javaPrep, setJavaPrep] = useState<{ step: string; percent: number } | null>(null)
@@ -806,12 +809,6 @@ function Library() {
         if (!cfg.onboardingDone) setOnboardingStep(0)
       })
       .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    api.activity.list()
-      .then(setActivity)
-      .catch(() => setActivity([]))
   }, [])
 
   // Fetch CHANGELOG.md directly — always accurate, no CI dependency
@@ -949,8 +946,7 @@ function Library() {
 
   async function recordActivity(label: string): Promise<void> {
     try {
-      const entry = await api.activity.add(label)
-      setActivity(prev => [entry, ...prev].slice(0, 50))
+      await activityMutation.mutateAsync(label)
     } catch { /* non-critical */ }
   }
 
@@ -1727,7 +1723,12 @@ function Library() {
       {instances.length > 0 && (
         <div className="panel-grid">
           <WhatsNewPanel entries={whatsNew} />
-          <ActivityPanel items={activity} />
+          <ActivityPanel
+            items={activity}
+            error={activityQuery.isError ? t.activityStorage.loadFailed
+              : activityMutation.isError ? t.activityStorage.saveFailed : null}
+            onRetry={() => { activityMutation.reset(); void activityQuery.refetch() }}
+          />
           <PlaytimePanel instances={instances} />
         </div>
       )}
@@ -2415,13 +2416,23 @@ function WhatsNewPanel({ entries }: { entries: ChangelogEntry[] }) {
   )
 }
 
-function ActivityPanel({ items }: { items: ActivityEntry[] }) {
+function ActivityPanel({ items, error, onRetry }: {
+  items: ActivityEntry[]
+  error: string | null
+  onRetry: () => void
+}) {
   const t = useT()
   const recent = items.slice(0, 6)
 
   return (
     <Panel title={t.home.activity} meta={items.length > 0 ? String(items.length) : undefined}>
-      {recent.length === 0 ? (
+      {error && (
+        <div role="alert" style={{ fontSize: 12, color: 'var(--lava)', padding: '8px 0' }}>
+          {error}{' '}
+          <Button size="sm" variant="ghost" onClick={onRetry}>{t.activityStorage.retry}</Button>
+        </div>
+      )}
+      {recent.length === 0 && !error ? (
         <PanelEmpty label={t.home.noActivity} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
