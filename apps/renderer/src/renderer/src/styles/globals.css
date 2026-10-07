@@ -1831,3 +1831,13 @@ html[data-theme-gradients="off"] .ni-slider::-webkit-slider-runnable-track {
   font-weight: 800;
   color: var(--accent);
 }
+
+/* Kept last: the reduced-transparency block near the top of this file is
+   overridden by the later background-image rules, so restate it here too. */
+@media (prefers-reduced-transparency: reduce) {
+  html[data-has-theme-bg="true"] :where(.launcher-panel, .detail-empty, .ni-dialog),
+  html[data-has-theme-bg="true"] :where(.titlebar, .statusbar),
+  html[data-has-theme-bg="true"] :where(.btn-secondary, .btn-outline, input, select, textarea) {
+    background: var(--surface) !important;
+  }
+}
