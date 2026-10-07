@@ -145,6 +145,7 @@ function build(l: Locale) {
       imageOpacity:  (p: number)  => i(l.themes.imageOpacity, { p }),
       backgroundDim: (p: number)  => i(l.themes.backgroundDim, { p }),
       blur:          (px: number) => i(l.themes.blur, { px }),
+      alpha:         (p: number)  => i(l.themes.alpha, { p }),
     },
 
     news: { ...l.news },

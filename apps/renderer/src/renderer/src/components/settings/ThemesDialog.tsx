@@ -5,6 +5,7 @@ import { useT } from '@/i18n'
 import { useThemeStore } from '@/stores/theme'
 import { api, supportsFilePicker } from '@/lib/api'
 import type { ThemeColors, ThemeDefinition } from '@/lib/theme-types'
+import { formatHexAlpha, parseHexAlpha } from '@/lib/theme-color'
 import darkTheme from '@/lib/themes/dark.json'
 import lightTheme from '@/lib/themes/light.json'
 
@@ -75,6 +76,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   const addCustomTheme = useThemeStore((s) => s.addCustomTheme)
   const removeCustomTheme = useThemeStore((s) => s.removeCustomTheme)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
+  const transparencyActive = api.window.transparencyActive()
 
   const builtins = useMemo(() => [darkTheme as ThemeDefinition, lightTheme as ThemeDefinition], [])
 
@@ -258,19 +260,40 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
                 </label>
 
                 <div className="theme-color-grid">
-                  {COLOR_FIELDS.map(({ key, labelKey }) => (
-                    <label key={key} className="theme-color-field">
-                      <input
-                        className="theme-color-input"
-                        type="color"
-                        value={draftColors[key]}
-                        onChange={(e) => setDraftColors((c) => ({ ...c, [key]: e.target.value }))}
-                      />
-                      <span className="theme-color-chip" style={{ background: draftColors[key] }} />
-                      <span className="theme-color-name">{t.themes[labelKey]}</span>
-                      <span className="theme-color-value">{draftColors[key]}</span>
-                    </label>
-                  ))}
+                  {COLOR_FIELDS.map(({ key, labelKey }) => {
+                    const parsed = parseHexAlpha(draftColors[key])
+                    const alpha = parsed?.alpha ?? 1
+                    return (
+                      <div key={key} className="theme-color-field">
+                        <label className="theme-color-main">
+                          <input
+                            className="theme-color-input"
+                            type="color"
+                            value={parsed?.hex ?? '#000000'}
+                            onChange={(e) => setDraftColors((c) => ({ ...c, [key]: formatHexAlpha(e.target.value, alpha) }))}
+                          />
+                          <span className="theme-color-chip" style={{ '--chip-color': draftColors[key] } as CSSProperties} />
+                          <span className="theme-color-name">{t.themes[labelKey]}</span>
+                          <span className="theme-color-value">{parsed?.hex ?? draftColors[key]}</span>
+                        </label>
+                        <div className="theme-color-alpha">
+                          <input
+                            className="theme-alpha-slider"
+                            style={{ '--alpha-color': parsed?.hex ?? 'transparent' } as CSSProperties}
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={alpha}
+                            disabled={!parsed}
+                            aria-label={`${t.themes[labelKey]}: ${t.themes.alpha(Math.round(alpha * 100))}`}
+                            onChange={(e) => parsed && setDraftColors((c) => ({ ...c, [key]: formatHexAlpha(parsed.hex, Number(e.target.value)) }))}
+                          />
+                          <span className="theme-color-value">{Math.round(alpha * 100)}%</span>
+                        </div>
+                      </div>
+                    )
+                  })}
                   <label className="theme-radius-field">
                     <span className="theme-field-label">{t.themes.cornerRadius}</span>
                     <input
@@ -282,6 +305,9 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
                       onChange={(e) => setDraftColors((c) => ({ ...c, radius: `${e.target.value}px` }))}
                     />
                   </label>
+                </div>
+                <div className="theme-section-note">
+                  {transparencyActive ? t.themes.transparencyHint : t.themes.transparencyUnavailable}
                 </div>
 
                 <label className="theme-option-row">

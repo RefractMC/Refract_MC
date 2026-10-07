@@ -1009,17 +1009,23 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 }
 
 .theme-color-field {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg) 78%, var(--surface));
+  border: 1px solid var(--border-r);
+}
+
+/* The hidden color input covers only this row, so the alpha track stays usable. */
+.theme-color-main {
   position: relative;
   min-width: 0;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 7px 8px;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg) 78%, var(--surface));
-  border: 1px solid var(--border-r);
   cursor: pointer;
 }
 
@@ -1042,6 +1048,48 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   height: 24px;
   border-radius: 6px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+  /* Checkerboard under the color so alpha is visible. */
+  background:
+    linear-gradient(var(--chip-color), var(--chip-color)),
+    repeating-conic-gradient(#9ca3af 0 25%, #e5e7eb 0 50%) 50% / 8px 8px;
+}
+
+.theme-color-alpha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-color-alpha .theme-color-value {
+  text-align: right;
+}
+
+.theme-alpha-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px;
+  margin: 0;
+  border-radius: 99px;
+  background:
+    linear-gradient(90deg, transparent, var(--alpha-color)),
+    var(--surface-3);
+  outline: none;
+  cursor: pointer;
+}
+.theme-alpha-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ink); border: 2px solid var(--bg);
+  cursor: grab;
+}
+.theme-alpha-slider::-moz-range-thumb {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--ink); border: 2px solid var(--bg);
+  cursor: grab;
+}
+.theme-alpha-slider:disabled {
+  opacity: .4;
+  cursor: not-allowed;
 }
 
 .theme-color-name {
@@ -1703,7 +1751,7 @@ html[data-theme-gradients="off"] {
 html[data-theme-gradients="off"],
 html[data-theme-gradients="off"] body,
 html[data-theme-gradients="off"] #root {
-  background: var(--bg) !important;
+  background: var(--bg-opaque, var(--bg)) !important;
 }
 
 html[data-theme-gradients="off"] .launcher-root::before,
@@ -1832,12 +1880,55 @@ html[data-theme-gradients="off"] .ni-slider::-webkit-slider-runnable-track {
   color: var(--accent);
 }
 
+/* See-through themes. Keep after the theme and gradient options so these fills
+   win over their opaque ones. Chrome stays clear so its alpha does not stack
+   on top of the root's. */
+html[data-window-transparent="true"],
+html[data-window-transparent="true"] body,
+html[data-window-transparent="true"] #root {
+  background: transparent !important;
+}
+
+html[data-window-transparent="true"] {
+  --sidebar-bg: transparent;
+  --chrome-top: transparent;
+}
+
+html[data-window-transparent="true"] .launcher-root {
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 28rem),
+    var(--bg) !important;
+}
+
+html[data-window-transparent="true"][data-theme-gradients="off"] .launcher-root {
+  background: var(--bg) !important;
+}
+
+html[data-window-transparent="true"] .launcher-statusbar {
+  background: transparent !important;
+}
+
 /* Kept last: the reduced-transparency block near the top of this file is
    overridden by the later background-image rules, so restate it here too. */
 @media (prefers-reduced-transparency: reduce) {
+  html[data-window-transparent="true"] .launcher-root,
+  html[data-window-transparent="true"][data-theme-gradients="off"] .launcher-root {
+    background: var(--bg-opaque, var(--bg)) !important;
+  }
+
+  html[data-window-transparent="true"] {
+    --sidebar-bg: var(--bg-opaque, var(--sb));
+    --chrome-top: var(--bg-opaque, var(--sb));
+  }
+
+  html[data-window-transparent="true"] .launcher-statusbar {
+    background: var(--bg-opaque, var(--sb)) !important;
+  }
+
+  html[data-window-transparent="true"] :where(.launcher-panel, .detail-empty, .ni-dialog),
   html[data-has-theme-bg="true"] :where(.launcher-panel, .detail-empty, .ni-dialog),
   html[data-has-theme-bg="true"] :where(.titlebar, .statusbar),
   html[data-has-theme-bg="true"] :where(.btn-secondary, .btn-outline, input, select, textarea) {
-    background: var(--surface) !important;
+    background: var(--surface-opaque, var(--surface)) !important;
   }
 }

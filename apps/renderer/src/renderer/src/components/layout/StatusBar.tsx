@@ -35,7 +35,7 @@ export function StatusBar() {
   }, [])
 
   return (
-    <footer style={{
+    <footer className="launcher-statusbar" style={{
       height: 'var(--statusbar-height)',
       background: 'color-mix(in srgb, var(--sb) 88%, transparent)',
       display: 'flex', alignItems: 'center',
