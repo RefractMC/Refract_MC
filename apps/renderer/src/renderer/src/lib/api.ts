@@ -412,6 +412,8 @@ function createBrowserApi(): RefractAPI {
       startResizeDragging: () => undefined,
       isMaximized: async () => false,
       onMaximizedChange: () => () => undefined,
+      transparencyActive: () => false,
+      setBackdrop: async () => {},
     },
     activity: {
       list: async () => readPreviewActivity(localStorage),
@@ -1386,6 +1388,8 @@ function createTauriApi(): RefractAPI {
           onError
         )
       }) as RefractAPI['window']['onMaximizedChange'],
+      transparencyActive: () => window.__REFRACT_WINDOW_TRANSPARENT__ === true,
+      setBackdrop: async (enabled) => { await tinvoke('window_set_backdrop', { enabled }) },
     },
     updater: {
       ...base.updater,
