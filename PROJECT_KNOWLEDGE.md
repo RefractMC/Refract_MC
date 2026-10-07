@@ -119,6 +119,8 @@ The most important architectural rule is: UI components call the stable `api.*` 
 ### Startup
 
 1. Tauri creates a maximized, centered, frameless `1280 x 800` main window with a `900 x 600` minimum.
+   The window is declared in `tauri.conf.json` with `create: false` and built transparent in
+   `window_appearance.rs` from that config, so see-through themes can switch live (see Themes).
    The window starts hidden while native initialization creates a localized Show/Quit tray menu.
    It stays in the tray only when both `startMinimized` and `minimizeToTray` are enabled;
    otherwise it is shown. A missing tray uses taskbar minimization for background startup.
@@ -287,6 +289,9 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 - Built-in definitions are `lib/themes/dark.json` and `light.json`.
 - The theme engine translates theme JSON into CSS variables.
 - Custom theme JSON files are stored natively under the data directory's `themes` folder.
+- Theme colors accept `#RRGGBBAA`; opaque colors keep the `#RRGGBB` form, so existing themes are unchanged. The editor adds a 0-100% alpha slider to every color.
+- A Background (`bg-base`) alpha below 100% makes the window see-through, live and without a restart. The main window and webview are always created transparent; opaque themes still paint opaque backgrounds, so they look as before. An initialization script reports native support (`api.window.transparencyActive()`), and the theme engine then sets `html[data-window-transparent]` and toggles the native backdrop through `window_set_backdrop`: Mica (Windows 11), Acrylic (Windows 10), or vibrancy (macOS). Linux relies on the compositor. `REFRACT_DISABLE_WINDOW_TRANSPARENCY=1` creates an ordinary opaque window for systems that render it incorrectly. macOS builds enable Tauri's `macos-private-api`, which rules out Mac App Store distribution.
+- `prefers-reduced-transparency` forces solid root, chrome and panel fills through the engine's `--bg-opaque` and `--surface-opaque` variables.
 - The persisted accent override is reapplied to built-in themes.
 - Global tokens and compatibility styles live in `styles/globals.css`.
 

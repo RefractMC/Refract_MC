@@ -1,5 +1,8 @@
 import type { ThemeDefinition, LayoutConfig } from './theme-types'
 import { DEFAULT_LAYOUT } from './theme-types'
+import { colorAlpha, opaqueColor } from './theme-color'
+import { api } from './api'
+import { logger } from './logger'
 
 function cssUrl(value: string): string {
   return `url(${JSON.stringify(value)})`
@@ -7,6 +10,8 @@ function cssUrl(value: string): string {
 
 class ThemeEngine {
   private customStyleTag: HTMLStyleElement | null = null
+  // The native window is created without a backdrop effect.
+  private backdrop = false
 
   apply(theme: ThemeDefinition): void {
     const root = document.documentElement
@@ -19,6 +24,18 @@ class ThemeEngine {
     this.applyBackground(theme)
     this.applyLayout({ ...DEFAULT_LAYOUT, ...theme.layout })
     this.applyCustomCSS(theme.customCSS ?? '')
+    this.applyWindowTransparency(theme)
+  }
+
+  // Over an opaque native window, a see-through page would expose the webview's
+  // blank canvas instead of the desktop.
+  private applyWindowTransparency(theme: ThemeDefinition): void {
+    const seeThrough =
+      api.window.transparencyActive() && colorAlpha(theme.colors['bg-base']) < 1
+    document.documentElement.dataset.windowTransparent = seeThrough ? 'true' : 'false'
+    if (seeThrough === this.backdrop) return
+    this.backdrop = seeThrough
+    api.window.setBackdrop(seeThrough).catch((error) => logger.error('window:backdrop', error))
   }
 
   private applyColors(colors: Record<string, string> | object): void {
@@ -58,6 +75,9 @@ class ThemeEngine {
 
     // Extra derived/optional mappings
     if (c['bg-base'])    root.style.setProperty('--sb', c['sb'] ?? c['bg-base'])
+    // Reduced transparency needs solid versions of colors that may carry alpha.
+    if (c['bg-base'])    root.style.setProperty('--bg-opaque', opaqueColor(c['bg-base']))
+    if (c['bg-surface']) root.style.setProperty('--surface-opaque', opaqueColor(c['bg-surface']))
     root.style.setProperty('--border-r', 'transparent')
     root.style.setProperty('--border-2', 'transparent')
     root.style.setProperty('--line', 'transparent')

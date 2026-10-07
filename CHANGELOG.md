@@ -14,6 +14,7 @@
 * Recovery notices and restore controls for interrupted modpack changes.
 * A private log preview so you can review the text before sharing it.
 * A reset review that lets you choose whether to remove accounts and unlink external instances.
+* Theme colors can now be partly transparent. Lower the Background alpha to let your desktop show through the launcher.
 
 ### Fixes
 
