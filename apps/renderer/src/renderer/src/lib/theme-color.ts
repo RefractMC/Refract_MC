@@ -26,3 +26,11 @@ export function colorAlpha(value: string | undefined): number {
 export function opaqueColor(value: string): string {
   return parseHexAlpha(value)?.hex ?? value
 }
+
+// Colors in other CSS syntax count as dark, like the default theme.
+export function isDarkColor(value: string | undefined): boolean {
+  const hex = value ? parseHexAlpha(value)?.hex : undefined
+  if (!hex) return true
+  const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128
+}

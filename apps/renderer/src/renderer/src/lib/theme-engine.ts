@@ -1,6 +1,6 @@
 import type { ThemeDefinition, LayoutConfig } from './theme-types'
 import { DEFAULT_LAYOUT } from './theme-types'
-import { colorAlpha, opaqueColor } from './theme-color'
+import { colorAlpha, isDarkColor, opaqueColor } from './theme-color'
 import { api } from './api'
 import { logger } from './logger'
 
@@ -10,8 +10,9 @@ function cssUrl(value: string): string {
 
 class ThemeEngine {
   private customStyleTag: HTMLStyleElement | null = null
-  // The native window is created without a backdrop effect.
-  private backdrop = false
+  // The native window is created without a backdrop effect. Null means the
+  // last change failed and the native state is unknown, so the next apply retries.
+  private backdrop: string | null = 'none'
 
   apply(theme: ThemeDefinition): void {
     const root = document.documentElement
@@ -33,9 +34,15 @@ class ThemeEngine {
     const seeThrough =
       api.window.transparencyActive() && colorAlpha(theme.colors['bg-base']) < 1
     document.documentElement.dataset.windowTransparent = seeThrough ? 'true' : 'false'
-    if (seeThrough === this.backdrop) return
-    this.backdrop = seeThrough
-    api.window.setBackdrop(seeThrough).catch((error) => logger.error('window:backdrop', error))
+    const blur = seeThrough && theme.windowBlur === true && api.window.blurAvailable()
+    const dark = isDarkColor(theme.colors['bg-base'])
+    const backdrop = blur ? (dark ? 'blur-dark' : 'blur-light') : 'none'
+    if (backdrop === this.backdrop) return
+    this.backdrop = backdrop
+    api.window.setBackdrop(blur, dark).catch((error) => {
+      if (this.backdrop === backdrop) this.backdrop = null
+      logger.error('window:backdrop', error)
+    })
   }
 
   private applyColors(colors: Record<string, string> | object): void {

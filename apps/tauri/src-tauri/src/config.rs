@@ -31,6 +31,7 @@ fn defaults() -> Value {
         "startMinimized": false,
         "launchMinimizesToTray": false,
         "reopenOnGameExit": false,
+        "windowTransparency": true,
         "accounts": []
     })
 }
@@ -43,6 +44,14 @@ pub(crate) fn reset_configuration(previous: &Value, delete_accounts: bool) -> Va
         if let Some(value) = previous.get(key).filter(|value| value.is_boolean()) {
             next[key] = value.clone();
         }
+    }
+    // Transparency is turned off when the window draws incorrectly; a reset
+    // must not bring the broken window back.
+    if let Some(value) = previous
+        .get("windowTransparency")
+        .filter(|value| value.is_boolean())
+    {
+        next["windowTransparency"] = value.clone();
     }
     if !delete_accounts {
         for key in ["accounts", "activeAccountId"] {
@@ -154,7 +163,11 @@ pub fn read() -> Result<Value, String> {
 pub fn config_set(key: String, value: Value) -> Result<Value, String> {
     if matches!(
         key.as_str(),
-        "minimizeToTray" | "startMinimized" | "launchMinimizesToTray" | "reopenOnGameExit"
+        "minimizeToTray"
+            | "startMinimized"
+            | "launchMinimizesToTray"
+            | "reopenOnGameExit"
+            | "windowTransparency"
     ) && !value.is_boolean()
     {
         return Err("Window settings must be enabled or disabled.".into());
@@ -183,4 +196,21 @@ pub fn config_set(key: String, value: Value) -> Result<Value, String> {
         crate::discord::resume_all_activity();
     }
     Ok(public_config(cfg))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_keeps_window_transparency_choice() {
+        let off = reset_configuration(&json!({ "windowTransparency": false }), true);
+        assert_eq!(off["windowTransparency"], json!(false));
+        let invalid = reset_configuration(&json!({ "windowTransparency": "off" }), true);
+        assert_eq!(invalid["windowTransparency"], json!(true));
+        assert_eq!(
+            reset_configuration(&json!({}), true)["windowTransparency"],
+            json!(true)
+        );
+    }
 }

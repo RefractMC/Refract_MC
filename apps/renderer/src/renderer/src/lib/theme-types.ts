@@ -35,6 +35,8 @@ export interface ThemeDefinition {
   backgroundBlur?: number
   backgroundDim?: number
   disableGradients?: boolean
+  // Blur the desktop behind a see-through window instead of showing it sharply.
+  windowBlur?: boolean
   customCSS?: string
 }
 

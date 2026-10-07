@@ -136,6 +136,7 @@ const DEFAULT_CONFIG: AppConfig = {
   startMinimized: false,
   launchMinimizesToTray: false,
   reopenOnGameExit: false,
+  windowTransparency: true,
   accounts: [],
 }
 
@@ -413,6 +414,7 @@ function createBrowserApi(): RefractAPI {
       isMaximized: async () => false,
       onMaximizedChange: () => () => undefined,
       transparencyActive: () => false,
+      blurAvailable: () => false,
       setBackdrop: async () => {},
     },
     activity: {
@@ -1389,7 +1391,8 @@ function createTauriApi(): RefractAPI {
         )
       }) as RefractAPI['window']['onMaximizedChange'],
       transparencyActive: () => window.__REFRACT_WINDOW_TRANSPARENT__ === true,
-      setBackdrop: async (enabled) => { await tinvoke('window_set_backdrop', { enabled }) },
+      blurAvailable: () => window.__REFRACT_WINDOW_BLUR__ === true,
+      setBackdrop: async (blur, dark) => { await tinvoke('window_set_backdrop', { blur, dark }) },
     },
     updater: {
       ...base.updater,
@@ -1477,6 +1480,9 @@ export const supportsWindowResizeDragging = isTauri
 
 /** True when a native file picker is available. */
 export const supportsFilePicker = isTauri
+
+/** True when the native window can be created see-through. */
+export const supportsWindowTransparency = isTauri
 
 /** True when the active runtime can send analytics events. */
 export const analyticsAvailable = true

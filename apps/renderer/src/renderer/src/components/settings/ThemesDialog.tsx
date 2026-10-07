@@ -77,6 +77,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   const removeCustomTheme = useThemeStore((s) => s.removeCustomTheme)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const transparencyActive = api.window.transparencyActive()
+  const blurAvailable = transparencyActive && api.window.blurAvailable()
 
   const builtins = useMemo(() => [darkTheme as ThemeDefinition, lightTheme as ThemeDefinition], [])
 
@@ -89,6 +90,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
   const [draftBackgroundBlur, setDraftBackgroundBlur] = useState(activeTheme.backgroundBlur ?? 0)
   const [draftBackgroundDim, setDraftBackgroundDim] = useState(activeTheme.backgroundDim ?? 0.42)
   const [draftDisableGradients, setDraftDisableGradients] = useState(activeTheme.disableGradients ?? false)
+  const [draftWindowBlur, setDraftWindowBlur] = useState(activeTheme.windowBlur ?? false)
 
   function selectBuiltin(id: 'dark' | 'light') {
     applyBuiltin(id)
@@ -106,6 +108,7 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
     setDraftBackgroundBlur(theme.backgroundBlur ?? 0)
     setDraftBackgroundDim(theme.backgroundDim ?? 0.42)
     setDraftDisableGradients(theme.disableGradients ?? false)
+    setDraftWindowBlur(theme.windowBlur ?? false)
   }
 
   function startCreate() {
@@ -147,6 +150,8 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
       version: '1.0.0',
       colors: draftColors,
       disableGradients: draftDisableGradients,
+      // Omitted when off so themes without it save exactly as before.
+      ...(draftWindowBlur ? { windowBlur: true } : {}),
       ...(draftBackgroundImage.trim()
         ? {
             backgroundImage: draftBackgroundImage.trim(),
@@ -321,6 +326,20 @@ export function ThemesDialog({ open, onOpenChange }: Props) {
                     <small>{t.themes.disableGradientsDesc}</small>
                   </span>
                 </label>
+
+                {blurAvailable && (
+                  <label className="theme-option-row">
+                    <input
+                      type="checkbox"
+                      checked={draftWindowBlur}
+                      onChange={(e) => setDraftWindowBlur(e.target.checked)}
+                    />
+                    <span>
+                      <b>{t.themes.windowBlur}</b>
+                      <small>{t.themes.windowBlurDesc}</small>
+                    </span>
+                  </label>
+                )}
 
                 <div className="theme-bg-panel">
                   <div className="theme-bg-header">

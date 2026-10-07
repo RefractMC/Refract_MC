@@ -5,7 +5,7 @@ import { createSettingsWriter } from '@/lib/settings-writer'
 import { useAppUpdate } from '@/hooks/use-app-update'
 import { createPortal } from 'react-dom'
 import type React from 'react'
-import { analyticsAvailable, api, type AppConfig, type SafeAccount } from '@/lib/api'
+import { analyticsAvailable, api, supportsWindowTransparency, type AppConfig, type SafeAccount } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { ThemesDialog } from '@/components/settings/ThemesDialog'
 import { ResetLauncherButton } from '@/components/settings/ResetLauncherButton'
@@ -672,6 +672,15 @@ function Settings() {
                   <Button variant="outline" size="sm" onClick={() => setThemesOpen(true)}>{t.settings.manageThemes}</Button>
                 </div>
               </Field>
+
+              {supportsWindowTransparency && (
+                <Field label={t.settings.windowTransparency} note={t.settings.windowTransparencyNote}>
+                  <Segmented>
+                    <SegmentButton active={config?.windowTransparency !== false} disabled={savingSettings > 0} onClick={() => { void saveSetting('windowTransparency', true, t.settings.windowTransparencyOn) }}>{t.settings.on}</SegmentButton>
+                    <SegmentButton active={config?.windowTransparency === false} disabled={savingSettings > 0} onClick={() => { void saveSetting('windowTransparency', false, t.settings.windowTransparencyOff) }}>{t.settings.off}</SegmentButton>
+                  </Segmented>
+                </Field>
+              )}
 
               <Field label={t.settings.memory} note={t.settings.memoryNote}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
