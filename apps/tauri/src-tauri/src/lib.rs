@@ -42,6 +42,7 @@ mod skins;
 mod snapshots;
 mod system;
 mod theme;
+mod window_appearance;
 mod window_lifecycle;
 
 /// Tauri entry point. Native app handlers are exposed as `#[tauri::command]`
@@ -86,6 +87,7 @@ pub fn run() {
             persistence::init(app.handle().clone());
             operations::init(app.handle().clone());
             analytics::init();
+            window_appearance::create_main_window(app)?;
             // Some Linux WMs (notably Wayland compositors) ignore the initial
             // state of frameless windows and open them at minimum content
             // size. Re-apply maximization if the config's request was lost.
@@ -128,6 +130,7 @@ pub fn run() {
             window_lifecycle::window_quit_finish,
             window_lifecycle::window_cancel_exit,
             window_lifecycle::window_set_language,
+            window_appearance::window_set_backdrop,
             operations::operations_list,
             operations::operations_get,
             operations::operations_cancel,

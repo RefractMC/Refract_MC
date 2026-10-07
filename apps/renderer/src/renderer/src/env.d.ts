@@ -29,6 +29,8 @@ declare global {
   const __APP_VERSION__: string
   const __APP_UPDATER_ENABLED__: boolean
   interface Window {
+    // Injected natively, and only when the main window was created transparent.
+    __REFRACT_WINDOW_TRANSPARENT__?: boolean
     api: {
       operations: {
         list: () => Promise<NativeOperation[]>
@@ -254,6 +256,8 @@ declare global {
         startResizeDragging: (direction: 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West') => void
         isMaximized: () => Promise<boolean>
         onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
+        transparencyActive: () => boolean
+        setBackdrop: (enabled: boolean) => Promise<void>
       }
       activity: {
         list: () => Promise<Array<{ id: string; label: string; ts: number }>>
