@@ -31,6 +31,8 @@ declare global {
   interface Window {
     // Injected natively, and only when the main window was created transparent.
     __REFRACT_WINDOW_TRANSPARENT__?: boolean
+    // Injected with the flag above where the platform offers a blur-behind material.
+    __REFRACT_WINDOW_BLUR__?: boolean
     api: {
       operations: {
         list: () => Promise<NativeOperation[]>
@@ -69,6 +71,7 @@ declare global {
           startMinimized?: boolean
           launchMinimizesToTray?: boolean
           reopenOnGameExit?: boolean
+          windowTransparency?: boolean
           showCat?: boolean
           analyticsEnabled?: boolean
           analyticsNoticeShown?: boolean
@@ -257,7 +260,8 @@ declare global {
         isMaximized: () => Promise<boolean>
         onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
         transparencyActive: () => boolean
-        setBackdrop: (enabled: boolean) => Promise<void>
+        blurAvailable: () => boolean
+        setBackdrop: (blur: boolean, dark: boolean) => Promise<void>
       }
       activity: {
         list: () => Promise<Array<{ id: string; label: string; ts: number }>>
