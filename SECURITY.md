@@ -69,8 +69,9 @@ The updater now resolves to Rust 2.13.1, requiring Tauri 2.12.0 and tauri-utils 
 Its urlpattern 0.6.0 dependency removes the five previously reported unmaintained
 `unic-*` packages from the lockfile. The glib/quick-xml versions and upstream manifest
 constraints above remain unchanged, so their three scoped exceptions are retained.
-The JavaScript updater is 2.13.0 with direct Tauri API 2.12.0; the production pnpm
-audit reported no known vulnerabilities. No new audit ignore was added.
+The unused JavaScript updater package has been removed; the renderer uses
+Refract's native updater commands with direct Tauri API 2.12.0. The production
+pnpm audit reported no known vulnerabilities. No new audit ignore was added.
 
 Validation: targeted `cargo tree -i` checks, `cargo test --locked` on Windows,
 `pnpm audit --prod`, and `cargo audit --ignore RUSTSEC-2024-0429 --ignore
