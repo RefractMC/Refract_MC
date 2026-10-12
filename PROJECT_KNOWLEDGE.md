@@ -125,7 +125,8 @@ The most important architectural rule is: UI components call the stable `api.*` 
    It stays in the tray only when both `startMinimized` and `minimizeToTray` are enabled;
    otherwise it is shown. A missing tray uses taskbar minimization for background startup.
 2. The single-instance plugin focuses the existing window when a second process starts.
-3. Deep links, dialogs, updater, and process plugins are registered.
+3. Deep links, dialogs, and updater plugins are registered. Refract's native
+   lifecycle commands own quit and update restart behavior.
 4. Linux requests WebKitGTK's shared-memory renderer transport by default to avoid hardware DMA-BUF freezes while keeping accelerated compositing available where supported. Explicit `WEBKIT_DISABLE_DMABUF_RENDERER` or `WEBKIT_DMABUF_RENDERER_FORCE_SHM` environment variables take precedence.
 5. Analytics initializes, but sends nothing if the build has no `GA_API_SECRET` or the user opted out.
 6. A blocking worker attempts recovery of interrupted instance updates/restores before Quick Play launches. Pending recovery blocks guarded mutations and launches, including alternate instance IDs that share the affected folders. Failed recovery can be retried from the global recovery notice.
