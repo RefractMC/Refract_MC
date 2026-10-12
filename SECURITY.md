@@ -110,3 +110,14 @@ Frozen-lockfile installation, renderer typecheck, renderer regressions (44 passe
 IPC/locale validation, full lint (zero errors, 20 existing warnings) and the production
 renderer build passed with the patched graph. The existing Rust exceptions remain
 unchanged; native runtime and UI smoke testing remain separate acceptance work.
+
+## Optional HTTP/3 dependency review - 2026-10-12
+
+The refreshed Rust audit database identified five advisories in locked
+`quinn-proto 0.11.15`. The lockfile now resolves `quinn-proto 0.11.18`, which fixes
+RUSTSEC-2026-0338 through RUSTSEC-2026-0342 and avoids the 0.11.17 regression
+reported in [RUSTSEC-2026-0343](https://rustsec.org/advisories/RUSTSEC-2026-0343).
+Its required random-number dependencies were updated with it. This is reqwest's
+optional HTTP/3 dependency; `cargo tree -i quinn-proto --target all` confirms it
+is not enabled in Refract's production feature graph. The direct `rand 0.8`
+dependency used by Stronghold remains unchanged. No audit exception was added.
