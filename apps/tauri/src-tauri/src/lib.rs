@@ -67,7 +67,6 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| {
             use tauri::Manager as _;
             if window.label() == "main" {
