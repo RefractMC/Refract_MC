@@ -65,7 +65,7 @@ patched version listed in the advisory database:
 | `bincode 1.3.3`, `paste 1.0.15` | Stronghold / stronghold_engine | Evaluate supported Stronghold maintenance updates without changing vault compatibility blindly. |
 | `proc-macro-error 1.0.4` | GTK3 / glib macros | Follow the same Tauri/Wry backend transition as the glib exception. |
 
-The updater now resolves to Rust 2.13.1, requiring Tauri 2.12.0 and tauri-utils 2.10.0.
+The updater now resolves to Rust 2.13.2 alongside Tauri 2.12.1 and tauri-utils 2.10.1.
 Its urlpattern 0.6.0 dependency removes the five previously reported unmaintained
 `unic-*` packages from the lockfile. The glib/quick-xml versions and upstream manifest
 constraints above remain unchanged, so their three scoped exceptions are retained.
