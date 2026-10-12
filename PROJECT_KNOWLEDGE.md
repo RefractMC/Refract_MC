@@ -814,6 +814,11 @@ renderer build, Rust formatting/check/tests on all four supported platform runne
 | `build-msix.yml` | Manual, published tag | Builds and signs an optional MSIX package, then uploads it to the selected release when certificate secrets exist. |
 | `discord-changelog.yml` | Published release or manual | Posts the matching `CHANGELOG.md` section through a Discord webhook. |
 
+Dependabot checks npm, Cargo, and GitHub Actions weekly. React and its type packages
+share one update group. Minor and patch development-tool updates are grouped separately,
+and minor and patch Tauri framework updates group `tauri` with `tauri-build`.
+Major native dependency updates remain separate for compatibility review.
+
 ### Release sequence
 
 1. Update user-visible entries in `CHANGELOG.md`.
