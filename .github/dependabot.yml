@@ -6,12 +6,37 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
+      development-tools:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - '*'
+        exclude-patterns:
+          - '@types/react'
+          - '@types/react-dom'
 
   - package-ecosystem: cargo
     directory: /apps/tauri/src-tauri
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      tauri-framework:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - tauri
+          - tauri-build
 
   - package-ecosystem: github-actions
     directory: /
