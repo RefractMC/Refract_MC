@@ -159,7 +159,7 @@ OS-level ExitRequested uses the same handshake; approved final exit and restart 
 `app_updates.rs` creates update resources using the configured release endpoint and public
 key, with shared maintenance ownership for checks and downloads. It preserves Tauri resources during the Windows
 pre-launch hook so a rejected installer launch can still return to a usable window/tray.
-The Rust updater is 2.13.1 (checked Windows launch), and the required Tauri runtime/direct
+The Rust updater is 2.13.2 (checked Windows installer launch), and the required Tauri runtime/direct
 JS API are 2.12.0. All renderer updater-plugin permissions, direct restart and window-destroy
 permissions are removed. The facade calls only Refract's native updater commands. Each native
 resource owns its SDK handle, verified bytes and installed state; download/install attempts
@@ -170,6 +170,10 @@ or renderer-controlled endpoints. The facade validates metadata before construct
 Checks have a 20-second total timeout; downloads have a 30-minute total
 timeout, with 20-second connect and 30-second read limits. Native checks also honor the
 build-time `REFRACT_UPDATER_ENABLED=false` used by Nix.
+On macOS, the SDK stages updates on the app's volume and swaps bundles where supported,
+otherwise restoring the previous app after an install failure. If restoration fails, it
+retains the previous app and reports its location. Actual macOS installer verification
+remains pending.
 Installer-stall diagnostics/recovery, reconnecting UI state after renderer loss, exhaustive
 operation coverage and native/cross-platform verification
 remain unfinished. Dependency/source checks do not prove real Windows installer recovery.
