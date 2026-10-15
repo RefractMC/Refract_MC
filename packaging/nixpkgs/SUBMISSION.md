@@ -16,8 +16,19 @@ nixpkgs-fmt pkgs/by-name/re/refract/package.nix
 ```
 
 For a non-flake checkout, use the corresponding `nix-build -A refract` command
-from that checkout. If the pnpm dependency hash changes, let the failed fixed
-output build print the expected hash, then update it deliberately.
+from that checkout. Refresh a published release's source and pnpm dependency
+hashes with `python packaging/scripts/update-packages.py vMAJOR.MINOR.PATCH`
+from the Refract repository root on x86_64 Linux with Python 3 and working Nix. The
+generator uses that exact tag's source and the Refract checkout's locked
+Nixpkgs with `pnpm_11` and `fetcherVersion = 4`; `--check-only` computes the
+hashes without changing manifests. See [packaging instructions](../../docs/PACKAGING.md).
+
+The repository flake's `nix/package.nix` dependency hash belongs to the current
+source and must be maintained separately. After moving this expression into
+a different nixpkgs checkout, verify its pnpm dependency hash against that
+checkout's toolchain. If it changes, temporarily clear that hash, let the
+expected fixed-output mismatch report the new value, then rebuild successfully
+with it. Do not treat unrelated download or build errors as a new checksum.
 
 ## Review notes
 

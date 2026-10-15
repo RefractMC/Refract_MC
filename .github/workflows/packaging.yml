@@ -1,0 +1,68 @@
+name: Packaging Checks
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/packaging.yml'
+      - '.github/workflows/update-package-manifests.yml'
+      - 'packaging/**'
+      - 'nix/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
+      - 'apps/tauri/src-tauri/Cargo.toml'
+      - 'apps/tauri/src-tauri/Cargo.lock'
+      - 'apps/tauri/src-tauri/tauri*.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/packaging.yml'
+      - '.github/workflows/update-package-manifests.yml'
+      - 'packaging/**'
+      - 'nix/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
+      - 'apps/tauri/src-tauri/Cargo.toml'
+      - 'apps/tauri/src-tauri/Cargo.lock'
+      - 'apps/tauri/src-tauri/tauri*.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packaging:
+    name: Package metadata and Nix Linux x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure build temporary directory
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Package metadata regression tests
+        run: python3 -B -m unittest discover -s packaging/scripts -p 'test_*.py'
+      - name: Validate committed package metadata
+        run: python3 -B packaging/scripts/validate-packages.py
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Evaluate metadata dependency helper with Nix
+        env:
+          REFRACT_NIX_INTEGRATION: '1'
+        run: python3 -B packaging/scripts/test_nix_integration.py
+      - name: Check flake evaluation
+        run: nix flake check --no-update-lock-file
+      - name: Evaluate Linux ARM package
+        run: nix eval --raw --no-update-lock-file .#packages.aarch64-linux.refract.drvPath
+      - name: Build Linux x64 package
+        run: nix build --no-link --print-build-logs --no-update-lock-file .#refract
