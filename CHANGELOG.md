@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.5.0
+
 ### Changed
 
 * Standardized the application executable name as `refract` (`refract.exe` on Windows). Custom scripts and Linux window rules using `refract-tauri` need updating.
@@ -41,6 +43,8 @@
 * Update rustls to 0.23.46 to address four TLS security advisories.
 * Remove sensitive information from shared logs and keep account tokens inside native credential storage.
 * Update dependencies to address reported security vulnerabilities.
+
+Full comparison: [v1.4.0...v1.5.0](https://github.com/RefractMC/Refract_MC/compare/v1.4.0...v1.5.0)
 
 ## 1.4.0
 

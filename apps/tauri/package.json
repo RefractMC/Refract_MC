@@ -1,7 +1,7 @@
 {
   "name": "@refract/tauri-poc",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev:real": "vite --config vite.renderer.config.ts",

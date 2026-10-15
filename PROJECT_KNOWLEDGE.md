@@ -9,8 +9,8 @@ tags:
   - architecture
 status: living
 created: 2026-07-19
-updated: 2026-09-30
-project_version: 1.4.0
+updated: 2026-10-15
+project_version: 1.5.0
 repository: https://github.com/RefractMC/Refract_MC
 ---
 
@@ -20,7 +20,7 @@ repository: https://github.com/RefractMC/Refract_MC
 > This is the shared, Obsidian-friendly source of truth for people and AI assistants working on Refract. It describes the project as implemented in the repository, not only as advertised. Update it whenever architecture, commands, persisted data, release steps, or major features change.
 
 > [!info] Snapshot
-> Reviewed for the 1.4.0 release on 2026-08-22. The root `package.json` version is older and is not the desktop release version.
+> Prepared for the 1.5.0 release on 2026-10-15. The root `package.json` version is older and is not the desktop release version.
 
 ## Quick facts
 
@@ -894,7 +894,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 - `locales/README.md` contains a few old path examples. The current files live under `apps/renderer/src/renderer/src/...`; verify paths against the tree.
 - Old source comments can describe earlier scope. Trust registered commands and current call paths over historical comments.
 - The production updater public key is already configured. Older release documentation text about replacing a placeholder is no longer the current state.
-- The root `package.json` version (`1.0.1`) is stale relative to the desktop packages (`1.4.0`). Use Tauri/Cargo/renderer versions and the release tag when determining app version.
+- The root `package.json` version (`1.0.1`) is stale relative to the desktop packages (`1.5.0`). Use Tauri/Cargo/renderer versions and the release tag when determining app version.
 - NeoForge version resolution strips the leading `1.` for legacy Minecraft releases but preserves the full year-based version, such as `26.1.2`.
 - Large route files (`routes/index.tsx`, `browse/index.tsx`, and `modpacks/index.tsx`) contain substantial page logic. Refactors should preserve query invalidation, event cleanup, modal scroll locking, localization, and install state.
 - Browser preview fallbacks can hide native integration defects. Always test meaningful native work in Tauri.
