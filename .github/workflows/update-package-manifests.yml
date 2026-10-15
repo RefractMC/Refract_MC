@@ -29,12 +29,28 @@ jobs:
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
-        run: echo "tag=${INPUT_TAG:-$EVENT_TAG}" >> "$GITHUB_OUTPUT"
+        run: |
+          tag="${INPUT_TAG:-$EVENT_TAG}"
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected a stable vMAJOR.MINOR.PATCH tag without leading zeros or suffixes." >&2
+            exit 1
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Package metadata regression tests
+        run: python3 -B -m unittest discover -s packaging/scripts -p 'test_*.py'
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Refresh and validate package metadata
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          python packaging/scripts/update-packages.py "${{ steps.release.outputs.tag }}"
-          python packaging/scripts/validate-packages.py
+          python3 -B packaging/scripts/update-packages.py "$RELEASE_TAG"
+          python3 -B packaging/scripts/validate-packages.py
 
       - name: Open package metadata pull request
         uses: peter-evans/create-pull-request@v7
@@ -47,4 +63,4 @@ jobs:
           body: |
             Refresh Homebrew, Scoop, Chocolatey, and nixpkgs metadata from the published release.
 
-            Validation ran with `packaging/scripts/validate-packages.py`.
+            Validation ran with the package metadata regression tests, Nix source/dependency hash verification, and `packaging/scripts/validate-packages.py`.
