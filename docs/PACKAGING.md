@@ -56,6 +56,9 @@ root, pass a published stable tag in canonical `vMAJOR.MINOR.PATCH` form. Leadin
 zeros, prerelease suffixes, and build suffixes are rejected. The GitHub release
 must also be published and marked stable.
 
+Nix files use LF line endings through `.gitattributes`, including in Windows
+checkouts used from WSL.
+
 ```sh
 python packaging/scripts/update-packages.py v1.4.0
 python packaging/scripts/validate-packages.py
@@ -103,13 +106,15 @@ The opt-in Nix test evaluates the generator's real dependency helper against a
 small source fixture without fetching a release or building its dependencies.
 It is skipped during ordinary offline test discovery.
 
-`Packaging Checks` runs these checks for packaging, Nix, and dependency input
-changes. It builds the x86_64-linux package, including frozen offline pnpm
-installation, and evaluates the aarch64-linux package. Evaluation does not
-verify an ARM build or launcher runtime behavior. CI detects stale dependency
-hashes in the current flake and does not update them. Historical release
-manifests receive static validation; the generator verifies their hashes when
-refreshing metadata for a published tag.
+The Linux leg of `Regression Checks` runs the offline package-script tests and
+static metadata validation on every pull request and main push.
+`Packaging Checks` runs real Nix helper evaluation, flake checks, ARM evaluation, and the
+full x86_64-linux build for Nix, dependency, configuration, or helper changes.
+Documentation and generated release metadata changes use the cheap checks.
+The full build includes frozen offline pnpm installation; ARM evaluation does
+not verify an ARM build or launcher runtime behavior. CI detects stale current
+flake hashes without updating them. The generator verifies published-tag hashes
+when refreshing release metadata.
 
 After changing dependencies, the lockfile, or the Nix fetcher toolchain, refresh
 the current flake's `pnpmDeps.hash` in `nix/package.nix` deliberately:
