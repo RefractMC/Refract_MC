@@ -77,7 +77,6 @@ def dependency_arguments(store_path: str, version: str) -> list[str]:
         "--impure", "--file", str(ROOT / "packaging/scripts/pnpm-deps.nix"),
         "--argstr", "source", store_path,
         "--argstr", "version", version,
-        "--argstr", "lockFile", str(ROOT / "flake.lock"),
     ]
 
 

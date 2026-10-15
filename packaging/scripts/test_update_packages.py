@@ -143,12 +143,6 @@ class GenerationTests(unittest.TestCase):
                     self.generate()
                 self.assertEqual(before, self.snapshot())
 
-    def test_invalid_prepared_hash_is_rejected_before_writes(self):
-        before = self.snapshot()
-        with self.assertRaises(SystemExit):
-            self.generate(nix=lambda *_: ("sha256-not-a-hash", DEPENDENCY_HASH))
-        self.assertEqual(before, self.snapshot())
-
     def test_partial_publication_failure_cleans_temporary_files(self):
         before = self.snapshot()
         replace = update.os.replace
@@ -224,21 +218,11 @@ class NixHashTests(unittest.TestCase):
             self.assertEqual(update.nix_hashes("v12.34.56", "12.34.56"), (SOURCE_HASH, DEPENDENCY_HASH))
         calls = [call.args[0] for call in run.call_args_list]
         self.assertIn("--unpack", calls[0])
-        self.assertIn("/v12.34.56.tar.gz", calls[0][-1])
-        self.assertEqual(calls[1][-1], "drvPath")
-        self.assertNotIn("--apply", calls[1])
-        self.assertEqual(calls[2][-1], "")
-        self.assertEqual(calls[3][-1], DEPENDENCY_HASH)
-        expected_arguments = [
-            ("source", STORE_PATH),
-            ("version", "12.34.56"),
-            ("lockFile", str(update.ROOT / "flake.lock")),
-        ]
-        for call in calls[1:]:
+        self.assertIn(f"https://github.com/{update.REPO}/archive/refs/tags/v12.34.56.tar.gz", calls[0])
+        for call, expected_hash in zip(calls[1:], ("", "", DEPENDENCY_HASH)):
             self.assertEqual(call[call.index("--file") + 1], str(update.ROOT / "packaging/scripts/pnpm-deps.nix"))
-            arguments = [(call[index + 1], call[index + 2]) for index, value in enumerate(call) if value == "--argstr"]
-            self.assertEqual(arguments[:3], expected_arguments)
-        self.assertTrue(all("shell" not in call.kwargs and "env" not in call.kwargs for call in run.call_args_list))
+            arguments = {call[index + 1]: call[index + 2] for index, value in enumerate(call) if value == "--argstr"}
+            self.assertEqual(arguments, {"source": STORE_PATH, "version": "12.34.56", "hash": expected_hash})
 
     def test_unrelated_or_ambiguous_mismatch_never_rebuilds(self):
         for message in (

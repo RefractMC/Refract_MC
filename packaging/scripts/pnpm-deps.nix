@@ -2,10 +2,9 @@
   source,
   version,
   hash ? "",
-  lockFile ? ../../flake.lock,
 }:
 let
-  lock = builtins.fromJSON (builtins.readFile lockFile);
+  lock = builtins.fromJSON (builtins.readFile ../../flake.lock);
   nixpkgs = builtins.fetchTree lock.nodes.${lock.nodes.${lock.root}.inputs.nixpkgs}.locked;
   pkgs = import nixpkgs {
     system = "x86_64-linux";
