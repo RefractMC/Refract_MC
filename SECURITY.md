@@ -121,3 +121,21 @@ Its required random-number dependencies were updated with it. This is reqwest's
 optional HTTP/3 dependency; `cargo tree -i quinn-proto --target all` confirms it
 is not enabled in Refract's production feature graph. The direct `rand 0.8`
 dependency used by Stronghold remains unchanged. No audit exception was added.
+
+## TLS dependency review - 2026-10-15
+
+The lockfile now resolves `rustls 0.23.46`, addressing
+[RUSTSEC-2026-0346](https://rustsec.org/advisories/RUSTSEC-2026-0346),
+[RUSTSEC-2026-0347](https://rustsec.org/advisories/RUSTSEC-2026-0347),
+[RUSTSEC-2026-0348](https://rustsec.org/advisories/RUSTSEC-2026-0348), and
+[RUSTSEC-2026-0349](https://rustsec.org/advisories/RUSTSEC-2026-0349).
+These cover session-value debug output, rejected ECH handling, optional Brotli
+certificate decompression, and key-share prediction before server authentication.
+Runtime exposure depends on the enabled features and connection configuration.
+The patch fits the existing dependency constraints; no manifest change or new
+audit exception is required. The existing glib and quick-xml exceptions remain.
+
+Validation: `cargo audit --ignore RUSTSEC-2024-0429 --ignore
+RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195` against a refreshed advisory database
+reports zero unignored vulnerabilities and the same three unmaintained dependency
+warnings (`bincode`, `paste`, and `proc-macro-error`).
