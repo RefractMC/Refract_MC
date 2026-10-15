@@ -773,6 +773,7 @@ NixOS package and development environment:
 ```sh
 nix build
 nix develop
+nix flake check --no-update-lock-file
 ```
 
 The Nix package builds Refract from source, exposes Java 8, 17, 21, and 25 to
@@ -780,6 +781,19 @@ the launcher, and supplies the native libraries used by Minecraft. It disables
 the application self-updater because the Nix store is immutable; updates are
 performed through Nix. A desktop Secret Service provider remains required for
 authenticated accounts.
+
+Package metadata generation uses Python 3 and Nix on x86_64 Linux. It verifies
+published release assets and exact-tag source/dependency hashes before writing
+manifests. Release dependency hashes are separate from the current flake's hash.
+See [packaging instructions](docs/PACKAGING.md) for generation, real Nix checks,
+and hash refresh commands. Nix files use LF line endings, including on Windows.
+
+Offline package metadata checks:
+
+```sh
+python -B -m unittest discover -s packaging/scripts -p 'test_*.py'
+python -B packaging/scripts/validate-packages.py
+```
 
 `pnpm build` uses `tauri.local.conf.json`, disables updater artifact creation, and creates an unsigned local installer. `build:signed` uses production updater configuration and needs the Tauri signing secrets.
 
@@ -811,7 +825,8 @@ renderer build, Rust formatting/check/tests on all four supported platform runne
 | Workflow | Trigger | Result |
 | --- | --- | --- |
 | `development-builds.yml` | Push to `main` or manual | Unsigned Windows, macOS ARM/Intel, and Linux artifacts retained for 14 days. |
-| `regression.yml` | PR, push to `main`, manual | Windows, Linux, macOS ARM/Intel renderer and native regression checks. |
+| `regression.yml` | PR, push to `main`, manual | Four-platform renderer/native regression and Linux package metadata checks. |
+| `packaging.yml` | Nix, dependency, configuration, or helper changes on PR/push to `main`, manual | Real Nix helper evaluation, flake checks, Linux ARM evaluation, and a full Linux x64 Nix build. |
 | `security-audit.yml` | PR, push to `main`, weekly, manual | pnpm audit, cargo audit with documented ignores, cargo check, and renderer typecheck. |
 | `release-tauri.yml` | `v*.*.*` tag or manual | Multi-platform draft GitHub release, updater artifacts, stable filenames, and rewritten `latest.json`. |
 | `publish-aur.yml` | Published stable release or manual | Downloads the stable RPM, updates PKGBUILD/checksum and `.SRCINFO`, then pushes `refract-launcher-bin` to AUR. |
@@ -832,6 +847,10 @@ Major native dependency updates remain separate for compatibility review.
 4. Wait for Windows x64, macOS ARM64, macOS Intel, and Linux x64 builds.
 5. Review the draft release and its `latest.json`, signatures, stable filenames, and installers before publishing.
 6. Publishing triggers the Discord announcement, stable AUR package workflow, and package-manifest pull request workflow.
+
+The package-manifest workflow uses `GITHUB_TOKEN`. See
+[packaging instructions](docs/PACKAGING.md) for the required Actions permissions
+and workflow approval.
 
 The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`. It rejects a UTF-8 BOM, invalid manifest structure, or a manifest version that differs from the release tag. It then matches every manifest URL filename to one release asset and requires an authenticated HTTP 200 HEAD response before uploading `latest.json` or removing versioned duplicates.
 

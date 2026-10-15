@@ -16,8 +16,15 @@ nixpkgs-fmt pkgs/by-name/re/refract/package.nix
 ```
 
 For a non-flake checkout, use the corresponding `nix-build -A refract` command
-from that checkout. If the pnpm dependency hash changes, let the failed fixed
-output build print the expected hash, then update it deliberately.
+from that checkout. Refresh published-release hashes through the generator
+described in [packaging instructions](../../docs/PACKAGING.md).
+
+The repository flake's `nix/package.nix` dependency hash belongs to the current
+source and must be maintained separately. After moving this expression into
+a different nixpkgs checkout, verify its pnpm dependency hash against that
+checkout's toolchain. If it changes, temporarily clear that hash, let the
+expected fixed-output mismatch report the new value, then rebuild successfully
+with it. Do not treat unrelated download or build errors as a new checksum.
 
 ## Review notes
 

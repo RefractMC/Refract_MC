@@ -18,6 +18,7 @@
 
 ### Fixes
 
+* Fix Nix package builds and release package metadata checksums.
 * Improve Linux rendering stability while keeping accelerated compositing available.
 * Preserve installed mods, resource packs, shaders, and datapacks when replacements fail, including disabled files.
 * Make saved mod profiles and mod removal report failures clearly and recover interrupted changes.

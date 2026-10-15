@@ -50,18 +50,85 @@ upgrade, uninstall, WebView2, and data-directory tests.
 
 ## Refreshing metadata
 
-From the repository root, pass a published stable tag. The script verifies the
-release and all required assets, downloads them only to calculate SHA-256, and
-fails before writing if anything is missing:
+Run the generator on x86_64 Linux with Python 3 and a working Nix store, with the
+`nix-command` and `flakes` experimental features enabled. From the repository
+root, pass a published stable tag in canonical `vMAJOR.MINOR.PATCH` form. Leading
+zeros, prerelease suffixes, and build suffixes are rejected. The GitHub release
+must also be published and marked stable.
+
+Nix files use LF line endings through `.gitattributes`, including in Windows
+checkouts used from WSL.
 
 ```sh
 python packaging/scripts/update-packages.py v1.4.0
 python packaging/scripts/validate-packages.py
 ```
 
-Use `--check-only` to inspect a release without changing files. Never execute a
-downloaded release artifact as part of metadata generation. A pull request should
+The generator verifies the required assets and calculates their SHA-256 hashes
+without executing them. Nix calculates the unpacked source hash for
+`fetchFromGitHub` and builds the release's pnpm dependency store using the
+generator checkout's locked Nixpkgs, `pnpm_11`, and `fetcherVersion = 4`. The
+release dependency hash belongs to that exact tag's source, not the current
+checkout's lockfile. All downloads, Nix commands, template checks, and generated
+metadata validation finish before manifest writes begin.
+
+Use `--check-only` to compute and print the release hashes without changing
+manifests. It still needs network access and Nix builds. A pull request should
 include the resulting manifest changes and the validation output.
+
+The `Update package manifests` workflow installs Nix and opens a metadata pull
+request after a stable release is published. A repository administrator must
+enable **Settings > Actions > General > Workflow permissions > Allow GitHub
+Actions to create and approve pull requests**, subject to organization policy.
+The workflow already requests `contents: write` and `pull-requests: write`.
+Changing the setting is a separate administrator action.
+
+Current [GitHub token rules](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs)
+place checks from token-created or updated pull requests in an approval-required
+state for `opened`, `synchronize`, and `reopened` events. A maintainer with write
+access must select **Approve workflows to run**. Token pushes do not trigger
+ordinary push workflows.
+
+## Package checks and dependency changes
+
+Run the offline package-script regressions and static metadata checks from the
+repository root:
+
+```sh
+python -B -m unittest discover -s packaging/scripts -p 'test_*.py'
+python -B packaging/scripts/validate-packages.py
+REFRACT_NIX_INTEGRATION=1 python -B packaging/scripts/test_nix_integration.py
+nix flake check --no-update-lock-file
+nix build --no-link --print-build-logs --no-update-lock-file .#refract
+```
+
+The opt-in Nix test evaluates the generator's real dependency helper against a
+small source fixture without fetching a release or building its dependencies.
+It is skipped during ordinary offline test discovery.
+
+The Linux leg of `Regression Checks` runs the offline package-script tests and
+static metadata validation on every pull request and main push.
+`Packaging Checks` runs real Nix helper evaluation, flake checks, ARM evaluation, and the
+full x86_64-linux build for Nix, dependency, configuration, or helper changes.
+Documentation and generated release metadata changes use the cheap checks.
+The full build includes frozen offline pnpm installation; ARM evaluation does
+not verify an ARM build or launcher runtime behavior. CI detects stale current
+flake hashes without updating them. The generator verifies published-tag hashes
+when refreshing release metadata.
+
+After changing dependencies, the lockfile, or the Nix fetcher toolchain, refresh
+the current flake's `pnpmDeps.hash` in `nix/package.nix` deliberately:
+
+1. Temporarily set that hash to an empty string.
+2. Run `nix build --no-link --print-build-logs .#refract.pnpmDeps`.
+3. Copy the `got: sha256-...` value from the expected fixed-output hash mismatch
+   into that field. Other build failures do not establish a checksum.
+4. Repeat the dependency build, then run the full flake checks and package build.
+
+Keep this current-source hash separate from the published release's
+`packaging/nixpkgs/package.nix` hashes. Refresh the latter through the metadata
+generator when targeting a published tag; never copy a current-worktree hash
+into a package for a different source revision.
 
 ## Direct downloads versus package repositories
 
