@@ -37,6 +37,7 @@
 
 ### Security
 
+* Update rustls to 0.23.46 to address four TLS security advisories.
 * Remove sensitive information from shared logs and keep account tokens inside native credential storage.
 * Update dependencies to address reported security vulnerabilities.
 
