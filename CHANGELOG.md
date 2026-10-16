@@ -2,11 +2,6 @@
 
 ## Unreleased
 
-### Fixes
-
-* Make release drafts include their changelog and verified downloads without duplicate files.
-* Keep long Discord release announcements valid and use the exact released changelog section.
-
 ## 1.5.0
 
 ### Changed
