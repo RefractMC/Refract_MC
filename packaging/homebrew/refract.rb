@@ -1,5 +1,5 @@
 cask "refract" do
-  version "1.3.4"
+  version "1.5.0"
 
   name "Refract"
   desc "Fast, open-source Minecraft launcher"
@@ -8,13 +8,13 @@ cask "refract" do
   on_arm do
     url "https://github.com/RefractMC/Refract_MC/releases/download/v#{version}/Refract-macOS-arm64.dmg",
         verified: "github.com/RefractMC/Refract_MC/"
-    sha256 "c009cae34e5c0f64beb81b259ce48a0407b7f19b5c6000664a0783259c3ae667"
+    sha256 "f1f75c59498432961275e203c852d2e0aa81b6a682b4af0d195dedd9ab0e7321"
   end
 
   on_intel do
     url "https://github.com/RefractMC/Refract_MC/releases/download/v#{version}/Refract-macOS-x64.dmg",
         verified: "github.com/RefractMC/Refract_MC/"
-    sha256 "0181ff33c8d5788816561fbee08bdc607b15a6f970ba63bcd0faea18604edcad"
+    sha256 "af4d875b37619eb21bf0dbcfa36dbc325311f1ddde1bf3b6f8047bd327b2d178"
   end
 
   app "Refract.app"
