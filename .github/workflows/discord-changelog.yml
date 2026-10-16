@@ -10,86 +10,44 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to announce (e.g. v1.1.4). Blank = latest CHANGELOG entry."
-        required: false
+        description: "Stable release tag to announce (e.g. v1.1.4)"
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   announce:
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Keep the helper on the default branch and read notes from the release tag.
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
       - name: Post changelog to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
           RELEASE_URL: ${{ github.event.release.html_url }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
           if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
-            echo "::error::DISCORD_WEBHOOK_URL secret is not set — add it in Settings → Secrets and variables → Actions"
+            echo "::error::DISCORD_WEBHOOK_URL secret is not set"
             exit 1
           fi
 
-          # Bare version from the tag.
-          VERSION="$(printf '%s' "${TAG:-}" | sed -E 's/^[A-Za-z-]*v//')"
-
-          # Pull the changelog section for this version (header to the next "## ").
-          SECTION=""
-          if [ -n "$VERSION" ]; then
-            SECTION="$(awk -v ver="$VERSION" '
-              $0 ~ "^## "ver"([^0-9.]|$)" { grab=1; next }
-              /^## / && grab { exit }
-              grab { print }
-            ' CHANGELOG.md)"
-          fi
-
-          # Fall back to the latest (top) section if no exact match was found.
-          if [ -z "$SECTION" ]; then
-            SECTION="$(awk '/^## /{ if (seen) exit; seen=1; next } seen { print }' CHANGELOG.md)"
-            [ -z "$VERSION" ] && VERSION="$(awk '/^## /{ sub(/^## +/,""); print; exit }' CHANGELOG.md)"
-          fi
-
-          # Trim leading/trailing blank lines.
-          SECTION="$(printf '%s\n' "$SECTION" | sed -e '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba}')"
-          if [ -z "$SECTION" ]; then
-            echo "::warning::No changelog content found for '$VERSION' — nothing to post"
-            exit 0
-          fi
-
-          # Discord embed descriptions cap at 4096 chars.
-          if [ "${#SECTION}" -gt 3900 ]; then
-            SECTION="$(printf '%s' "$SECTION" | head -c 3900)…"
-          fi
-
-          URL="${RELEASE_URL:-https://github.com/$REPO/releases}"
-
-          PAYLOAD="$(jq -n \
-            --arg title "Refract $VERSION released" \
-            --arg url "$URL" \
-            --arg desc "$SECTION" \
-            '{
-              username: "Refract Releases",
-              embeds: [ {
-                title: $title,
-                url: $url,
-                description: $desc,
-                color: 9131006,
-                footer: { text: "Refract Launcher" }
-              } ]
-            }')"
-
-          code="$(curl -sS -o /tmp/discord_resp -w '%{http_code}' \
+          python3 -B packaging/scripts/release.py discord "$TAG" --url "$RELEASE_URL" \
+            > "$RUNNER_TEMP/discord-payload.json"
+          code="$(curl -sS -o "$RUNNER_TEMP/discord-response.txt" -w '%{http_code}' \
             -H "Content-Type: application/json" \
-            -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL")"
+            --data-binary "@$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL")"
           echo "Discord responded with HTTP $code"
-          cat /tmp/discord_resp || true
+          cat "$RUNNER_TEMP/discord-response.txt"
           case "$code" in
-            2*) echo "Posted changelog for $VERSION" ;;
+            2??) echo "Posted changelog for $TAG" ;;
             *)  echo "::error::Discord webhook failed (HTTP $code)"; exit 1 ;;
           esac

@@ -1,7 +1,6 @@
 name: Release (Tauri)
 
-# Push a release tag (e.g. v1.1.4) to build, sign, and publish a release with
-# the auto-updater manifest.
+# Push a release tag to prepare a complete draft. Publication stays manual.
 on:
   push:
     tags:
@@ -14,6 +13,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -136,7 +139,7 @@ jobs:
             printf 'APPLE_TEAM_ID<<EOF_REFRACT\n%s\nEOF_REFRACT\n' "$TEAM_ID"
           } >> "$GITHUB_ENV"
 
-      - name: Build, sign & publish
+      - name: Build signed bundles
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -151,16 +154,8 @@ jobs:
           CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         with:
           projectPath: apps/tauri
-          tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: "Refract ${{ github.event.inputs.tag || github.ref_name }}"
-          releaseBody: "Download the installer below. Installed apps auto-update from this release once it's published."
-          # Draft so you review before it goes live. Auto-update only serves a
-          # PUBLISHED release marked "latest" — publish the draft to roll it out.
-          releaseDraft: true
-          prerelease: false
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
-          releaseAssetNamePattern: "Refract_[version]_[platform]_[arch][setup][ext]"
+          # Build locally. Only the finalizer uploads GitHub release assets.
+          uploadUpdaterJson: false
           args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }}
 
       - name: Verify the canonical executable name
@@ -175,212 +170,106 @@ jobs:
               test -x "$BUNDLE"/macos/Refract.app/Contents/MacOS/refract
               ;;
             Linux)
-              dpkg-deb -c "$BUNDLE"/deb/*.deb | grep -qE ' (\./)?usr/bin/refract$'
-              appimage=$(ls "$BUNDLE"/appimage/*.AppImage)
+              deb_files=("$BUNDLE"/deb/*.deb)
+              appimage_files=("$BUNDLE"/appimage/*.AppImage)
+              test "${#deb_files[@]}" -eq 1
+              test "${#appimage_files[@]}" -eq 1
+              dpkg-deb -c "${deb_files[0]}" > "$RUNNER_TEMP/refract-deb-contents.txt"
+              grep -qE ' (\./)?usr/bin/refract$' "$RUNNER_TEMP/refract-deb-contents.txt"
+              appimage=$(realpath "${appimage_files[0]}")
               chmod +x "$appimage"
-              (cd "$RUNNER_TEMP" && "$appimage" --appimage-extract usr/bin/refract >/dev/null)
-              test -x "$RUNNER_TEMP/squashfs-root/usr/bin/refract"
+              extract_dir=$(mktemp -d "$RUNNER_TEMP/refract-appimage.XXXXXX")
+              trap 'rm -rf "$extract_dir"' EXIT
+              (cd "$extract_dir" && "$appimage" --appimage-extract usr/bin/refract >/dev/null)
+              test -x "$extract_dir/squashfs-root/usr/bin/refract"
               ;;
           esac
 
-      - name: Prepare stable release filenames
+      - name: Stage canonical release files
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           VERSION="${TAG#v}"
           BUNDLE="apps/tauri/src-tauri/target/release/bundle"
-
+          mkdir release-files
           case "${{ runner.os }}" in
             Windows)
-              cp "$BUNDLE/nsis/Refract_${VERSION}_x64-setup.exe" \
-                 "Refract-Windows-x64.exe"
-              gh release upload "$TAG" "Refract-Windows-x64.exe" --clobber
+              cp "$BUNDLE/nsis/Refract_${VERSION}_x64-setup.exe" release-files/Refract-Windows-x64.exe
+              cp "$BUNDLE/nsis/Refract_${VERSION}_x64-setup.exe.sig" release-files/Refract-Windows-x64.exe.sig
               ;;
-
             macOS)
-              cp "$BUNDLE/dmg/Refract_${VERSION}_aarch64.dmg" \
-                 "Refract-macOS-arm64.dmg" 2>/dev/null || true
-
-              cp "$BUNDLE/dmg/Refract_${VERSION}_x64.dmg" \
-                 "Refract-macOS-x64.dmg" 2>/dev/null || true
-
-              updater_files=("$BUNDLE"/macos/*.app.tar.gz)
-              if [[ ${#updater_files[@]} -ne 1 || ! -f "${updater_files[0]}" ]]; then
-                echo "Expected exactly one macOS updater archive, found ${#updater_files[@]}" >&2
-                exit 1
-              fi
-
               case "${{ runner.arch }}" in
-                ARM64) updater_alias="Refract-macOS-arm64.app.tar.gz" ;;
-                X64) updater_alias="Refract-macOS-x64.app.tar.gz" ;;
-                *)
-                  echo "Unsupported macOS runner architecture: ${{ runner.arch }}" >&2
-                  exit 1
-                  ;;
+                ARM64) bundle_arch=aarch64; alias_arch=arm64 ;;
+                X64) bundle_arch=x64; alias_arch=x64 ;;
+                *) exit 1 ;;
               esac
-
-              cp "${updater_files[0]}" "$updater_alias"
-              gh release upload "$TAG" Refract-macOS-*.dmg "$updater_alias" --clobber
+              cp "$BUNDLE/dmg/Refract_${VERSION}_${bundle_arch}.dmg" "release-files/Refract-macOS-${alias_arch}.dmg"
+              cp "$BUNDLE/macos/Refract.app.tar.gz" "release-files/Refract-macOS-${alias_arch}.app.tar.gz"
+              cp "$BUNDLE/macos/Refract.app.tar.gz.sig" "release-files/Refract-macOS-${alias_arch}.app.tar.gz.sig"
               ;;
-
             Linux)
-              cp "$BUNDLE/appimage/Refract_${VERSION}_amd64.AppImage" \
-                 "Refract-Linux-x86_64.AppImage"
-
-              cp "$BUNDLE/deb/Refract_${VERSION}_amd64.deb" \
-                 "Refract-Linux-amd64.deb"
-
-              rpm_files=("$BUNDLE"/rpm/*.rpm)
-              if [[ ${#rpm_files[@]} -ne 1 || ! -f "${rpm_files[0]}" ]]; then
-                echo "Expected exactly one RPM bundle, found ${#rpm_files[@]}" >&2
-                exit 1
-              fi
-              cp "${rpm_files[0]}" "Refract-Linux-x86_64.rpm"
-
-              gh release upload "$TAG" \
-                "Refract-Linux-x86_64.AppImage" \
-                "Refract-Linux-amd64.deb" \
-                "Refract-Linux-x86_64.rpm" \
-                --clobber
+              for kind in appimage deb rpm; do
+                files=("$BUNDLE/$kind/"*."${kind/appimage/AppImage}")
+                test "${#files[@]}" -eq 1
+                case "$kind" in
+                  appimage) name=Refract-Linux-x86_64.AppImage ;;
+                  deb) name=Refract-Linux-amd64.deb ;;
+                  rpm) name=Refract-Linux-x86_64.rpm ;;
+                esac
+                cp "${files[0]}" "release-files/$name"
+                cp "${files[0]}.sig" "release-files/$name.sig"
+              done
               ;;
           esac
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-files/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
-  # Runs once after all platform builds: point the updater manifest at the
-  # stable filenames, then drop the versioned duplicates. The signatures in
-  # latest.json stay valid because the stable files are byte-identical copies.
-  # Skipped if any build failed, leaving a consistent versioned release.
   finalize:
-    name: Finalize release assets
+    name: Prepare complete release draft
     needs: release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
-      - name: Rewrite updater manifest to stable filenames
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-files
+          merge-multiple: true
+      - name: Generate notes and complete updater manifest
         run: |
-          set -euo pipefail
-          BASE="https://github.com/${GH_REPO}/releases/download/${TAG}"
-
-          gh release download "$TAG" --pattern latest.json
-
-          jq --arg base "$BASE" '
-            del(.platforms["windows-x86_64-msi"])
-            | if .platforms["windows-x86_64"]        then .platforms["windows-x86_64"].url        = $base + "/Refract-Windows-x64.exe"       else . end
-            | if .platforms["windows-x86_64-nsis"]   then .platforms["windows-x86_64-nsis"].url   = $base + "/Refract-Windows-x64.exe"       else . end
-            | if .platforms["darwin-aarch64"]        then .platforms["darwin-aarch64"].url        = $base + "/Refract-macOS-arm64.app.tar.gz" else . end
-            | if .platforms["darwin-aarch64-app"]    then .platforms["darwin-aarch64-app"].url    = $base + "/Refract-macOS-arm64.app.tar.gz" else . end
-            | if .platforms["darwin-x86_64"]         then .platforms["darwin-x86_64"].url         = $base + "/Refract-macOS-x64.app.tar.gz"   else . end
-            | if .platforms["darwin-x86_64-app"]     then .platforms["darwin-x86_64-app"].url     = $base + "/Refract-macOS-x64.app.tar.gz"   else . end
-            | if .platforms["linux-x86_64"]          then .platforms["linux-x86_64"].url          = $base + "/Refract-Linux-x86_64.AppImage" else . end
-            | if .platforms["linux-x86_64-appimage"] then .platforms["linux-x86_64-appimage"].url = $base + "/Refract-Linux-x86_64.AppImage" else . end
-            | if .platforms["linux-x86_64-deb"]      then .platforms["linux-x86_64-deb"].url      = $base + "/Refract-Linux-amd64.deb"       else . end
-            | if .platforms["linux-x86_64-rpm"]      then .platforms["linux-x86_64-rpm"].url      = $base + "/Refract-Linux-x86_64.rpm"      else . end
-          ' latest.json > latest.fixed.json
-          mv latest.fixed.json latest.json
-
-      - name: Validate updater manifest URLs
+          python3 -B packaging/scripts/release.py notes "$TAG" > release-notes.md
+          python3 -B packaging/scripts/release.py manifest "$TAG" release-files > latest.json
+      - name: Create or reuse the unpublished draft
         run: |
-          set -euo pipefail
-
-          manifest_prefix="$(
-            od -An -tx1 -N3 latest.json | tr -d '[:space:]'
-          )"
-          if [[ "$manifest_prefix" == "efbbbf" ]]; then
-            echo "::error title=Invalid updater manifest::latest.json must be UTF-8 without a BOM"
-            exit 1
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases" > releases.json
+          id=$(python3 -B packaging/scripts/release.py draft "$TAG" releases.json)
+          if [[ -z "$id" ]]; then
+            gh release create "$TAG" --draft --verify-tag --title "Refract $TAG" --notes-file release-notes.md
           fi
-
-          if ! jq -e '
-            type == "object"
-            and ((.version | type) == "string")
-            and ((.version | length) > 0)
-            and ((.platforms | type) == "object")
-            and ((.platforms | length) > 0)
-            and all(.platforms[]; ((.url | type) == "string") and ((.url | length) > 0))
-            and all(.platforms[]; ((.signature | type) == "string") and ((.signature | length) > 0))
-          ' latest.json >/dev/null; then
-            echo "::error title=Invalid updater manifest::latest.json has an invalid structure"
-            exit 1
-          fi
-
-          manifest_version="$(jq -r '.version' latest.json)"
-          if [[ "v${manifest_version}" != "$TAG" ]]; then
-            echo "::error title=Invalid updater manifest::Manifest version '$manifest_version' does not match tag '$TAG'"
-            exit 1
-          fi
-
-          release_assets="$(gh release view "$TAG" --json assets)"
-          declare -A checked_urls=()
-          platform_count=0
-
-          while IFS=$'\t' read -r platform url; do
-            if [[ -z "$platform" || -z "$url" ]]; then
-              echo "::error title=Invalid updater manifest::Platform '$platform' has no download URL"
-              exit 1
-            fi
-
-            asset_name="${url##*/}"
-            mapfile -t matching_assets < <(
-              jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .apiUrl' \
-                <<<"$release_assets"
-            )
-            if [[ ${#matching_assets[@]} -ne 1 ]]; then
-              echo "::error title=Missing updater asset::$platform URL filename does not match exactly one release asset: $asset_name"
-              exit 1
-            fi
-
-            if [[ -z "${checked_urls[$url]+present}" ]]; then
-              if ! http_code="$(
-                curl --head --location --silent --show-error \
-                  --retry 3 --retry-all-errors --retry-delay 2 \
-                  --output /dev/null --write-out '%{http_code}' \
-                  --header 'Accept: application/octet-stream' \
-                  --header "Authorization: Bearer ${GH_TOKEN}" \
-                  --header 'X-GitHub-Api-Version: 2022-11-28' \
-                  "${matching_assets[0]}"
-              )"; then
-                echo "::error title=Updater asset unavailable::$platform URL could not be downloaded: $url"
-                exit 1
-              fi
-
-              if [[ "$http_code" != "200" ]]; then
-                echo "::error title=Updater asset unavailable::$platform URL returned HTTP $http_code: $url"
-                exit 1
-              fi
-              checked_urls["$url"]=1
-            fi
-
-            echo "Validated $platform: HTTP 200 - $url"
-            ((platform_count += 1))
-          done < <(
-            jq -r '.platforms | to_entries[] | [.key, (.value.url // "")] | @tsv' \
-              latest.json
-          )
-
-          if (( platform_count == 0 )); then
-            echo "::error title=Invalid updater manifest::No platform URLs found"
-            exit 1
-          fi
-
-      - name: Upload validated updater manifest
+      - name: Upload final assets only
         run: |
-          set -euo pipefail
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+          files=(release-files/*)
+          payloads=()
+          for file in "${files[@]}"; do
+            [[ "$file" == *.sig ]] || payloads+=("$file")
+          done
+          gh release upload "$TAG" "${payloads[@]}" --clobber
           gh release upload "$TAG" latest.json --clobber
-
-      - name: Delete versioned duplicate assets
-        run: |
-          set -euo pipefail
-          VERSION="${TAG#v}"
-          # Every versioned asset name contains the version string; the stable
-          # installer/updater aliases and latest.json never do.
-          gh release view "$TAG" --json assets -q '.assets[].name' \
-            | { grep -F "$VERSION" || true; } \
-            | while read -r name; do
-                gh release delete-asset "$TAG" "$name" -y
-                echo "deleted $name"
-              done
-
+          mkdir verify-manifest
+          gh release download "$TAG" --pattern latest.json --dir verify-manifest
+          cmp latest.json verify-manifest/latest.json
+          gh release view "$TAG" --json assets,isDraft > final-release.json
+          python3 -B packaging/scripts/release.py verify "$TAG" final-release.json
+          printf '## %s ready\n\nReview the completed draft, then click **Publish release**.\n' "$TAG" >> "$GITHUB_STEP_SUMMARY"

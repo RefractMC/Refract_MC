@@ -127,25 +127,24 @@ work across future releases.
 
 ## 4. Publish to GitHub Releases
 
-The `Release (Tauri)` workflow uploads platform installers and the generated
-`latest.json` updater manifest to the draft release. Review the assets, then
-publish the draft and mark it as the latest release.
+Wait for the entire `Release (Tauri)` workflow to finish green. Review the
+completed draft, then click **Publish release**. Notes and the nine final assets
+are prepared automatically. Never publish a running or failed draft.
 
-The generated manifest should contain every supported updater platform. Before
-publishing, verify every URL returns HTTP 200, including both stable macOS
-`.app.tar.gz` updater archives:
+The finalizer requires all supported updater platforms and packages before creating the draft. Review the completed release rather than manually repairing notes or downloads.
 
-`latest.json` must be UTF-8 without a byte-order mark. The release finalizer
-rejects BOM-prefixed files, malformed updater objects, and versions that do not
-match the release tag. If repairing a published manifest manually, rewrite it
+The finalizer generates `latest.json` as UTF-8 without a byte-order mark, with
+every supported platform and a version matching the release tag.
+If repairing a published manifest manually, rewrite it
 with `jq` before uploading it; do not use Windows PowerShell 5.1
 `Set-Content -Encoding utf8`, which adds a BOM.
 
-The release finalizer enforces this before replacing `latest.json` or deleting
-versioned assets. Because the release is still a draft, it maps each manifest
-URL filename to exactly one release asset and sends an authenticated HEAD request
-through the GitHub API. Every final response must be HTTP 200 or finalization
-stops with the existing assets intact.
+Platform jobs build signed bundles and keep them in temporary Actions artifacts.
+Only the finalizer creates or reuses the matching unpublished draft and uploads
+its eight canonical packages plus `latest.json`. Signatures stay in the workflow
+artifacts and are embedded in the complete updater manifest. No versioned copies
+are uploaded to Releases, so duplicate cleanup is unnecessary. Existing published
+releases and mismatched draft notes are refused. A rerun replaces canonical files.
 
 ```json
 {
@@ -155,7 +154,7 @@ stops with the existing assets intact.
   "platforms": {
     "windows-x86_64": {
       "signature": "<paste the FULL contents of the .sig file>",
-      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract_1.2.0_windows_x64-setup.exe"
+      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract-Windows-x64.exe"
     },
     "darwin-aarch64": {
       "signature": "<paste the FULL contents of the .sig file>",
@@ -167,7 +166,7 @@ stops with the existing assets intact.
     },
     "linux-x86_64": {
       "signature": "<paste the FULL contents of the .sig file>",
-      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract_1.2.0_linux_x64.AppImage"
+      "url": "https://github.com/RefractMC/Refract_MC/releases/download/v1.2.0/Refract-Linux-x86_64.AppImage"
     }
   }
 }

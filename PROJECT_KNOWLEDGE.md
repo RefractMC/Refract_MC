@@ -845,14 +845,14 @@ Major native dependency updates remain separate for compatibility review.
 2. Synchronize the desktop version across renderer, Tauri package, Rust crate/Tauri config, and packaging metadata. Do not use the old root package version as the release source.
 3. Commit and tag `vX.Y.Z`, or manually dispatch the Tauri release workflow with the intended tag.
 4. Wait for Windows x64, macOS ARM64, macOS Intel, and Linux x64 builds.
-5. Review the draft release and its `latest.json`, signatures, stable filenames, and installers before publishing.
+5. Wait for the entire release workflow to finish green, review the completed draft, then click Publish release. Running or failed drafts are incomplete.
 6. Publishing triggers the Discord announcement, stable AUR package workflow, and package-manifest pull request workflow.
 
 The package-manifest workflow uses `GITHUB_TOKEN`. See
 [packaging instructions](docs/PACKAGING.md) for the required Actions permissions
 and workflow approval.
 
-The finalizer rewrites updater URLs to stable filenames such as `Refract-Windows-x64.exe`, `Refract-macOS-arm64.app.tar.gz`, `Refract-macOS-x64.app.tar.gz`, `Refract-Linux-x86_64.AppImage`, `Refract-Linux-amd64.deb`, and `Refract-Linux-x86_64.rpm`. It rejects a UTF-8 BOM, invalid manifest structure, or a manifest version that differs from the release tag. It then matches every manifest URL filename to one release asset and requires an authenticated HTTP 200 HEAD response before uploading `latest.json` or removing versioned duplicates.
+Platform builds stage eight canonical packages and six updater signatures in temporary Actions artifacts. One finalizer uses `packaging/scripts/release.py` to require complete inputs, generate one updater manifest and extract the exact tagged changelog section. It creates or reuses a matching unpublished draft and uploads only eight packages plus `latest.json`, then requires exactly nine release assets. No versioned files are uploaded to Releases. Per-tag concurrency queues overlapping runs. The same notes parser builds Unicode-safe Discord announcements from the release tag.
 
 ### Release secrets
 
