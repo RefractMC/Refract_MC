@@ -167,3 +167,8 @@ contains only ZIP 9.0.4, including follow-up extraction fixes after 9.0.0.
   for provenance and the condition for removing the patch.
 
 No audit exception was added. The existing glib and quick-xml exceptions remain.
+
+Validation: a refreshed `cargo audit` with the three existing exceptions reports
+zero unignored vulnerabilities and the same three unmaintained dependency
+warnings. The all-target dependency graph contains only ZIP 9.0.4. The full
+JavaScript dependency audit also reports no known vulnerabilities.

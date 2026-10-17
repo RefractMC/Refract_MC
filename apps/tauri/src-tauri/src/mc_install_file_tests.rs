@@ -45,16 +45,14 @@ fn native_extraction_publishes_into_the_actual_game_root() {
 }
 
 #[test]
-fn invalid_utf8_native_name_is_rejected_without_replacing_existing_file() {
+fn nul_in_native_name_is_rejected_without_replacing_existing_file() {
     let f = Fixture::new();
     let jar = f.archive("example.dll", b"new");
     let mut bytes = std::fs::read(&jar).unwrap();
-    // Both headers must claim UTF-8 so the invalid byte cannot fall back to CP437.
+    // Keep both headers consistent while introducing an unsafe decoded path.
     let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
-    bytes[7] |= 0x08;
-    bytes[30] = 0xff;
-    bytes[central + 9] |= 0x08;
-    bytes[central + 46] = 0xff;
+    bytes[30] = 0;
+    bytes[central + 46] = 0;
     std::fs::write(&jar, bytes).unwrap();
 
     let game = f.0.join("game");
@@ -66,6 +64,25 @@ fn invalid_utf8_native_name_is_rejected_without_replacing_existing_file() {
         b"old"
     );
     assert_eq!(std::fs::read_dir(game.join("natives")).unwrap().count(), 1);
+}
+
+#[test]
+fn cp437_native_names_remain_supported() {
+    let f = Fixture::new();
+    let jar = f.archive("example.dll", b"native");
+    let mut bytes = std::fs::read(&jar).unwrap();
+    let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
+    // 0x82 is an accented e in CP437 and is not valid UTF-8 on its own.
+    bytes[30] = 0x82;
+    bytes[central + 46] = 0x82;
+    std::fs::write(&jar, bytes).unwrap();
+
+    let game = f.0.join("game");
+    extract_natives(&jar, &game, &[], &no_cancel()).unwrap();
+    assert_eq!(
+        std::fs::read(game.join("natives/éxample.dll")).unwrap(),
+        b"native"
+    );
 }
 
 #[test]
