@@ -863,7 +863,8 @@ fn unzip_to(zip_path: &Path, dest: &Path) -> Result<(), String> {
         {
             return Err("Java ZIP archives cannot contain symbolic links.".into());
         }
-        let out = fs_safety::checked_join(dest, entry.name())?;
+        let name = entry.name().map_err(|error| error.to_string())?;
+        let out = fs_safety::checked_join(dest, &name)?;
         if entry.is_dir() {
             fs::create_dir_all(&out).map_err(|error| error.to_string())?;
         } else {

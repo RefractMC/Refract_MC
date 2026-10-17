@@ -16,7 +16,9 @@ tauri-build = { version = "2", features = [] }
 # macos-private-api: transparent main window on macOS for see-through themes.
 tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2.13"
+# Releases use raw Windows installers and Linux AppImages. macOS tar.gz support
+# is unconditional; the optional zip feature adds unused legacy archive formats.
+tauri-plugin-updater = { version = "2.13", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
@@ -39,7 +41,7 @@ hex = "0.4"
 sha1 = "0.11"
 sha2 = "0.11"
 zeroize = "1"
-zip = "2"
+zip = "9.0.4"
 flate2 = "1"
 tar = "0.4"
 base64 = "0.22"

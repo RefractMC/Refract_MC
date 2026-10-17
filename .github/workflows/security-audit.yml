@@ -60,7 +60,16 @@ jobs:
         # 0.39, so there is no upgrade path yet. plist only parses macOS
         # .plist metadata here (trusted input), so exposure is minimal.
         # Drop these ignores once plist releases with quick-xml >= 0.41.
-        run: cargo audit --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+        # ZIP 8 remains a libsodium build dependency for signed Windows archives.
+        # Review these exceptions by 2026-10-30; see SECURITY.md for removal criteria.
+        run: >-
+          cargo audit
+          --ignore RUSTSEC-2024-0429
+          --ignore RUSTSEC-2026-0194
+          --ignore RUSTSEC-2026-0195
+          --ignore RUSTSEC-2026-0367
+          --ignore RUSTSEC-2026-0368
+          --ignore RUSTSEC-2026-0369
 
       - name: Rust check
         working-directory: apps/tauri/src-tauri

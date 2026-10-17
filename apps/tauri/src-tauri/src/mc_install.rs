@@ -112,7 +112,10 @@ fn extract_natives(
     for i in 0..archive.len() {
         cancel()?;
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().replace('\\', "/");
+        let name = entry
+            .name()
+            .map_err(|error| error.to_string())?
+            .replace('\\', "/");
         if name.starts_with("META-INF/")
             || name.ends_with('/')
             || excludes.iter().any(|prefix| name.starts_with(prefix))
