@@ -2726,6 +2726,8 @@ dependencies = [
 [[package]]
 name = "libsodium-sys-stable"
 version = "1.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b04bf6da2c98b727af37ab62cb505f4d751b975b034a9b9ad491d333b0564e"
 dependencies = [
  "cc",
  "libc",
@@ -2735,7 +2737,7 @@ dependencies = [
  "tar",
  "ureq",
  "vcpkg",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -3873,7 +3875,7 @@ dependencies = [
  "windows-sys 0.61.2",
  "zbus",
  "zeroize",
- "zip",
+ "zip 9.0.4",
 ]
 
 [[package]]
@@ -7004,6 +7006,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "zip"
+version = "8.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap 2.14.0",
+ "memchr",
+ "typed-path",
+ "zopfli",
 ]
 
 [[package]]

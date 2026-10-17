@@ -20,7 +20,6 @@ on:
       - 'packages/*/package.json'
       - 'apps/tauri/src-tauri/Cargo.toml'
       - 'apps/tauri/src-tauri/Cargo.lock'
-      - 'apps/tauri/src-tauri/vendor/**'
       - 'apps/tauri/src-tauri/tauri*.json'
   push:
     branches: [main]

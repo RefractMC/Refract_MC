@@ -693,19 +693,20 @@ Additional optional settings used by the UI include minimize/start behavior, reo
 - Renderer page paths mask long ID-like segments before analytics.
 - Report vulnerabilities privately through GitHub Security Advisories.
 
-ZIP dependencies now resolve to 9.0.4. Tauri updater's optional `zip` feature is
+Refract's direct ZIP dependency resolves to 9.0.4. Tauri updater's optional `zip` feature is
 disabled: releases use raw Windows installers and Linux AppImages, while macOS
 tar.gz support is unconditional. TLS and system proxy features remain enabled.
-The existing libsodium-sys-stable 1.24.0 crate is vendored under
-`apps/tauri/src-tauri/vendor` with only its ZIP build dependency changed, because
-upstream 1.24.3 still requires ZIP 8. The bundled crypto source, signature and
-bindings are unchanged. See the vendor README for provenance and patch removal.
-No ZIP audit exception is used.
+Stronghold's libsodium-sys-stable 1.24.0 build dependency still requires ZIP 8.
+The three ZIP advisories have a temporary documented exception for that blocked
+dependency, which extracts signature-verified Windows build libraries. Review by
+2026-10-30 or when upstream releases a compatible ZIP 9 update, whichever comes
+first. See SECURITY.md for exposure, ownership and removal criteria.
 
 Current audit exceptions:
 
 - `RUSTSEC-2024-0429` for `glib 0.18.5`, blocked by the Tauri/Wry GTK3 stack.
 - `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195` for `quick-xml 0.39` through `plist`, blocked until upstream permits `quick-xml >= 0.41`; current use is trusted macOS plist metadata.
+- `RUSTSEC-2026-0367`, `RUSTSEC-2026-0368` and `RUSTSEC-2026-0369` for ZIP 8 through libsodium-sys-stable's build dependency; remove when a compatible upstream release uses patched ZIP.
 
 The exact active ignores live in `.github/workflows/security-audit.yml`; revisit and remove them when upstream releases allow it.
 

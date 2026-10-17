@@ -4,7 +4,7 @@
 
 ### Security
 
-* Update ZIP archive dependencies to address unsafe symlink extraction and Unix permission handling.
+* Update the launcher's ZIP library and remove unused updater ZIP support to address archive extraction advisories.
 
 ## 1.5.0
 

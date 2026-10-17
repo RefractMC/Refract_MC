@@ -61,7 +61,3 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
-
-# Upstream 1.24.x still requires vulnerable ZIP 8 for Windows build archives.
-[patch.crates-io]
-libsodium-sys-stable = { path = "vendor/libsodium-sys-stable" }
