@@ -60,12 +60,8 @@ jobs:
         # 0.39, so there is no upgrade path yet. plist only parses macOS
         # .plist metadata here (trusted input), so exposure is minimal.
         # Drop these ignores once plist releases with quick-xml >= 0.41.
-        # ZIP 8 is a build dependency of libsodium-sys-stable (Stronghold).
-        # It extracts signature-verified Windows MSVC libraries. Upstream 1.24.3
-        # still requires ZIP 8.6; runtime archive handling uses patched ZIP 9.
-        # Review by 2026-10-30 or the next upstream release. Remove these ZIP
-        # exceptions when a compatible libsodium release permits ZIP >=9.
-        # SECURITY.md documents the remaining risk and advisory-wide scope.
+        # ZIP 8 remains a libsodium build dependency for signed Windows archives.
+        # Review these exceptions by 2026-10-30; see SECURITY.md for removal criteria.
         run: >-
           cargo audit
           --ignore RUSTSEC-2024-0429

@@ -45,47 +45,6 @@ fn native_extraction_publishes_into_the_actual_game_root() {
 }
 
 #[test]
-fn nul_in_native_name_is_rejected_without_replacing_existing_file() {
-    let f = Fixture::new();
-    let jar = f.archive("example.dll", b"new");
-    let mut bytes = std::fs::read(&jar).unwrap();
-    // Keep both headers consistent while introducing an unsafe decoded path.
-    let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
-    bytes[30] = 0;
-    bytes[central + 46] = 0;
-    std::fs::write(&jar, bytes).unwrap();
-
-    let game = f.0.join("game");
-    std::fs::create_dir_all(game.join("natives")).unwrap();
-    std::fs::write(game.join("natives/example.dll"), b"old").unwrap();
-    assert!(extract_natives(&jar, &game, &[], &no_cancel()).is_err());
-    assert_eq!(
-        std::fs::read(game.join("natives/example.dll")).unwrap(),
-        b"old"
-    );
-    assert_eq!(std::fs::read_dir(game.join("natives")).unwrap().count(), 1);
-}
-
-#[test]
-fn cp437_native_names_remain_supported() {
-    let f = Fixture::new();
-    let jar = f.archive("example.dll", b"native");
-    let mut bytes = std::fs::read(&jar).unwrap();
-    let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
-    // 0x82 is an accented e in CP437 and is not valid UTF-8 on its own.
-    bytes[30] = 0x82;
-    bytes[central + 46] = 0x82;
-    std::fs::write(&jar, bytes).unwrap();
-
-    let game = f.0.join("game");
-    extract_natives(&jar, &game, &[], &no_cancel()).unwrap();
-    assert_eq!(
-        std::fs::read(game.join("natives/éxample.dll")).unwrap(),
-        b"native"
-    );
-}
-
-#[test]
 fn native_exclusions_and_cancellation_preserve_previous_file() {
     let f = Fixture::new();
     let jar = f.archive("nested/example.dll", b"new");

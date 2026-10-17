@@ -693,15 +693,6 @@ Additional optional settings used by the UI include minimize/start behavior, reo
 - Renderer page paths mask long ID-like segments before analytics.
 - Report vulnerabilities privately through GitHub Security Advisories.
 
-Refract's direct ZIP dependency resolves to 9.0.4. Tauri updater's optional `zip` feature is
-disabled: releases use raw Windows installers and Linux AppImages, while macOS
-tar.gz support is unconditional. TLS and system proxy features remain enabled.
-Stronghold's libsodium-sys-stable 1.24.0 build dependency still requires ZIP 8.
-The three ZIP advisories have a temporary documented exception for that blocked
-dependency, which extracts signature-verified Windows build libraries. Review by
-2026-10-30 or when upstream releases a compatible ZIP 9 update, whichever comes
-first. See SECURITY.md for exposure, ownership and removal criteria.
-
 Current audit exceptions:
 
 - `RUSTSEC-2024-0429` for `glib 0.18.5`, blocked by the Tauri/Wry GTK3 stack.

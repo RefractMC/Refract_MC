@@ -142,50 +142,20 @@ warnings (`bincode`, `paste`, and `proc-macro-error`).
 
 ## ZIP dependency review - 2026-10-16
 
-The Rust audit reported three advisories for each of ZIP 2.4.2, 4.6.1 and 8.6.0:
-[RUSTSEC-2026-0367](https://rustsec.org/advisories/RUSTSEC-2026-0367),
-[RUSTSEC-2026-0368](https://rustsec.org/advisories/RUSTSEC-2026-0368), and
-[RUSTSEC-2026-0369](https://rustsec.org/advisories/RUSTSEC-2026-0369).
-They concern privileged Unix permission bits, symlink targets outside the
-extraction directory, and permission changes through symlinks. Refract's direct
-ZIP dependency now uses 9.0.4, including follow-up extraction fixes after 9.0.0.
+Refract uses ZIP 9.0.4 for runtime archives. The updater's optional ZIP feature
+is disabled because releases use raw Windows installers and Linux AppImages;
+macOS tar.gz support, TLS and proxy support remain enabled.
 
-- Refract's direct ZIP dependency moves from version 2 to 9.0.4. Its existing
-  per-entry path validation and linked-entry rejection remain in place. Archive
-  readers now propagate filename decoding errors; optional mod icon discovery
-  skips entries whose names cannot be decoded.
-- Tauri updater 2.13.3 retains TLS and system proxy support but disables its
-  optional `zip` feature, removing ZIP 4. Refract publishes raw Windows `.exe`
-  installers and Linux `.AppImage` files. macOS `.app.tar.gz` extraction is
-  unconditional in the updater and remains enabled. Future release formats must
-  not introduce Windows ZIP or compressed Linux updater artifacts without
-  re-evaluating these features.
+CI temporarily ignores [RUSTSEC-2026-0367](https://rustsec.org/advisories/RUSTSEC-2026-0367),
+[RUSTSEC-2026-0368](https://rustsec.org/advisories/RUSTSEC-2026-0368) and
+[RUSTSEC-2026-0369](https://rustsec.org/advisories/RUSTSEC-2026-0369) for ZIP 8.6.0,
+which remains a build dependency of Stronghold's libsodium-sys-stable 1.24.0.
+[Upstream 1.24.3](https://github.com/jedisct1/libsodium-sys-stable/blob/master/Cargo.toml)
+still requires ZIP 8.6. Its build script verifies minisign signatures before
+extracting Windows MSVC libraries. These signed build inputs limit exposure;
+the extraction bugs remain unresolved if a malicious archive has a valid signature.
+Audit ignores apply by advisory ID, so review them if another ZIP dependency is added.
 
-### Temporary ZIP exception for libsodium build archives
-
-Stronghold pulls in libsodium-sys-stable 1.24.0, whose build dependency still
-requires ZIP 8. The upstream 1.24.3 manifest also requires ZIP 8.6, so there is
-no compatible published upgrade to ZIP 9 through this dependency yet.
-See the [upstream manifest](https://github.com/jedisct1/libsodium-sys-stable/blob/master/Cargo.toml)
-and [build script](https://github.com/jedisct1/libsodium-sys-stable/blob/master/build.rs).
-
-The ZIP extraction path is used to unpack Windows MSVC build libraries after
-checking their minisign signature against libsodium's embedded public key.
-Refract's runtime archive imports use ZIP 9.0.4. This limits exposure to signed
-build inputs; signature verification does not repair the ZIP extraction bugs.
-A compromised signing key or malicious signed archive remains a build-time risk.
-
-CI temporarily ignores only RUSTSEC-2026-0367, RUSTSEC-2026-0368 and
-RUSTSEC-2026-0369. Cargo audit applies ignores by advisory ID, not dependency
-path; these exceptions therefore require review if another ZIP dependency is
-added or its use changes. ZIP 8.6.0 remains unresolved through libsodium.
-The existing glib and quick-xml exceptions remain unchanged.
-
-Owner: Refract maintainers. Review by 2026-10-30 or the next upstream
-libsodium-sys-stable release, whichever comes first. Remove the three exceptions
-when a compatible release permits ZIP >=9, update the lockfile, and rerun the
-audit and platform checks. No third-party source is vendored.
-
-Validation: the refreshed Rust audit passes with these six documented exceptions
-and the same three maintenance warnings. All-target dependency inspection confirms
-ZIP 8 is confined to libsodium's build dependency and Refract uses ZIP 9.0.4.
+Owner: Refract maintainers. Review by 2026-10-30 or the next upstream release,
+whichever comes first. Remove these three exceptions when a compatible
+libsodium-sys-stable release permits ZIP >=9, update the lockfile, and rerun the audit.
