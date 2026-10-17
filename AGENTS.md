@@ -159,6 +159,7 @@ There is no dedicated JavaScript test suite in package scripts. Rust unit tests 
 - Never discard, overwrite, stage, or commit unrelated changes.
 - Do not use destructive Git operations unless explicitly requested.
 - Do not amend commits, rewrite history, create a branch, commit, push, or open a pull request unless the user asks.
+- Before creating a pull request or updating its description, read `.github/pull_request_template.md` and follow its current structure. Fill it using the actual diff and verification results. Mark only applicable change types and checks actually performed. Report skipped or failed checks honestly. Follow the template even when creating PRs through CLI or API tools, where it may not be inserted automatically.
 - Review the final diff for accidental generated files, logs, formatting churn, or secret material.
 
 ## Release and version cautions

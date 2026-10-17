@@ -84,6 +84,10 @@ nix build
 
 ## Pull request rules
 
+Use the [pull request template](.github/pull_request_template.md) to summarize the
+change, select its type, and report validation results. Complete the translation
+section when applicable.
+
 - Keep changes focused on one feature, fix, or cleanup.
 - Include a short summary of what changed.
 - List the commands you ran to verify the change.
