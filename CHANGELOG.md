@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+* Update ZIP archive dependencies to address unsafe symlink extraction and Unix permission handling.
+
 ## 1.5.0
 
 ### Changed

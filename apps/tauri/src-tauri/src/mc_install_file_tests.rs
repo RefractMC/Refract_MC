@@ -45,6 +45,30 @@ fn native_extraction_publishes_into_the_actual_game_root() {
 }
 
 #[test]
+fn invalid_utf8_native_name_is_rejected_without_replacing_existing_file() {
+    let f = Fixture::new();
+    let jar = f.archive("example.dll", b"new");
+    let mut bytes = std::fs::read(&jar).unwrap();
+    // Both headers must claim UTF-8 so the invalid byte cannot fall back to CP437.
+    let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
+    bytes[7] |= 0x08;
+    bytes[30] = 0xff;
+    bytes[central + 9] |= 0x08;
+    bytes[central + 46] = 0xff;
+    std::fs::write(&jar, bytes).unwrap();
+
+    let game = f.0.join("game");
+    std::fs::create_dir_all(game.join("natives")).unwrap();
+    std::fs::write(game.join("natives/example.dll"), b"old").unwrap();
+    assert!(extract_natives(&jar, &game, &[], &no_cancel()).is_err());
+    assert_eq!(
+        std::fs::read(game.join("natives/example.dll")).unwrap(),
+        b"old"
+    );
+    assert_eq!(std::fs::read_dir(game.join("natives")).unwrap().count(), 1);
+}
+
+#[test]
 fn native_exclusions_and_cancellation_preserve_previous_file() {
     let f = Fixture::new();
     let jar = f.archive("nested/example.dll", b"new");

@@ -281,10 +281,11 @@ fn import_world_archive(game: &Path, archive: &Path) -> Result<String, String> {
     for index in 0..zip.len() {
         operations::check_current()?;
         let entry = zip.by_index(index).map_err(|error| error.to_string())?;
-        if entry.is_dir() && matches!(entry.name(), "." | "./") {
+        let name = entry.name().map_err(|error| error.to_string())?;
+        if entry.is_dir() && matches!(name.as_ref(), "." | "./") {
             continue;
         }
-        let relative = fs_safety::relative_path(entry.name())?;
+        let relative = fs_safety::relative_path(&name)?;
         if entry
             .unix_mode()
             .is_some_and(|mode| !matches!(mode & 0o170000, 0 | 0o100000 | 0o040000))

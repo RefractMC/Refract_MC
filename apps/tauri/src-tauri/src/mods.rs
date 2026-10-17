@@ -229,7 +229,10 @@ fn find_common_icon(zip_path: &Path) -> Option<String> {
         if entry.is_dir() {
             continue;
         }
-        let name = entry.name().replace('\\', "/");
+        let name = match entry.name() {
+            Ok(name) => name.replace('\\', "/"),
+            Err(_) => continue,
+        };
         let lower = name.to_ascii_lowercase();
         let base = lower.rsplit('/').next().unwrap_or(&lower);
         let image = lower.ends_with(".png")

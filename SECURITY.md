@@ -139,3 +139,31 @@ Validation: `cargo audit --ignore RUSTSEC-2024-0429 --ignore
 RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195` against a refreshed advisory database
 reports zero unignored vulnerabilities and the same three unmaintained dependency
 warnings (`bincode`, `paste`, and `proc-macro-error`).
+
+## ZIP dependency review - 2026-10-16
+
+The Rust audit reported three advisories for each of ZIP 2.4.2, 4.6.1 and 8.6.0:
+[RUSTSEC-2026-0367](https://rustsec.org/advisories/RUSTSEC-2026-0367),
+[RUSTSEC-2026-0368](https://rustsec.org/advisories/RUSTSEC-2026-0368), and
+[RUSTSEC-2026-0369](https://rustsec.org/advisories/RUSTSEC-2026-0369).
+They concern privileged Unix permission bits, symlink targets outside the
+extraction directory, and permission changes through symlinks. The lockfile now
+contains only ZIP 9.0.4, including follow-up extraction fixes after 9.0.0.
+
+- Refract's direct ZIP dependency moves from version 2 to 9.0.4. Its existing
+  per-entry path validation and linked-entry rejection remain in place. Archive
+  readers now propagate filename decoding errors; optional mod icon discovery
+  skips entries whose names cannot be decoded.
+- Tauri updater 2.13.3 retains TLS and system proxy support but disables its
+  optional `zip` feature, removing ZIP 4. Refract publishes raw Windows `.exe`
+  installers and Linux `.AppImage` files. macOS `.app.tar.gz` extraction is
+  unconditional in the updater and remains enabled. Future release formats must
+  not introduce Windows ZIP or compressed Linux updater artifacts without
+  re-evaluating these features.
+- Stronghold's libsodium-sys-stable 1.24.0 is vendored with only its ZIP build
+  dependency changed to 9.0.4. The bundled crypto source and signature, bindings,
+  and signature-verifying build script are unchanged. Upstream 1.24.3 still
+  requires ZIP 8. See the [vendor notes](apps/tauri/src-tauri/vendor/README.md)
+  for provenance and the condition for removing the patch.
+
+No audit exception was added. The existing glib and quick-xml exceptions remain.

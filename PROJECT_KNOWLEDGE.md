@@ -693,6 +693,15 @@ Additional optional settings used by the UI include minimize/start behavior, reo
 - Renderer page paths mask long ID-like segments before analytics.
 - Report vulnerabilities privately through GitHub Security Advisories.
 
+ZIP dependencies now resolve to 9.0.4. Tauri updater's optional `zip` feature is
+disabled: releases use raw Windows installers and Linux AppImages, while macOS
+tar.gz support is unconditional. TLS and system proxy features remain enabled.
+The existing libsodium-sys-stable 1.24.0 crate is vendored under
+`apps/tauri/src-tauri/vendor` with only its ZIP build dependency changed, because
+upstream 1.24.3 still requires ZIP 8. The bundled crypto source, signature and
+bindings are unchanged. See the vendor README for provenance and patch removal.
+No ZIP audit exception is used.
+
 Current audit exceptions:
 
 - `RUSTSEC-2024-0429` for `glib 0.18.5`, blocked by the Tauri/Wry GTK3 stack.
