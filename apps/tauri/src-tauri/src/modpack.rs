@@ -374,7 +374,8 @@ fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     for i in 0..zip.len() {
         crate::operations::check_current()?;
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        if entry.is_dir() && matches!(entry.name(), "." | "./") {
+        let name = entry.name().map_err(|error| error.to_string())?;
+        if entry.is_dir() && matches!(name.as_ref(), "." | "./") {
             continue;
         }
         if entry
@@ -383,8 +384,8 @@ fn unzip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         {
             return Err("Archive contains a linked filesystem entry.".into());
         }
-        let out = fs_safety::checked_join(dest, entry.name())
-            .map_err(|error| format!("Unsafe archive entry {}: {error}", entry.name()))?;
+        let out = fs_safety::checked_join(dest, &name)
+            .map_err(|error| format!("Unsafe archive entry {name}: {error}"))?;
         if entry.is_dir() {
             fs::create_dir_all(&out).map_err(|e| e.to_string())?;
         } else {

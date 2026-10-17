@@ -139,3 +139,23 @@ Validation: `cargo audit --ignore RUSTSEC-2024-0429 --ignore
 RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195` against a refreshed advisory database
 reports zero unignored vulnerabilities and the same three unmaintained dependency
 warnings (`bincode`, `paste`, and `proc-macro-error`).
+
+## ZIP dependency review - 2026-10-16
+
+Refract uses ZIP 9.0.4 for runtime archives. The updater's optional ZIP feature
+is disabled because releases use raw Windows installers and Linux AppImages;
+macOS tar.gz support, TLS and proxy support remain enabled.
+
+CI temporarily ignores [RUSTSEC-2026-0367](https://rustsec.org/advisories/RUSTSEC-2026-0367),
+[RUSTSEC-2026-0368](https://rustsec.org/advisories/RUSTSEC-2026-0368) and
+[RUSTSEC-2026-0369](https://rustsec.org/advisories/RUSTSEC-2026-0369) for ZIP 8.6.0,
+which remains a build dependency of Stronghold's libsodium-sys-stable 1.24.0.
+[Upstream 1.24.3](https://github.com/jedisct1/libsodium-sys-stable/blob/master/Cargo.toml)
+still requires ZIP 8.6. Its build script verifies minisign signatures before
+extracting Windows MSVC libraries. These signed build inputs limit exposure;
+the extraction bugs remain unresolved if a malicious archive has a valid signature.
+Audit ignores apply by advisory ID, so review them if another ZIP dependency is added.
+
+Owner: Refract maintainers. Review by 2026-10-30 or the next upstream release,
+whichever comes first. Remove these three exceptions when a compatible
+libsodium-sys-stable release permits ZIP >=9, update the lockfile, and rerun the audit.

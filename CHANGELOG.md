@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+* Update the launcher's ZIP library and remove unused updater ZIP support to address archive extraction advisories.
+
 ## 1.5.0
 
 ### Changed

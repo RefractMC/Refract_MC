@@ -697,6 +697,7 @@ Current audit exceptions:
 
 - `RUSTSEC-2024-0429` for `glib 0.18.5`, blocked by the Tauri/Wry GTK3 stack.
 - `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195` for `quick-xml 0.39` through `plist`, blocked until upstream permits `quick-xml >= 0.41`; current use is trusted macOS plist metadata.
+- `RUSTSEC-2026-0367`, `RUSTSEC-2026-0368` and `RUSTSEC-2026-0369` for ZIP 8 through libsodium-sys-stable's build dependency; remove when a compatible upstream release uses patched ZIP.
 
 The exact active ignores live in `.github/workflows/security-audit.yml`; revisit and remove them when upstream releases allow it.
 
