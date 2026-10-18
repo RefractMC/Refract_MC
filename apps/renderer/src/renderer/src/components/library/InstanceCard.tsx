@@ -250,7 +250,7 @@ export function InstanceCard({
               height: 18,
               background: selected ? 'var(--accent)' : 'rgba(0,0,0,.55)',
               border: `2px solid ${selected ? 'var(--accent)' : 'rgba(255,255,255,.5)'}`,
-              borderRadius: 3,
+              borderRadius: 'calc(var(--radius) * 0.375)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -504,7 +504,7 @@ export function InstanceCard({
                     color: '#000',
                     fontSize: 9,
                     fontWeight: 700,
-                    borderRadius: 8,
+                    borderRadius: 'var(--radius)',
                     padding: '1px 4px',
                     lineHeight: 1.4,
                   }}

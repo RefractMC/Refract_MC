@@ -24,7 +24,7 @@ export function SkinViewer3D({ skinUrl, width = 180, height = 280, walk = true, 
     // would hand the next viewer a dead context (null gl → "reading precision").
     const canvas = document.createElement('canvas')
     canvas.style.display = 'block'
-    canvas.style.borderRadius = '6px'
+    canvas.style.borderRadius = 'var(--radius-sm)'
     container.appendChild(canvas)
 
     const viewer = new SkinViewer({ canvas, width, height })

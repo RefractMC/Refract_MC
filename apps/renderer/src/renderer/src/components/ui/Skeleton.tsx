@@ -27,9 +27,9 @@ export function CardGridSkeleton({ count = 12 }: { count?: number }) {
             <Skeleton w="100%" h={11} />
             <Skeleton w={`${70 + ((i * 7) % 22)}%`} h={11} />
             <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
-              <Skeleton w={54} h={18} r={9} />
-              <Skeleton w={54} h={18} r={9} />
-              <Skeleton w={40} h={18} r={9} />
+              <Skeleton w={54} h={18} r="calc(var(--radius) * 1.125)" />
+              <Skeleton w={54} h={18} r="calc(var(--radius) * 1.125)" />
+              <Skeleton w={40} h={18} r="calc(var(--radius) * 1.125)" />
             </div>
           </div>
         </div>
@@ -49,7 +49,7 @@ export function RowsSkeleton({ rows = 6, pad = '10px 16px' }: { rows?: number; p
             <Skeleton w={`${55 - (i % 3) * 10}%`} h={12} />
             <Skeleton w="30%" h={10} />
           </div>
-          <Skeleton w={64} h={24} r={6} />
+          <Skeleton w={64} h={24} r="var(--radius-sm)" />
         </div>
       ))}
     </div>

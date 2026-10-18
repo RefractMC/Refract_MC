@@ -299,6 +299,10 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 - `prefers-reduced-transparency` forces solid root, chrome and panel fills through the engine's `--bg-opaque` and `--surface-opaque` variables.
 - The persisted accent override is reapplied to built-in themes.
 - Global tokens and compatibility styles live in `styles/globals.css`.
+- Theme `colors.radius` sets the base `--radius`; the `--radius-xs` through
+  `--radius-xl` tokens scale from it, preserving the built-in 8px theme's proportions.
+  Rectangular surfaces and controls must use these tokens (or proportional `calc`
+  values), not fixed pixel radii. Intentional circles and pills stay fully rounded.
 
 ### Log privacy and sharing
 

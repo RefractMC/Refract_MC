@@ -65,14 +65,15 @@
   --diamond:  #62c9ff;  /* info    */
   --ender:    #b79cff;  /* alt     */
 
-  /* Radius scale */
-  --radius-xs:  4px;
-  --radius-sm:  6px;
-  --radius-md:  10px;
-  --radius-lg:  12px;
-  --radius-xl:  14px;
+  /* Theme-controlled radius scale. Keep the built-in 8px theme's proportions;
+     a zero radius squares every surface without changing circles or pills. */
+  --radius:     8px;
+  --radius-xs:  calc(var(--radius) * 0.5);
+  --radius-sm:  calc(var(--radius) * 0.75);
+  --radius-md:  calc(var(--radius) * 1.25);
+  --radius-lg:  calc(var(--radius) * 1.5);
+  --radius-xl:  calc(var(--radius) * 1.75);
   --radius-max: 999px;
-  --radius:     8px;  /* legacy alias → md */
 
   /* Spacing scale */
   --gap-xs: 4px;
@@ -665,7 +666,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   color: var(--ink-2);
   background: color-mix(in srgb, var(--bg) 84%, var(--surface));
   border: 1px solid var(--border-r);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 10px 6px;
   cursor: pointer;
   transition: border-color 140ms, background 140ms, color 140ms, box-shadow 140ms;
@@ -674,7 +675,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 }
 .ni-seg-btn .ni-glyph {
   width: 14px; height: 14px;
-  flex: none; border-radius: 4px;
+  flex: none; border-radius: var(--radius-xs);
   background:
     linear-gradient(135deg, color-mix(in srgb, currentColor 70%, transparent), transparent 56%),
     var(--ink-4);
@@ -724,7 +725,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   color: var(--ink-2);
   background: var(--bg);
   border: 1px solid var(--border-r);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 8px 6px;
   cursor: pointer;
   transition: border-color 140ms, background 140ms, color 140ms;
@@ -740,7 +741,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .ni-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
 .ni-check-input { position: absolute; opacity: 0; width: 0; height: 0; }
 .ni-checkmark-box {
-  width: 18px; height: 18px; border-radius: 5px; flex: none;
+  width: 18px; height: 18px; border-radius: calc(var(--radius) * 0.625); flex: none;
   background: var(--bg); border: 1.5px solid var(--border-2);
   display: grid; place-items: center;
   transition: background 150ms, border-color 150ms;
@@ -756,7 +757,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 
 /* Close button */
 .ni-close {
-  width: 34px; height: 34px; flex: none; border-radius: 9px; cursor: pointer;
+  width: 34px; height: 34px; flex: none; border-radius: calc(var(--radius) * 1.125); cursor: pointer;
   background: transparent; border: 1px solid transparent; color: var(--ink-3);
   display: grid; place-items: center;
   transition: background 150ms, border-color 150ms, color 150ms;
@@ -772,7 +773,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-family: var(--font-ui);
   font-weight: 600; font-size: 14px;
-  border-radius: 10px; border: 1px solid transparent;
+  border-radius: var(--radius-md); border: 1px solid transparent;
   cursor: pointer; padding: 11px 16px;
   transition: transform 120ms ease, background 150ms, border-color 150ms, box-shadow 150ms;
   white-space: nowrap;
@@ -931,7 +932,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .theme-swatch {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), inset 0 0 0 999px rgba(0,0,0,.02);
 }
 
@@ -1046,7 +1047,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .theme-color-chip {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
   /* Checkerboard under the color so alpha is visible. */
   background:
@@ -1304,7 +1305,7 @@ select.ni-input { appearance: none; cursor: pointer; padding-right: 38px; }
 .ni-template-mark {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   display: inline-block;
   flex: none;
   background:

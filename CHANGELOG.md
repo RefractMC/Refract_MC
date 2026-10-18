@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+* Apply custom theme corner settings consistently across cards, dialogs, buttons, inputs, and loading placeholders.
+
 ### Security
 
 * Update the launcher's ZIP library and remove unused updater ZIP support to address archive extraction advisories.

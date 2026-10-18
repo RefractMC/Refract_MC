@@ -250,15 +250,15 @@ function CrashReportModal({
             {copied && <span style={{ fontSize: 11, color: 'var(--grass)', marginLeft: 10 }}>{t.home.copiedClipboard}</span>}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={copyNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: copied ? 'var(--grass)' : 'var(--surface-2)', color: copied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', transition: 'background .15s' }}>
+            <button onClick={copyNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: copied ? 'var(--grass)' : 'var(--surface-2)', color: copied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 'calc(var(--radius) * 0.375)', cursor: 'pointer', transition: 'background .15s' }}>
               {copied ? t.home.copied : t.home.copyReport}
             </button>
-            <button onClick={copyDiagnosticsNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: diagnosticCopied ? 'var(--grass)' : 'var(--surface-2)', color: diagnosticCopied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer', transition: 'background .15s' }}>
+            <button onClick={copyDiagnosticsNow} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: diagnosticCopied ? 'var(--grass)' : 'var(--surface-2)', color: diagnosticCopied ? '#fff' : 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 'calc(var(--radius) * 0.375)', cursor: 'pointer', transition: 'background .15s' }}>
               {diagnosticCopied ? t.home.copied : t.home.copyDiagnostics}
             </button>
             <UploadLogButton instanceId={instanceId} source={reportFileName ? 'crash' : 'latest'} />
-            <button onClick={onOpenConsole} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}>{t.home.openLogs}</button>
-            <button onClick={onOpenFolder} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 3, cursor: 'pointer' }}>{t.home.openFolder}</button>
+            <button onClick={onOpenConsole} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 'calc(var(--radius) * 0.375)', cursor: 'pointer' }}>{t.home.openLogs}</button>
+            <button onClick={onOpenFolder} style={{ height: 30, padding: '0 12px', fontSize: 11, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--border-r)', borderRadius: 'calc(var(--radius) * 0.375)', cursor: 'pointer' }}>{t.home.openFolder}</button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
           </div>
         </div>
@@ -271,7 +271,7 @@ function CrashReportModal({
           {lastLines.length > 0 && (
             <>
               <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.08em', marginBottom: 4 }}>{t.home.lastGameOutput}</div>
-              <pre style={{ fontFamily: 'monospace', fontSize: 10, color: '#a0a0a0', margin: '0 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.4, background: '#111', padding: '8px 10px', borderRadius: 3, maxHeight: 120, overflowY: 'auto' }}>{lastLines.join('\n')}</pre>
+              <pre style={{ fontFamily: 'monospace', fontSize: 10, color: '#a0a0a0', margin: '0 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.4, background: '#111', padding: '8px 10px', borderRadius: 'calc(var(--radius) * 0.375)', maxHeight: 120, overflowY: 'auto' }}>{lastLines.join('\n')}</pre>
               <div style={{ margin: '10px 0', borderTop: '1px solid rgba(255,255,255,.08)' }} />
               <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.08em', marginBottom: 4 }}>{t.home.crashReportHead}</div>
             </>
@@ -387,7 +387,7 @@ function OnboardingModal({
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 6 }}>
             {steps.map((_, i) => (
-              <div key={i} style={{ width: 24, height: 4, borderRadius: 2, background: i <= step ? 'var(--accent)' : 'var(--surface-3)' }} />
+              <div key={i} style={{ width: 24, height: 4, borderRadius: 'calc(var(--radius) * 0.25)', background: i <= step ? 'var(--accent)' : 'var(--surface-3)' }} />
             ))}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
@@ -1409,7 +1409,7 @@ function Library() {
                   color: selectionMode ? 'var(--accent)' : 'var(--ink-4)',
                   background: selectionMode ? 'var(--accent-tint)' : 'transparent',
                   border: `1px solid ${selectionMode ? 'var(--accent)' : 'var(--border-r)'}`,
-                  borderRadius: 3,
+                  borderRadius: 'calc(var(--radius) * 0.375)',
                   padding: '2px 8px',
                   cursor: 'pointer',
                   display: 'flex', alignItems: 'center', gap: 4,
@@ -1548,7 +1548,7 @@ function Library() {
                         const newGroupId = isGroup ? section.key : undefined
                         updateInstance.mutate({ id, patch: { groupId: newGroupId } })
                       }}
-                      style={{ outline: isDragTarget ? '2px dashed var(--accent)' : undefined, borderRadius: 4, padding: isDragTarget ? 4 : 0 }}
+                      style={{ outline: isDragTarget ? '2px dashed var(--accent)' : undefined, borderRadius: 'var(--radius-xs)', padding: isDragTarget ? 4 : 0 }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line)', marginBottom: isCollapsed ? 0 : 10 }}>
                         {isGroup && (
@@ -1578,7 +1578,7 @@ function Library() {
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
                             {section.title || t.home.ungrouped}
                           </span>
-                          <span style={{ fontSize: 10, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 8, padding: '0 6px', lineHeight: 1.7 }}>
+                          <span style={{ fontSize: 10, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius)', padding: '0 6px', lineHeight: 1.7 }}>
                             {section.items.length}
                           </span>
                         </button>
@@ -1886,8 +1886,8 @@ function Library() {
                 <span style={{ fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize:12, color:tone }}>{Math.round(fileImport.percent)}%</span>
               </div>
               <div style={{ fontSize:13, fontWeight:600, color:'var(--ink)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fileImport.name}</div>
-              <div style={{ height:6, background:'var(--surface-3)', borderRadius:3, overflow:'hidden' }}>
-                <div style={{ height:'100%', width:`${fileImport.percent}%`, background:tone, transition:'width 200ms linear', borderRadius:3 }} />
+              <div style={{ height:6, background:'var(--surface-3)', borderRadius: 'calc(var(--radius) * 0.375)', overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${fileImport.percent}%`, background:tone, transition:'width 200ms linear', borderRadius: 'calc(var(--radius) * 0.375)' }} />
               </div>
               <div style={{ fontSize:11, color:fileImport.status === 'error' ? 'var(--lava)' : 'var(--ink-4)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                 {fileImport.error ?? fileImport.step}
@@ -2100,10 +2100,10 @@ function Library() {
       )}
 
       {analyticsAvailable && appConfig && appConfig.analyticsNoticeShown === false && onboardingStep === null && (
-        <div style={{ position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 70, maxWidth: 560, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.5)' }}>
+        <div style={{ position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 70, maxWidth: 560, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--surface)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-md)', boxShadow: '0 12px 32px rgba(0,0,0,.5)' }}>
           <span style={{ fontSize: 12, color: 'var(--ink-3)', flex: 1, lineHeight: 1.5 }}>{t.privacy.noticeText}</span>
           <Link to="/settings" onClick={() => dismissAnalyticsNotice()} style={{ fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>{t.privacy.noticeOpenSettings}</Link>
-          <button onClick={() => dismissAnalyticsNotice()} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>{t.privacy.noticeDismiss}</button>
+          <button onClick={() => dismissAnalyticsNotice()} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', whiteSpace: 'nowrap' }}>{t.privacy.noticeDismiss}</button>
         </div>
       )}
 
@@ -2205,7 +2205,7 @@ function SyncPanel({ instances, scanning, onClose, onScan, onScanFolder, onLink,
 
         {/* body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 20px' }}>
-          {err && <div style={{ marginBottom: 10, fontSize: 12, color: '#ff6b6b', background: 'rgba(255,100,100,.1)', border: '1px solid rgba(255,100,100,.2)', borderRadius: 6, padding: '8px 12px' }}>{err}</div>}
+          {err && <div style={{ marginBottom: 10, fontSize: 12, color: '#ff6b6b', background: 'rgba(255,100,100,.1)', border: '1px solid rgba(255,100,100,.2)', borderRadius: 'var(--radius-sm)', padding: '8px 12px' }}>{err}</div>}
 
           {instances === null && !scanning && (
             <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 13, padding: '32px 0' }}>
@@ -2235,7 +2235,7 @@ function SyncPanel({ instances, scanning, onClose, onScan, onScanFolder, onLink,
                     const isLinkBusy = busy === `${key}:link`
                     const isImportBusy = busy === `${key}:import`
                     return (
-                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: isDone ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'var(--surface-2)', border: `1px solid ${isDone ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 8 }}>
+                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: isDone ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'var(--surface-2)', border: `1px solid ${isDone ? 'var(--accent)' : 'var(--border-r)'}`, borderRadius: 'var(--radius)' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ext.name}</div>
                           <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
@@ -2251,7 +2251,7 @@ function SyncPanel({ instances, scanning, onClose, onScan, onScanFolder, onLink,
                               disabled={!!busy}
                               onClick={() => { void handleAction(ext, 'link') }}
                               title={t.sync.linkTitle}
-                              style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--surface-3)', border: '1px solid var(--border-r)', borderRadius: 6, color: 'var(--ink)', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
+                              style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--surface-3)', border: '1px solid var(--border-r)', borderRadius: 'var(--radius-sm)', color: 'var(--ink)', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
                             >
                               {isLinkBusy ? '…' : t.sync.link}
                             </button>
@@ -2259,7 +2259,7 @@ function SyncPanel({ instances, scanning, onClose, onScan, onScanFolder, onLink,
                               disabled={!!busy}
                               onClick={() => { void handleAction(ext, 'import') }}
                               title={t.sync.importTitle}
-                              style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--accent)', border: 'none', borderRadius: 6, color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
+                              style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}
                             >
                               {isImportBusy ? '…' : t.sync.import}
                             </button>
@@ -2556,7 +2556,7 @@ function PlaytimePanel({ instances }: { instances: Instance[] }) {
               <div style={{ fontSize: 11, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {inst.name}
               </div>
-              <div style={{ height: 7, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden', border: '1px solid var(--line)' }}>
+              <div style={{ height: 7, background: 'var(--surface-2)', borderRadius: 'calc(var(--radius) * 0.25)', overflow: 'hidden', border: '1px solid var(--line)' }}>
                 <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)' }} />
               </div>
               <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10, color: 'var(--ink-4)', textAlign: 'right' }}>
@@ -2584,7 +2584,7 @@ function PlaytimePanel({ instances }: { instances: Instance[] }) {
                     width: '100%',
                     height: h,
                     background: h > 0 ? 'var(--accent)' : 'var(--surface-2)',
-                    borderRadius: 2,
+                    borderRadius: 'calc(var(--radius) * 0.25)',
                     opacity: h > 0 ? 1 : 0.4,
                   }} />
                 </div>
@@ -2680,7 +2680,7 @@ function NavBtn({ disabled, onClick, children }: { disabled: boolean; onClick: (
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: 'var(--surface)',
         border: '1px solid var(--border-r)',
-        borderRadius: 3,
+        borderRadius: 'calc(var(--radius) * 0.375)',
         color: disabled ? 'var(--ink-4)' : 'var(--ink-2)',
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.4 : 1,

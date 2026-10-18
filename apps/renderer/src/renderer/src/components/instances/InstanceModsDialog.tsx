@@ -848,7 +848,7 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
         {/* Export progress */}
         {exportPct !== null && (
           <div style={{ padding: '8px 16px', background: 'var(--bg)', borderBottom: '1px solid var(--line)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
+            <div style={{ flex: 1, height: 6, borderRadius: 'calc(var(--radius) * 0.375)', background: 'var(--surface-2)', overflow: 'hidden' }}>
               <div style={{ width: `${exportPct}%`, height: '100%', background: 'var(--accent)', transition: 'width .15s linear' }} />
             </div>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', minWidth: 64, textAlign: 'right' }}>
@@ -1221,7 +1221,7 @@ function ServerRow({ server, onJoin, onShortcut }: { server: ServerEntry; onJoin
 function EmptyMsg({ msg, sub }: { msg: string; sub: string }) {
   return (
     <div className="detail-empty">
-      <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-tint)', border: '1px solid color-mix(in srgb, var(--accent) 38%, transparent)', margin: '0 auto 14px', boxShadow: '0 0 22px color-mix(in srgb, var(--accent) 18%, transparent)' }} />
+      <div style={{ width: 34, height: 34, borderRadius: 'calc(var(--radius) * 1.125)', background: 'var(--accent-tint)', border: '1px solid color-mix(in srgb, var(--accent) 38%, transparent)', margin: '0 auto 14px', boxShadow: '0 0 22px color-mix(in srgb, var(--accent) 18%, transparent)' }} />
       <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--ink-2)', letterSpacing: '.04em', marginBottom: 6 }}>{msg}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{sub}</div>
     </div>

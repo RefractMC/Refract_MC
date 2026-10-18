@@ -148,8 +148,8 @@ export function TitleBar() {
           ) : update.phase === 'downloading' ? (
             <>
               <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>v{update.version}</span>
-              <div style={{ width: 48, height: 3, background: 'var(--surface-3)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${update.percent ?? 0}%`, background: 'var(--accent)', transition: 'width 300ms linear', borderRadius: 2 }} />
+              <div style={{ width: 48, height: 3, background: 'var(--surface-3)', borderRadius: 'calc(var(--radius) * 0.25)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${update.percent ?? 0}%`, background: 'var(--accent)', transition: 'width 300ms linear', borderRadius: 'calc(var(--radius) * 0.25)' }} />
               </div>
               <span style={{ fontSize: 10, color: 'var(--ink-4)', minWidth: 26, textAlign: 'right' }}>{update.percent === undefined ? t.appUpdateStatus.downloadingUnknown : `${update.percent}%`}</span>
             </>
