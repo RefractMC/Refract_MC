@@ -1276,7 +1276,7 @@ function ContentBrowser() {
           const versions = await api.modrinth.versions(
             project.project_id,
             activeInstance.minecraftVersion,
-            tab === 'shader' ? undefined : activeInstance.modLoader,
+            tab === 'shader' ? undefined : activeInstance.modLoader ?? undefined,
           )
           const latest = versions[0]
           return [project.project_id, latest && latest.id !== current.versionId ? 'update' : 'installed'] as const

@@ -104,20 +104,23 @@ export function CreateInstanceDialog({ open, onOpenChange, onCreate, onImportFil
     setLoaderVersion('')
     setLoaderVersions([])
     setLoaderVersionRecommended(undefined)
+    setLoaderVersionsLoading(false)
     if (modLoader !== 'forge' && modLoader !== 'neoforge' && modLoader !== 'fabric' && modLoader !== 'quilt') return
+    let active = true
     setLoaderVersionsLoading(true)
     const p = modLoader === 'neoforge'
-      ? api.mc.neoforgeVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      ? api.mc.neoforgeVersions(mcVersion).then(v => { if (active) setLoaderVersions(v) })
       : modLoader === 'fabric'
-      ? api.mc.fabricVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      ? api.mc.fabricVersions(mcVersion).then(v => { if (active) setLoaderVersions(v) })
       : modLoader === 'quilt'
-      ? api.mc.quiltVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      ? api.mc.quiltVersions(mcVersion).then(v => { if (active) setLoaderVersions(v) })
       : api.mc.forgeVersions(mcVersion).then(({ versions, recommended }) => {
+          if (!active) return
           setLoaderVersions(versions)
           setLoaderVersionRecommended(recommended)
-          setLoaderVersionsLoading(false)
         })
-    p.catch(() => setLoaderVersionsLoading(false))
+    p.catch(() => {}).finally(() => { if (active) setLoaderVersionsLoading(false) })
+    return () => { active = false }
   }, [modLoader, mcVersion])
 
   const [activeTemplate, setActiveTemplate] = useState<string | null>(null)

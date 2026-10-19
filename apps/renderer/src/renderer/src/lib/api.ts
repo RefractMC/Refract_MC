@@ -1132,7 +1132,7 @@ function createTauriApi(): RefractAPI {
         try {
           if (inst.modpackSource === 'modrinth') {
             const { getProjectVersions } = await import('@refract/core')
-            const latest = (await getProjectVersions(inst.modpackProjectId, inst.minecraftVersion, inst.modLoader))[0]
+            const latest = (await getProjectVersions(inst.modpackProjectId, inst.minecraftVersion, inst.modLoader ?? undefined))[0]
             if (!latest) return null
             return { hasUpdate: latest.id !== current, latestVersionId: latest.id, latestName: latest.version_number }
           }
@@ -1181,7 +1181,7 @@ function createTauriApi(): RefractAPI {
         const instance = await tinvoke('get_instance_by_id', { id: instanceId }) as Instance | null
         if (!instance) throw new Error(`Instance not found: ${instanceId}`)
         const { getProjectVersions, getPrimaryFile } = await import('@refract/core')
-        const versions = await getProjectVersions(projectId, instance.minecraftVersion, instance.modLoader)
+        const versions = await getProjectVersions(projectId, instance.minecraftVersion, instance.modLoader ?? undefined)
         let target = versionId ? versions.find(v => v.id === versionId) : versions[0]
         if (!target) target = versions[0]
         if (!target) throw new Error(`No compatible version of ${projectName} found for MC ${instance.minecraftVersion} with ${instance.modLoader ?? 'vanilla'}`)
@@ -1258,8 +1258,8 @@ function createTauriApi(): RefractAPI {
           .filter(m => (!m.contentType || m.contentType === 'mod') && !!m.fileName && installedFiles.has(m.fileName))
           .map(m => m.projectId))
         return p.source === 'modrinth'
-          ? planModrinthDeps(p.version ?? {}, mc, loader, installed)
-          : planCurseforgeDeps(p.file ?? {}, mc, loader, installed)
+          ? planModrinthDeps(p.version ?? {}, mc, loader ?? undefined, installed)
+          : planCurseforgeDeps(p.file ?? {}, mc, loader ?? undefined, installed)
       }) as RefractAPI['mods']['planDeps'],
       profilesList: ((instanceId: string) => tinvoke('mods_profiles_list', { instanceId })) as RefractAPI['mods']['profilesList'],
       profilesSave: ((instanceId: string, name: string, enabledFiles: string[]) => tinvoke('mods_profiles_save', { instanceId, name, enabledFiles })) as RefractAPI['mods']['profilesSave'],

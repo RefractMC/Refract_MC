@@ -167,20 +167,23 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
   useEffect(() => {
     setLoaderVersions([])
     setLoaderVersionRecommended(undefined)
+    setLoaderVersionsLoading(false)
     if (modLoader !== 'forge' && modLoader !== 'neoforge' && modLoader !== 'fabric' && modLoader !== 'quilt') return
+    let active = true
     setLoaderVersionsLoading(true)
     const p = modLoader === 'neoforge'
-      ? api.mc.neoforgeVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      ? api.mc.neoforgeVersions(mcVersion).then(v => { if (active) setLoaderVersions(v) })
       : modLoader === 'fabric'
-      ? api.mc.fabricVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      ? api.mc.fabricVersions(mcVersion).then(v => { if (active) setLoaderVersions(v) })
       : modLoader === 'quilt'
-      ? api.mc.quiltVersions(mcVersion).then(v => { setLoaderVersions(v); setLoaderVersionsLoading(false) })
+      ? api.mc.quiltVersions(mcVersion).then(v => { if (active) setLoaderVersions(v) })
       : api.mc.forgeVersions(mcVersion).then(({ versions, recommended }) => {
+          if (!active) return
           setLoaderVersions(versions)
           setLoaderVersionRecommended(recommended)
-          setLoaderVersionsLoading(false)
         })
-    p.catch(() => setLoaderVersionsLoading(false))
+    p.catch(() => {}).finally(() => { if (active) setLoaderVersionsLoading(false) })
+    return () => { active = false }
   }, [modLoader, mcVersion])
 
   async function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -195,14 +198,14 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
     if (!instance || !name.trim() || snapshotBusy) return
     setLoading(true)
     const versionChanged = mcVersion !== instance.minecraftVersion
-      || (modLoader || undefined) !== instance.modLoader
-      || (loaderVersion || undefined) !== instance.modLoaderVersion
+      || modLoader !== (instance.modLoader ?? '')
+      || loaderVersion !== (instance.modLoaderVersion ?? '')
     try {
       await onSave(instance.id, {
         name: name.trim(),
         minecraftVersion: mcVersion,
-        modLoader: modLoader || undefined,
-        modLoaderVersion: loaderVersion || undefined,
+        modLoader: modLoader || null,
+        modLoaderVersion: loaderVersion || null,
         memoryMb: memGB * 1024,
         iconPath: coverImage || undefined,
         pinned,
@@ -407,7 +410,11 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                 <div style={{ position: 'relative' }}>
                   <McVersionSelect
                     value={mcVersion}
-                    onChange={setMcVersion}
+                    onChange={version => {
+                      if (version === mcVersion) return
+                      setMcVersion(version)
+                      setLoaderVersion('')
+                    }}
                     selectClassName="ni-input"
                     showSnapshots={showSnapshots}
                     onShowSnapshotsChange={setSnap}
@@ -431,7 +438,11 @@ export function EditInstanceDialog({ instance, open, onOpenChange, onSave, onDel
                       type="button"
                       className="ni-seg-btn"
                       aria-pressed={modLoader === l.value ? 'true' : 'false'}
-                      onClick={() => setModLoader(l.value)}
+                      onClick={() => {
+                        if (l.value === modLoader) return
+                        setModLoader(l.value)
+                        setLoaderVersion('')
+                      }}
                     >
                       <span className="ni-glyph" />
                       {l.label(t)}

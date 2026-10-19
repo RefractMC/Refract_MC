@@ -24,8 +24,9 @@ export interface Instance {
   customPath?: string   // absolute path when user chose a non-default location
   playtimeLog?: Record<string, number>  // YYYY-MM-DD → seconds played that day
   minecraftVersion: string
-  modLoader?: ModLoader
-  modLoaderVersion?: string
+  // Null explicitly clears a saved loader selection in JSON update patches.
+  modLoader?: ModLoader | null
+  modLoaderVersion?: string | null
   javaPath?: string
   javaArgs?: string
   memoryMb: number

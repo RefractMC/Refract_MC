@@ -1001,7 +1001,7 @@ function Library() {
     }
     setInstalling({ instanceId: instance.id, name: instance.name })
     try {
-      await api.mc.install(instance.id, ver.id, ver.url, instance.modLoader, instance.modLoaderVersion)
+      await api.mc.install(instance.id, ver.id, ver.url, instance.modLoader ?? undefined, instance.modLoaderVersion ?? undefined)
     } catch (e) {
       setLaunchToast(t.home.installFailedWith(e instanceof Error ? e.message : t.home.unknownError))
       setTimeout(() => setLaunchToast(null), 4000)

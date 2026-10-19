@@ -4,6 +4,7 @@
 
 ### Fixes
 
+* Clear incompatible loader selections when changing an instance's Minecraft version or loader, and ignore outdated loader-version lists.
 * Apply custom theme corner settings consistently across cards, dialogs, buttons, inputs, and loading placeholders.
 
 ### Security
