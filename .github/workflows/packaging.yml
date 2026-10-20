@@ -2,7 +2,7 @@ name: Packaging Checks
 
 on:
   pull_request:
-    paths: &nix-inputs
+    paths:
       - '.gitattributes'
       - '.github/workflows/packaging.yml'
       - '.github/workflows/update-package-manifests.yml'
@@ -21,9 +21,11 @@ on:
       - 'apps/tauri/src-tauri/Cargo.toml'
       - 'apps/tauri/src-tauri/Cargo.lock'
       - 'apps/tauri/src-tauri/tauri*.json'
+  # Every main push builds the package, so source-only changes that break the
+  # Nix sandbox (for example, tests that need network access) surface after one
+  # merge without making every pull request wait for the full Nix build.
   push:
     branches: [main]
-    paths: *nix-inputs
   workflow_dispatch:
 
 permissions:

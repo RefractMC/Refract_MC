@@ -109,9 +109,12 @@ It is skipped during ordinary offline test discovery.
 The Linux leg of `Regression Checks` runs the offline package-script tests and
 static metadata validation on every pull request and main push.
 `Packaging Checks` runs real Nix helper evaluation, flake checks, ARM evaluation, and the
-full x86_64-linux build for Nix, dependency, configuration, or helper changes.
-Documentation and generated release metadata changes use the cheap checks.
-The full build includes frozen offline pnpm installation; ARM evaluation does
+full x86_64-linux build on pull requests that change Nix, dependency, configuration,
+or helper files, and on every main push so source-only changes that break the Nix
+sandbox surface after one merge. Other pull requests use the cheap checks.
+The full build includes frozen offline pnpm installation and runs the Rust tests in
+the Nix sandbox with the dev profile (`checkType = "debug"`); the installed binary is
+still a release build. ARM evaluation does
 not verify an ARM build or launcher runtime behavior. CI detects stale current
 flake hashes without updating them. The generator verifies published-tag hashes
 when refreshing release metadata.

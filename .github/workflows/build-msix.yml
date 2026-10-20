@@ -16,6 +16,9 @@ jobs:
     runs-on: windows-latest
     env:
       HAS_MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE_BASE64 != '' }}
+      # Scripts read the tag from the environment so the input is never pasted
+      # into generated PowerShell source.
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - name: Require MSIX signing certificate
         if: env.HAS_MSIX_CERTIFICATE != 'true'
@@ -25,7 +28,8 @@ jobs:
       - name: Validate release tag
         shell: pwsh
         run: |
-          if ('${{ inputs.tag }}' -notmatch '^v\d+\.\d+\.\d+$') {
+          # Case-sensitive, ASCII digits only, and \z so a trailing newline fails.
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+\z') {
             throw 'MSIX workflow requires a stable vMAJOR.MINOR.PATCH release tag.'
           }
 
@@ -70,7 +74,7 @@ jobs:
           MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
           MSIX_PUBLISHER: ${{ secrets.MSIX_PUBLISHER }}
         run: |
-          $version = '${{ inputs.tag }}'.TrimStart('v') + '.0'
+          $version = $env:RELEASE_TAG.TrimStart('v') + '.0'
           ./packaging/msix/build-msix.ps1 `
             -Executable 'apps/tauri/src-tauri/target/release/refract.exe' `
             -Version $version `
@@ -82,4 +86,4 @@ jobs:
       - name: Upload MSIX to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload '${{ inputs.tag }}' Refract-Windows-x64.msix --clobber
+        run: gh release upload "$env:RELEASE_TAG" Refract-Windows-x64.msix --clobber

@@ -53,6 +53,8 @@ rustPlatform.buildRustPackage {
   cargoRoot = "apps/tauri/src-tauri";
   buildAndTestSubdir = "apps/tauri/src-tauri";
   cargoLock.lockFile = "${src}/apps/tauri/src-tauri/Cargo.lock";
+  # Release-profile tests rebuild every crate with LTO and unwinding.
+  checkType = "debug";
 
   pnpmDeps = fetchPnpmDeps {
     pname = "refract";

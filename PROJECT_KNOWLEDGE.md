@@ -823,7 +823,8 @@ instance ownership and vault initialization. `pnpm check:contracts` validates lo
 types, array lengths and interpolation with English fallbacks, plus registered IPC
 command names and explicit argument objects. Dynamic payloads and event/result shapes
 still need integration coverage. The regression workflow runs these checks, scoped lint,
-renderer build, Rust formatting/check/tests on all four supported platform runners.
+renderer build, Rust formatting and tests on all four supported platform runners. `cargo test`
+already compiles everything `cargo check` would, so CI does not run a separate check.
 
 ## CI and release automation
 
@@ -831,13 +832,15 @@ renderer build, Rust formatting/check/tests on all four supported platform runne
 | --- | --- | --- |
 | `development-builds.yml` | Push to `main` or manual | Unsigned Windows, macOS ARM/Intel, and Linux artifacts retained for 14 days. |
 | `regression.yml` | PR, push to `main`, manual | Four-platform renderer/native regression and Linux package metadata checks. |
-| `packaging.yml` | Nix, dependency, configuration, or helper changes on PR/push to `main`, manual | Real Nix helper evaluation, flake checks, Linux ARM evaluation, and a full Linux x64 Nix build. |
-| `security-audit.yml` | PR, push to `main`, weekly, manual | pnpm audit, cargo audit with documented ignores, cargo check, and renderer typecheck. |
+| `packaging.yml` | PRs that change Nix, dependency, configuration, or helper files; every push to `main`; manual | Real Nix helper evaluation, flake checks, Linux ARM evaluation, and a full Linux x64 Nix build whose sandboxed Rust tests use the dev profile. |
+| `security-audit.yml` | PR, push to `main`, weekly, manual | Lockfile-only pnpm audit and cargo audit with documented ignores. Compilation and typechecking live in `regression.yml`. |
 | `release-tauri.yml` | `v*.*.*` tag or manual | Multi-platform draft GitHub release, updater artifacts, stable filenames, and rewritten `latest.json`. |
 | `publish-aur.yml` | Published stable release or manual | Downloads the stable RPM, updates PKGBUILD/checksum and `.SRCINFO`, then pushes `refract-launcher-bin` to AUR. |
 | `update-package-manifests.yml` | Published stable release or manual | Refreshes package hashes and opens a pull request; it never pushes package metadata directly to `main`. |
 | `build-msix.yml` | Manual, published tag | Builds and signs an optional MSIX package, then uploads it to the selected release when certificate secrets exist. |
 | `discord-changelog.yml` | Published release or manual | Posts the matching `CHANGELOG.md` section through a Discord webhook. |
+
+Rust build caches are saved only from `main` (`save-if`). Pull request runs restore the `main` cache but do not save their own, because GitHub scopes those caches to `refs/pull/N/merge`, where nothing else can reuse them, and they count against the repository's 10 GB cache quota. Workflow scripts read dispatch inputs through `env:` instead of interpolating `${{ inputs.* }}` into `run:` source.
 
 Dependabot checks npm, Cargo, and GitHub Actions weekly. React and its type packages
 share one update group. Minor and patch development-tool updates are grouped separately,
@@ -857,7 +860,7 @@ The package-manifest workflow uses `GITHUB_TOKEN`. See
 [packaging instructions](docs/PACKAGING.md) for the required Actions permissions
 and workflow approval.
 
-Platform builds stage eight canonical packages and six updater signatures in temporary Actions artifacts. One finalizer uses `packaging/scripts/release.py` to require complete inputs, generate one updater manifest and extract the exact tagged changelog section. It creates or reuses a matching unpublished draft and uploads only eight packages plus `latest.json`, then requires exactly nine release assets. No versioned files are uploaded to Releases. Per-tag concurrency queues overlapping runs. The same notes parser builds Unicode-safe Discord announcements from the release tag.
+Platform build jobs have read-only repository access and no Rust build cache, because a tag run cannot restore caches saved under another tag. Platform builds stage eight canonical packages and six updater signatures in temporary Actions artifacts. One finalizer uses `packaging/scripts/release.py` to require complete inputs, generate one updater manifest and extract the exact tagged changelog section. It creates or reuses a matching unpublished draft and uploads only eight packages plus `latest.json`, then requires exactly nine release assets. No versioned files are uploaded to Releases. Per-tag concurrency queues overlapping runs. The same notes parser builds Unicode-safe Discord announcements from the release tag.
 
 ### Release secrets
 
