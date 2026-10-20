@@ -11,8 +11,10 @@ on:
         description: "Release tag (e.g. v1.1.4)"
         required: true
 
+# Build jobs only read the repository. Write access is granted to `finalize`,
+# the only job that creates the draft and uploads assets.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
@@ -74,11 +76,8 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Cache Rust build
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: apps/tauri/src-tauri
-          key: ${{ matrix.platform }}-${{ matrix.args }}
+      # No Rust cache: a tag run cannot restore caches saved under another tag,
+      # so v1.5.0 missed on every platform and still uploaded 0.5-0.6 GB each.
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -142,7 +141,8 @@ jobs:
       - name: Build signed bundles
         uses: tauri-apps/tauri-action@v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No GITHUB_TOKEN: without tagName/releaseId, tauri-action skips every
+          # GitHub upload and never reads it.
           # Repo secrets — Settings → Secrets and variables → Actions:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -234,6 +234,8 @@ jobs:
     name: Prepare complete release draft
     needs: release
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.event.inputs.tag || github.ref_name }}

@@ -27,19 +27,12 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust build
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: apps/tauri/src-tauri
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      # Both audits read only the lockfiles, so nothing is installed or built.
+      # Compilation and typechecking are covered by the Regression Checks workflow.
       - name: JavaScript dependency audit
         run: pnpm audit
 
@@ -70,10 +63,3 @@ jobs:
           --ignore RUSTSEC-2026-0367
           --ignore RUSTSEC-2026-0368
           --ignore RUSTSEC-2026-0369
-
-      - name: Rust check
-        working-directory: apps/tauri/src-tauri
-        run: cargo check
-
-      - name: Renderer typecheck
-        run: pnpm --filter @refract/renderer typecheck

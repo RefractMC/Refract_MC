@@ -73,6 +73,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
   cargoRoot = "apps/tauri/src-tauri";
   buildAndTestSubdir = finalAttrs.cargoRoot;
   cargoLock.lockFile = src + "/apps/tauri/src-tauri/Cargo.lock";
+  # Run tests in the dev profile. The default release check recompiles every
+  # crate with LTO and unwinding (tests cannot use panic = "abort"), which took
+  # longer than nine minutes in CI. The installed binary is still a release build.
+  checkType = "debug";
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;

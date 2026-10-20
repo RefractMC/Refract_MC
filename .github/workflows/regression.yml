@@ -50,6 +50,10 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/tauri/src-tauri
+          # PR caches are scoped to refs/pull/N/merge and can never be restored
+          # by main or other PRs, so they only consume the 10 GB repo quota.
+          # PRs still restore the main cache.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm --filter @refract/renderer typecheck
@@ -59,9 +63,8 @@ jobs:
       - name: Rust formatting
         working-directory: apps/tauri/src-tauri
         run: cargo fmt --check
-      - name: Rust check
-        working-directory: apps/tauri/src-tauri
-        run: cargo check --locked
+      # `cargo test` compiles every target `cargo check` would (the crate has no
+      # cfg(not(test)) code), so a separate check step only repeats work.
       - name: Rust regression tests
         working-directory: apps/tauri/src-tauri
         run: cargo test --locked
