@@ -33,8 +33,19 @@ jobs:
 
       # Both audits read only the lockfiles, so nothing is installed or built.
       # Compilation and typechecking are covered by the Regression Checks workflow.
+      - name: Production JavaScript dependency audit
+        run: pnpm audit --prod
+
       - name: JavaScript dependency audit
-        run: pnpm audit
+        # No patched picomatch release exists. It is confined to build tooling
+        # with repository-owned globs; the production audit above has no ignore.
+        # Review by 2026-12-17 or the next release. See SECURITY.md.
+        # pnpm 11 --ignore records configuration; audit again to check every
+        # other advisory. This modifies only the disposable CI checkout.
+        run: |
+          pnpm audit --ignore GHSA-fc5q-39xc-vjpf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm audit
 
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2
@@ -46,20 +57,10 @@ jobs:
         # glib is pulled in by Tauri's Linux WebKitGTK/GTK3 backend through wry.
         # The patched glib line starts at 0.20, but the current upstream GTK3
         # stack is capped at glib 0.18.5, so this cannot be fixed directly here.
-        #
-        # RUSTSEC-2026-0194 / RUSTSEC-2026-0195 (quick-xml 0.39, DoS-class):
-        # transitive via plist -> tauri-utils. The fix line is quick-xml 0.41,
-        # but plist (1.9.0, and its master as of 2026-07-02) still requires
-        # 0.39, so there is no upgrade path yet. plist only parses macOS
-        # .plist metadata here (trusted input), so exposure is minimal.
-        # Drop these ignores once plist releases with quick-xml >= 0.41.
-        # ZIP 8 remains a libsodium build dependency for signed Windows archives.
-        # Review these exceptions by 2026-10-30; see SECURITY.md for removal criteria.
+        # crypto-bigint 0.5 is required by Stronghold's k256/elliptic-curve stack.
+        # Refract uses its key-value store and snapshots, not curve procedures.
+        # Review by 2026-12-17 or the next upstream release; see SECURITY.md.
         run: >-
           cargo audit
           --ignore RUSTSEC-2024-0429
-          --ignore RUSTSEC-2026-0194
-          --ignore RUSTSEC-2026-0195
-          --ignore RUSTSEC-2026-0367
-          --ignore RUSTSEC-2026-0368
-          --ignore RUSTSEC-2026-0369
+          --ignore RUSTSEC-2026-0387

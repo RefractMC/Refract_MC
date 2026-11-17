@@ -701,16 +701,19 @@ Additional optional settings used by the UI include minimize/start behavior, reo
 Current audit exceptions:
 
 - `RUSTSEC-2024-0429` for `glib 0.18.5`, blocked by the Tauri/Wry GTK3 stack.
-- `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195` for `quick-xml 0.39` through `plist`, blocked until upstream permits `quick-xml >= 0.41`; current use is trusted macOS plist metadata.
-- `RUSTSEC-2026-0367`, `RUSTSEC-2026-0368` and `RUSTSEC-2026-0369` for ZIP 8 through libsodium-sys-stable's build dependency; remove when a compatible upstream release uses patched ZIP.
+- `RUSTSEC-2026-0387` for `crypto-bigint 0.5.5` through Stronghold's k256/elliptic-curve stack. Refract uses the key-value store and snapshots, not elliptic-curve procedures; upstream still requires the affected version line.
+- `GHSA-fc5q-39xc-vjpf` for development-only picomatch 4.0.7, which has no patched release. The separate production JavaScript audit has no ignore. Build tools consume repository-owned glob patterns.
+
+The November 17 update removes the old quick-xml and ZIP exceptions: plist 1.10.4
+uses quick-xml 0.42.0, and libsodium-sys-stable 1.24.6 uses ZIP 9.5.1.
+Review retained exceptions by 2026-12-17 or the next relevant upstream release.
 
 The exact active ignores live in `.github/workflows/security-audit.yml`; revisit and remove them when upstream releases allow it.
 
-JavaScript security floors live in `pnpm-workspace.yaml`. The October 5 audit follow-up
-requires Seroval 1.6.8 or newer within version 1 and source-map-js 1.2.2 or newer within
-version 1; the lockfile resolves those versions without changing the router or build-tool
-versions. The full and production JavaScript audits pass. See `SECURITY.md` for the
-upstream advisories and compatibility review.
+JavaScript security floors live in `pnpm-workspace.yaml`. They require Seroval 1.6.11
+or newer within version 1, Zod 4.6.6 or newer within version 4, and source-map-js 1.2.2
+or newer within version 1. TypeScript ESLint 8.73 uses patched minimatch 11 directly.
+See `SECURITY.md` for the upstream advisories, scoped exceptions and compatibility review.
 
 ## External services
 

@@ -28,26 +28,50 @@ CI retains the targeted `RUSTSEC-2024-0429` exception. The resolved `gtk 0.18.2`
 manifest still requires `glib 0.18`; remove this exception when a compatible
 Tauri/Wry backend update resolves the affected dependency.
 
-### `quick-xml` / `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`
+### `crypto-bigint` / `RUSTSEC-2026-0387`
 
-The resolved `plist 1.9.0` manifest requires `quick-xml 0.39.2`, resolving to
-`0.39.4` through `tauri-utils`. The advisories require the `0.41` fix line.
-These two existing CI exceptions cover that specific transitive dependency;
-they are not permission to process untrusted XML with it. Refract uses this
-chain for platform plist metadata. Review the fixed plist/Tauri dependency path
-before removing the exceptions. See the [first advisory](https://rustsec.org/advisories/RUSTSEC-2026-0194)
-and [second advisory](https://rustsec.org/advisories/RUSTSEC-2026-0195).
+Stronghold 2.1.0 requires iota-crypto 0.23.2, whose k256 0.13 dependency requires
+elliptic-curve 0.13 and crypto-bigint 0.5. The [timing advisory](https://rustsec.org/advisories/RUSTSEC-2026-0387)
+requires crypto-bigint >=0.7.6; no compatible Stronghold release permits that
+line. Refract's `secrets.rs` uses Stronghold's key-value store and encrypted
+snapshots with a random OS-keyring master key. It does not invoke Stronghold's
+elliptic-curve signing or derivation procedures. This limits exposure but does
+not fix the affected library. Keep the exception scoped to this advisory and
+reassess before adding any curve procedures. Remove it after a compatible
+upstream update; do not migrate vault formats solely to silence the audit.
+
+### Development-only `picomatch` / `GHSA-fc5q-39xc-vjpf`
+
+[The advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) affects picomatch
+through 4.0.7, the latest published version on 2026-11-17, with no patched release.
+It concerns event-loop exhaustion from attacker-supplied repeated extglob patterns.
+The dependency is confined to ESLint, TypeScript ESLint, Vite and router build
+tools, which consume repository-owned configuration and patterns. It is absent
+from the production dependency graph. The full CI audit ignores only this ID;
+a separate `pnpm audit --prod` has no ignore, so a future production dependency
+would still fail CI. Do not expose these tools to untrusted glob inputs. Remove
+the exception when a patched compatible release is available.
+
+### Resolved XML and ZIP exceptions
+
+The 2026-11-17 lockfile uses plist 1.10.4 with quick-xml 0.42.0 and
+libsodium-sys-stable 1.24.6 with ZIP 9.5.1. The quick-xml 0.39 and ZIP 8 dependency
+lines are gone. CI removes RUSTSEC-2026-0194, RUSTSEC-2026-0195,
+RUSTSEC-2026-0367, RUSTSEC-2026-0368 and RUSTSEC-2026-0369 from its ignore list.
 
 ## Review record and ownership
 
-Last reviewed: 2026-09-30. Owner: Refract maintainers. Next exception review:
-2026-10-30, or the next Tauri/plist release evaluation, whichever comes first.
+Last reviewed: 2026-11-17. Owner: Refract maintainers. Next exception review:
+2026-12-17, or the next relevant upstream release, whichever comes first.
 The Security Audit workflow runs on pull requests, main pushes, manual dispatch
 and every Monday. Maintainers review failures and informational warnings before
 a release. Record the upstream constraint and a new review date for any retained
 exception; do not add blanket ignores to make the job pass.
 
-Targeted fixes in the current lockfile:
+The review records below are historical; the current exceptions above and the
+workflow are authoritative.
+
+Targeted fixes recorded in September:
 
 - `anyhow 1.0.103` fixes [RUSTSEC-2026-0190](https://rustsec.org/advisories/RUSTSEC-2026-0190).
 - `event-listener 5.4.2` fixes [RUSTSEC-2026-0221](https://rustsec.org/advisories/RUSTSEC-2026-0221).
@@ -159,3 +183,23 @@ Audit ignores apply by advisory ID, so review them if another ZIP dependency is 
 Owner: Refract maintainers. Review by 2026-10-30 or the next upstream release,
 whichever comes first. Remove these three exceptions when a compatible
 libsodium-sys-stable release permits ZIP >=9, update the lockfile, and rerun the audit.
+
+## Dependency integration review - 2026-11-17
+
+The dependency PR integration raises Seroval's floor to 1.6.11 and Zod's to 4.6.6.
+TypeScript ESLint 8.73.0 depends on minimatch 11.0.1 directly. These address
+GHSA-f86p-h4j2-7qgj, GHSA-9wx9-5pv9-3349, GHSA-mrhx-c7xc-m3w5 and
+GHSA-g3hv-75wg-m249 without forcing a cross-major minimatch override.
+
+The Rust lockfile updates ctutils to 0.4.8, quinn-proto to 0.11.19, quinn-udp to
+0.5.16, rustls-webpki to 0.103.17, both webpki root packages to 1.0.12, ZIP to
+9.5.1, plist to 1.10.4, libsodium-sys-stable to 1.24.6, and rustix to 1.1.6.
+These address the newly reported TLS distrust, QUIC, archive, timing and xattr
+findings. async-executor 1.14.1 also replaces the yanked 1.14.0 release.
+
+Validation uses `pnpm audit --prod` with no exceptions, `pnpm audit --ignore
+GHSA-fc5q-39xc-vjpf`, and `cargo audit --ignore RUSTSEC-2024-0429 --ignore
+RUSTSEC-2026-0387`. The Rust audit retains visible maintenance warnings for
+bincode, chrono, paste, proc-macro-error, zbus_names, zvariant and zvariant_derive.
+The exceptions at the top of this document describe the remaining risks; passing
+these scoped audits does not mean every dependency is free of known advisories.
