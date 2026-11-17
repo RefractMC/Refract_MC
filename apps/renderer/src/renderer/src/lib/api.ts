@@ -475,6 +475,7 @@ function createBrowserApi(): RefractAPI {
       applyModUpdates: async () => [],
     },
     mods: {
+      scan: async () => { throw new Error('Mod inspection requires the desktop app.') },
       list:           async () => [],
       verify:         async () => [],
       planDeps:       async () => [],
@@ -1238,6 +1239,7 @@ function createTauriApi(): RefractAPI {
     },
     mods: {
       ...base.mods,
+      scan: ((instanceId: string) => tinvoke('mods_scan', { instanceId })) as RefractAPI['mods']['scan'],
       list: ((instanceId: string) => tinvoke('mods_list', { instanceId })) as RefractAPI['mods']['list'],
       verify: ((instanceId: string, repair?: boolean) => tinvoke('mods_verify', { instanceId, repair })) as RefractAPI['mods']['verify'],
       toggle: ((instanceId: string, filename: string, type: string) => tinvoke('mods_toggle', { instanceId, filename, type })) as RefractAPI['mods']['toggle'],

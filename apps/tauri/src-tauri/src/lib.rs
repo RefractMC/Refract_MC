@@ -25,6 +25,7 @@ mod log_share;
 mod maintenance;
 mod mc_install;
 mod minecraft_metadata;
+mod mod_scanner;
 mod modpack;
 mod mods;
 mod net;
@@ -208,6 +209,7 @@ pub fn run() {
             news::open_discord_invite,
             links::open_external_link,
             mods::mods_list,
+            mod_scanner::mods_scan,
             mods::mods_toggle,
             mods::mods_delete,
             mods::mods_install_local,

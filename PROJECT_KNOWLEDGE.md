@@ -968,3 +968,13 @@ Refract began as an Electron-based launcher and accumulated instance management,
 ---
 
 Last reviewed: 2026-08-22. Treat this as a living note, not an immutable specification.
+
+### Mod scanner foundation (incomplete)
+
+`mod_scanner.rs` exposes `mods_scan` through `api.mods.scan`. It performs local,
+bounded archive inspection on a blocking worker under the instance operation guard.
+It rejects linked files and unsafe archive paths and bounds metadata reads. Results
+always indicate incomplete compatibility analysis. Dependency evaluation, loader
+version semantics, caching, cancellation, UI and pre-launch integration are not yet
+implemented. No files are changed and no network requests are made. This is not a
+release-ready compatibility scanner.
