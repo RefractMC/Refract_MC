@@ -197,9 +197,11 @@ The Rust lockfile updates ctutils to 0.4.8, quinn-proto to 0.11.19, quinn-udp to
 These address the newly reported TLS distrust, QUIC, archive, timing and xattr
 findings. async-executor 1.14.1 also replaces the yanked 1.14.0 release.
 
-Validation uses `pnpm audit --prod` with no exceptions, `pnpm audit --ignore
-GHSA-fc5q-39xc-vjpf`, and `cargo audit --ignore RUSTSEC-2024-0429 --ignore
-RUSTSEC-2026-0387`. The Rust audit retains visible maintenance warnings for
+Validation uses `pnpm audit --prod` with no exceptions, then configures
+`pnpm audit --ignore GHSA-fc5q-39xc-vjpf` in the disposable CI checkout and runs
+`pnpm audit` again (pnpm 11's `--ignore` writes configuration). Rust uses
+`cargo audit --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2026-0387`.
+The Rust audit retains visible maintenance warnings for
 bincode, chrono, paste, proc-macro-error, zbus_names, zvariant and zvariant_derive.
 The exceptions at the top of this document describe the remaining risks; passing
 these scoped audits does not mean every dependency is free of known advisories.
