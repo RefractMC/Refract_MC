@@ -20,8 +20,6 @@ export default defineConfig({
     alias: {
       '@': resolve(rendererRoot, 'src'),
       '@locales': here('../../locales'),
-      '@refract/core/java-manager': here('../../packages/core/src/java-manager/index.ts'),
-      '@refract/core/launcher': here('../../packages/core/src/launcher/index.ts'),
       '@refract/core': here('../../packages/core/src/index.ts'),
       '@refract/plugin-api': here('../../packages/plugin-api/src/index.ts'),
     },

@@ -19,7 +19,7 @@ Refract is a pnpm monorepo for a Minecraft Java Edition launcher.
 
 - `apps/renderer` is the shared React/TypeScript UI.
 - `apps/tauri` is the production Tauri 2 shell and Rust backend.
-- `packages/core` provides shared TypeScript models and helpers. Some Node-oriented files are historical; Rust is authoritative for production native behavior.
+- `packages/core` provides shared TypeScript models and helpers. Rust owns native authentication, Java detection and launching; core retains browser-safe helpers and shared types.
 - `packages/plugin-api` is currently a minimal type contract, not a complete plugin runtime.
 - `locales` contains the UI translations.
 - `.github/workflows` and `packaging` own CI, releases, and Linux packaging.

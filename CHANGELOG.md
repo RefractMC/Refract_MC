@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove unused legacy TypeScript authentication, Java detection and launch implementations left after the Tauri migration.
+
 - Add a local mod archive inspection panel with severity filters and metadata details. Compatibility analysis remains incomplete; dependency and version checks are not yet available.
 
 

@@ -1,4 +1,3 @@
-export * from './auth/index'
 export * from './curseforge/index'
 export * from './ftb/index'
 export * from './mods/index'
@@ -6,6 +5,5 @@ export * from './date/index'
 export * from './version-manager/index'
 export * from './instance-manager/index'
 export * from './modrinth/index'
-// Type-only re-exports so renderer can reference these types without importing Node.js code
+// Shared contract for the native Java inventory.
 export type { JavaInstallation } from './java-manager/index'
-export type { LaunchContext } from './launcher/index'

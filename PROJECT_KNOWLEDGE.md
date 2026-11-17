@@ -86,7 +86,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | --- | --- | --- |
 | `apps/renderer` | Shared React renderer | The live UI source is nested under `src/renderer/src`. |
 | `apps/tauri` | Production desktop application | Vite host plus the Rust/Tauri backend. |
-| `packages/core` | Shared TypeScript models and helpers | Contains instance/content types and some older Node-oriented launcher code. Rust is authoritative for native runtime behavior. |
+| `packages/core` | Shared TypeScript models and helpers | Contains shared instance/content/Java types and browser-safe helpers. Rust owns native runtime behavior. |
 | `packages/plugin-api` | Minimal public plugin type contract | Interfaces exist, but no complete runtime plugin loader is present. |
 | `locales` | Translation JSON | English is the schema/fallback; Ukrainian and Simplified Chinese are registered. |
 | `logo` | Brand and README assets | Includes icons and the current screenshot. |
@@ -896,7 +896,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 ## Transitional areas and maintenance cautions
 
 > [!warning] Do not confuse historical code with the production runtime
-> Comments saying "Rust port of" refer to the Electron-to-Tauri migration. The current production native backend is Rust. Some TypeScript core files still contain Node process/filesystem logic and `packages/core/src/auth/index.ts` still throws `Not implemented`; those are not the live Tauri authentication path.
+> Comments saying "Rust port of" refer to the Electron-to-Tauri migration. The current production native backend is Rust. The unused TypeScript launch builder, Node Java detector and authentication stub have been removed. `packages/core/src/java-manager/index.ts` retains only the Java inventory type used by the renderer. Native authentication, Java discovery and launching live in Rust.
 
 - The package name `@refract/tauri-poc` is historical even though Tauri is production. Renaming affects scripts and release automation, so treat it as a deliberate migration.
 - `packages/plugin-api` currently defines only `LauncherPlugin` and `PluginContext`; do not promise plugin loading without implementing discovery, sandboxing, lifecycle, and UI integration.
