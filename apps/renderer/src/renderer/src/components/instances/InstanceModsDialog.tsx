@@ -1,3 +1,4 @@
+import { ModScannerPanel } from './ModScannerPanel'
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { api, onExportProgress, pickModFiles, supportsFilePicker, type QuickPlayTarget } from '@/lib/api'
@@ -830,6 +831,10 @@ export function InstanceModsDialog({ instance, open, onOpenChange, onUpdateAppli
               {td.retryProfiles}
             </Button>
           </div>
+        )}
+
+        {instance && (tab === 'mod' || tab === 'all') && (
+          <ModScannerPanel key={instance.id} instanceId={instance.id} />
         )}
 
         {/* Bulk action bar */}

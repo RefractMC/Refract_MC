@@ -86,7 +86,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | --- | --- | --- |
 | `apps/renderer` | Shared React renderer | The live UI source is nested under `src/renderer/src`. |
 | `apps/tauri` | Production desktop application | Vite host plus the Rust/Tauri backend. |
-| `packages/core` | Shared TypeScript models and helpers | Contains instance/content types and some older Node-oriented launcher code. Rust is authoritative for native runtime behavior. |
+| `packages/core` | Shared TypeScript models and helpers | Contains shared instance/content/Java types and browser-safe helpers. Rust owns native runtime behavior. |
 | `packages/plugin-api` | Minimal public plugin type contract | Interfaces exist, but no complete runtime plugin loader is present. |
 | `locales` | Translation JSON | English is the schema/fallback; Ukrainian and Simplified Chinese are registered. |
 | `logo` | Brand and README assets | Includes icons and the current screenshot. |
@@ -896,7 +896,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 ## Transitional areas and maintenance cautions
 
 > [!warning] Do not confuse historical code with the production runtime
-> Comments saying "Rust port of" refer to the Electron-to-Tauri migration. The current production native backend is Rust. Some TypeScript core files still contain Node process/filesystem logic and `packages/core/src/auth/index.ts` still throws `Not implemented`; those are not the live Tauri authentication path.
+> Comments saying "Rust port of" refer to the Electron-to-Tauri migration. The current production native backend is Rust. The unused TypeScript launch builder, Node Java detector and authentication stub have been removed. `packages/core/src/java-manager/index.ts` retains only the Java inventory type used by the renderer. Native authentication, Java discovery and launching live in Rust.
 
 - The package name `@refract/tauri-poc` is historical even though Tauri is production. Renaming affects scripts and release automation, so treat it as a deliberate migration.
 - `packages/plugin-api` currently defines only `LauncherPlugin` and `PluginContext`; do not promise plugin loading without implementing discovery, sandboxing, lifecycle, and UI integration.
@@ -968,3 +968,19 @@ Refract began as an Electron-based launcher and accumulated instance management,
 ---
 
 Last reviewed: 2026-08-22. Treat this as a living note, not an immutable specification.
+
+### Mod scanner foundation (incomplete)
+
+`mod_scanner.rs` exposes `mods_scan` through `api.mods.scan`. It performs local,
+bounded archive inspection on a blocking worker under the instance operation guard.
+It rejects linked files and unsafe archive paths and bounds metadata reads. Results
+always indicate incomplete compatibility analysis. Dependency evaluation, loader
+version semantics, caching, cancellation and pre-launch integration are not yet
+implemented. No files are changed and no network requests are made. This is not a
+release-ready compatibility scanner.
+
+The instance mod dialog now includes a localized scanner panel with manual scans,
+TanStack Query state, severity filters and expandable evidence. Fabric/Quilt JSON
+IDs are inspected for repeated declarations across enabled archives; these are
+warnings pending loader-aware evaluation. Reports remain incomplete, including
+empty directories. The UI offers no automatic file mutations.

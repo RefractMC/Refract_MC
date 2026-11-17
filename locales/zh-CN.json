@@ -1307,5 +1307,36 @@
     "retry": "重新生成预览",
     "confirm": "将此文本上传到 mclo.gs",
     "copyLink": "复制链接"
+  },
+  "modScanner": {
+    "scan": "扫描冲突",
+    "scanning": "正在扫描…",
+    "progress": "正在检查本地模组归档…",
+    "failed": "扫描未能完成。请等待实例的其他操作结束后重试。",
+    "incomplete": "兼容性分析尚未完成",
+    "scanned": "已扫描归档",
+    "errors": "错误",
+    "warnings": "警告",
+    "info": "信息",
+    "all": "全部结果",
+    "filter": "严重程度",
+    "limitations": "静态检查无法保证兼容性。依赖、加载器和版本检查尚不可用。更改模组后请重新扫描。",
+    "duplicateAction": "请在模组管理中查看列出的文件。禁用文件前，请确认所需版本。包含多个加载器描述文件的情况可能需要手动检查。",
+    "reviewAction": "请在模组管理中检查该文件。对于损坏的文件，请确认操作后使用现有的校验或重新安装功能。",
+    "evidence": "元数据依据",
+    "codes": {
+      "compatibilityUnverified": "兼容性未经验证",
+      "duplicateModId": "重复声明的模组 ID",
+      "unreadableArchive": "无法读取归档",
+      "unsupportedArchive": "归档为链接、过大或不受支持",
+      "invalidArchive": "无效归档",
+      "unsafeArchivePath": "归档中存在不安全路径",
+      "invalidMetadata": "元数据无效或过大"
+    },
+    "title": "模组兼容性",
+    "subtitle": "本地归档检查 • 无需上传",
+    "rescan": "重新扫描",
+    "noFindings": "此筛选条件下没有结果。兼容性仍未经验证。",
+    "unverifiedAction": "已找到元数据，但尚未评估兼容性规则。此信息并不表示文件需要修复。"
   }
 }

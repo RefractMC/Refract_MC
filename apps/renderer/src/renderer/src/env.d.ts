@@ -305,6 +305,7 @@ declare global {
         onDone: (cb: (data: { projectId: string; instanceId?: string; error?: string; stats?: import('@/lib/api').InstallStats }) => void) => () => void
       }
       mods: {
+        scan: (instanceId: string) => Promise<{ scannedMods: number; complete: boolean; findings: Array<{ id: string; severity: string; code: string; filename: string; evidence: string }> }>
         list:           (instanceId: string) => Promise<Array<{ filename: string; displayName: string; type: 'mod' | 'resourcepack' | 'shader' | 'datapack'; enabled: boolean; sizeKb: number; iconDataUrl?: string }>>
         verify:         (instanceId: string, repair?: boolean) => Promise<Array<{ projectId: string; name: string; fileName: string; status: 'ok' | 'missing' | 'corrupt' | 'unverifiable'; repaired?: boolean; error?: string }>>
         planDeps:       (payload: unknown) => Promise<import('@refract/core').ResolvedDep[]>
