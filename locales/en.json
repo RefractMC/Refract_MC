@@ -1307,5 +1307,36 @@
     "retry": "Prepare new preview",
     "confirm": "Upload this text to mclo.gs",
     "copyLink": "Copy link"
+  },
+  "modScanner": {
+    "scan": "Scan for Conflicts",
+    "scanning": "Scanning…",
+    "progress": "Inspecting local mod archives…",
+    "failed": "Scanning could not finish. Retry after other instance operations finish.",
+    "incomplete": "Compatibility analysis is incomplete",
+    "scanned": "Archives scanned",
+    "errors": "Errors",
+    "warnings": "Warnings",
+    "info": "Information",
+    "all": "All findings",
+    "filter": "Severity",
+    "limitations": "Static inspection cannot guarantee compatibility. Dependency, loader and version checks are not available yet. Rescan after changing mods.",
+    "duplicateAction": "Review the listed files in mod management. Confirm which version is needed before disabling a file. Multiple loader descriptors may require manual review.",
+    "reviewAction": "Review the file in mod management. For damaged files, use the existing verification or reinstall flow after confirming the change.",
+    "evidence": "Metadata evidence",
+    "codes": {
+      "compatibilityUnverified": "Compatibility not verified",
+      "duplicateModId": "Repeated declared mod ID",
+      "unreadableArchive": "Archive could not be read",
+      "unsupportedArchive": "Archive is linked, too large or unsupported",
+      "invalidArchive": "Invalid archive",
+      "unsafeArchivePath": "Unsafe archive path",
+      "invalidMetadata": "Invalid or oversized metadata"
+    },
+    "title": "Mod compatibility",
+    "subtitle": "Local archive inspection • No uploads",
+    "rescan": "Scan again",
+    "noFindings": "No findings in this filter. Compatibility is still unverified.",
+    "unverifiedAction": "Metadata was found, but compatibility rules have not been evaluated. This observation does not mean the file needs repair."
   }
 }

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a local mod archive inspection panel with severity filters and metadata details. Compatibility analysis remains incomplete; dependency and version checks are not yet available.
+
+
+## Unreleased
+
 ### Fixes
 
 * Clear incompatible loader selections when changing an instance's Minecraft version or loader, and ignore outdated loader-version lists.

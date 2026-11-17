@@ -975,6 +975,12 @@ Last reviewed: 2026-08-22. Treat this as a living note, not an immutable specifi
 bounded archive inspection on a blocking worker under the instance operation guard.
 It rejects linked files and unsafe archive paths and bounds metadata reads. Results
 always indicate incomplete compatibility analysis. Dependency evaluation, loader
-version semantics, caching, cancellation, UI and pre-launch integration are not yet
+version semantics, caching, cancellation and pre-launch integration are not yet
 implemented. No files are changed and no network requests are made. This is not a
 release-ready compatibility scanner.
+
+The instance mod dialog now includes a localized scanner panel with manual scans,
+TanStack Query state, severity filters and expandable evidence. Fabric/Quilt JSON
+IDs are inspected for repeated declarations across enabled archives; these are
+warnings pending loader-aware evaluation. Reports remain incomplete, including
+empty directories. The UI offers no automatic file mutations.

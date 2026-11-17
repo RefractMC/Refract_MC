@@ -63,6 +63,28 @@ fn inspect(path: &Path) -> Result<Vec<String>, &'static str> {
         if name.ends_with(".json") && serde_json::from_slice::<serde_json::Value>(&bytes).is_err() {
             return Err("invalidMetadata");
         }
+        if name.ends_with(".json") {
+            let value: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|_| "invalidMetadata")?;
+            let root = if name == "quilt.mod.json" {
+                &value["quilt_loader"]
+            } else {
+                &value
+            };
+            if let Some(id) = root["id"].as_str() {
+                if id.len() <= 128
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+                {
+                    found.push(format!("modId:{id}"));
+                } else {
+                    return Err("invalidMetadata");
+                }
+            } else {
+                return Err("invalidMetadata");
+            }
+        }
         found.push(name);
     }
     Ok(found)
@@ -78,6 +100,7 @@ fn scan(directory: &Path) -> Result<Report, String> {
     if crate::fs_safety::is_link(&meta) || !meta.is_dir() {
         return Err("Mod directory is not a regular directory.".into());
     }
+    let mut ids = std::collections::BTreeMap::<String, Vec<String>>::new();
     let entries = fs::read_dir(directory).map_err(|_| "Mod directory could not be inspected.")?;
     for entry in entries {
         let entry = entry.map_err(|_| "Mod directory could not be inspected.")?;
@@ -90,7 +113,18 @@ fn scan(directory: &Path) -> Result<Report, String> {
             return Err("Mod inspection limit exceeded.".into());
         }
         let (code, evidence) = match inspect(&entry.path()) {
-            Ok(metadata) => ("compatibilityUnverified", metadata.join(", ")),
+            Ok(metadata) => {
+                for id in metadata
+                    .iter()
+                    .filter_map(|entry| entry.strip_prefix("modId:"))
+                {
+                    let files = ids.entry(id.to_owned()).or_default();
+                    if !files.contains(&filename) {
+                        files.push(filename.clone());
+                    }
+                }
+                ("compatibilityUnverified", metadata.join(", "))
+            }
             Err(code) => (code, String::new()),
         };
         report.findings.push(Finding {
@@ -100,6 +134,18 @@ fn scan(directory: &Path) -> Result<Report, String> {
             filename,
             evidence,
         });
+    }
+    for (id, mut files) in ids {
+        if files.len() > 1 {
+            files.sort();
+            report.findings.push(Finding {
+                id: format!("duplicateModId:{id}"),
+                severity: "WARNING",
+                code: "duplicateModId",
+                filename: files.join(", "),
+                evidence: id,
+            });
+        }
     }
     report.findings.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(report)
