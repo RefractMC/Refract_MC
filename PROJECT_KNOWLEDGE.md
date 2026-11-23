@@ -88,7 +88,7 @@ The most important architectural rule is: UI components call the stable `api.*` 
 | `apps/tauri` | Production desktop application | Vite host plus the Rust/Tauri backend. |
 | `packages/core` | Shared TypeScript models and helpers | Contains shared instance/content/Java types and browser-safe helpers. Rust owns native runtime behavior. |
 | `packages/plugin-api` | Minimal public plugin type contract | Interfaces exist, but no complete runtime plugin loader is present. |
-| `locales` | Translation JSON | English is the schema/fallback; Ukrainian and Simplified Chinese are registered. |
+| `locales` | Translation JSON | English is the schema/fallback. Every canonical BCP 47 `<tag>.json` here is discovered as a language; values follow lexmit's marker format. |
 | `logo` | Brand and README assets | Includes icons and the current screenshot. |
 | `packaging/aur` | Arch User Repository package | Binary package consumes the stable RPM release asset. |
 | `packaging/{homebrew,scoop,chocolatey,nixpkgs}` | Upstream package submissions | Manifests and a source-built nixpkgs expression; refresh with `packaging/scripts/update-packages.py`. |
@@ -139,7 +139,7 @@ StatusNotifier tray host before hiding. A successful game spawn applies
 `launchMinimizesToTray`; the last tracked game exit applies `reopenOnGameExit`.
 Queued actions verify their operation identity on the main thread so a delayed hide
 does not override an already-finished game. Tray and Settings expose an explicit Quit.
-Tray labels follow the renderer language, and window failures have a global notice.
+Tray labels follow the renderer language: the tray starts with English labels from `en.json`, then the renderer sends the resolved labels through `window_set_tray_labels` whenever they change. Window failures have a global notice.
 
 A real window/tray/settings quit first acquires exclusive maintenance and emits
 `window://quit-requested` with a request ID and `skipUpdate` flag. Active shared work
@@ -267,7 +267,7 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 - `hooks/use-instances.ts` defines the standard instance queries/mutations and invalidates `['instances']` after writes.
 - Zustand persists these browser-side stores:
   - `refract-theme`: selected theme, custom theme metadata, layout overrides, sidebar state, accent.
-  - `refract-language`: `en`, `uk`, or `zh-CN`.
+  - `refract-language`: `system` or a locale tag with a file in `locales`. A stored tag whose file no longer exists is kept but behaves as `system`.
   - `refract-avatars`: local offline-account avatar data URLs.
 - Some page-specific selections and filters also use localStorage.
 - Creator Mode stores non-secret per-instance publishing drafts in localStorage. Modrinth tokens never enter renderer storage.
@@ -283,10 +283,12 @@ Server invites can be kept as linked records. Linked records live outside Minecr
 
 ### Internationalization
 
-- English `locales/en.json` is the complete schema and fallback.
-- Ukrainian and Simplified Chinese are recursively merged over English, so missing keys fall back safely.
+- English `locales/en.json` is the complete schema and fallback. Every value is a string; nested objects are allowed, arrays are not.
+- `i18n/locales.ts` discovers every `locales/*.json` named by a canonical BCP 47 tag with `import.meta.glob`, so adding a language needs no code change. The Settings picker, system-language detection (`lib/locale-match.ts`) and the translation status dialog all read that list.
+- Translations are resolved per string with the `@shulha/lexmit/runtime` helpers: a missing key, an untranslated `! ` scaffold, or a translation whose placeholders differ from English shows English; a `? ` translation awaiting review shows without its marker. Malformed values also fall back to English.
+- Language names come from `Intl.DisplayNames` in that language (`lib/locale-match.ts`), named by script where the locale data has a dedicated name, so zh-CN is 简体中文 rather than 中文（中国）. Locale files carry no name key.
 - `{{parameter}}` placeholders are expanded by the typed wrapper in `i18n/index.ts`.
-- To add a locale: create a BCP 47 JSON file, import/register it in `i18n/index.ts`, extend the `Lang` union in `stores/language.ts`, and add its Settings selector.
+- `pnpm check:contracts` discovers the same files, rejects arrays and non-canonical file names, and requires matching placeholders only for accepted (unmarked) translations.
 - User-visible text should live in locale files. A few existing hard-coded strings remain; do not copy that pattern into new UI.
 
 ### Themes
@@ -900,7 +902,6 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 
 - The package name `@refract/tauri-poc` is historical even though Tauri is production. Renaming affects scripts and release automation, so treat it as a deliberate migration.
 - `packages/plugin-api` currently defines only `LauncherPlugin` and `PluginContext`; do not promise plugin loading without implementing discovery, sandboxing, lifecycle, and UI integration.
-- `locales/README.md` contains a few old path examples. The current files live under `apps/renderer/src/renderer/src/...`; verify paths against the tree.
 - Old source comments can describe earlier scope. Trust registered commands and current call paths over historical comments.
 - The production updater public key is already configured. Older release documentation text about replacing a placeholder is no longer the current state.
 - The root `package.json` version (`1.0.1`) is stale relative to the desktop packages (`1.5.0`). Use Tauri/Cargo/renderer versions and the release tag when determining app version.
@@ -921,7 +922,7 @@ Never commit private signing material. The updater public key in `tauri.conf.jso
 | Change content providers | Renderer browse/content routes | Core API types, `content.rs`, `mods.rs`, `modpack.rs`, API-key behavior. |
 | Add persisted setting | `config.rs` defaults/get/set | `env.d.ts`, Settings UI, browser fallback defaults, migration behavior. |
 | Add an event | Emitting Rust module | `api.ts` listener, `env.d.ts` callback, cleanup/unsubscribe in components. |
-| Add a locale | `locales/<tag>.json` | `i18n/index.ts`, language store union, Settings selector. |
+| Add a locale | `locales/<tag>.json` | Nothing else to register; run `pnpm check:contracts`. |
 | Change release artifacts | `release-tauri.yml` | Tauri config, updater manifest, README links, install config, AUR workflow. |
 | Change external URLs | Calling UI/backend | `links.rs` allowlist, CSP, sanitization, and user intent. |
 

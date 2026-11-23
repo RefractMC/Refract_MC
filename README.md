@@ -208,10 +208,10 @@ project conventions, and pull request guidelines.
 ## Translations
 
 Refract keeps user-facing strings in [`locales`](locales). To add a language,
-copy `locales/en.json`, rename it with a BCP 47 language tag, translate the
-values, and keep every JSON key unchanged.
+create a JSON file named by its BCP 47 language tag and translate the values,
+keeping every JSON key from `locales/en.json`. The app picks it up automatically.
 
-The [translation guide](locales/README.md) explains locale registration,
+The [translation guide](locales/README.md) explains translation markers,
 parameterized strings, validation, and pull request naming.
 
 ## Community and support

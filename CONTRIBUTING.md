@@ -111,10 +111,11 @@ Translation files live in `locales`.
 
 To add a language:
 
-1. Copy `locales/en.json`.
-2. Rename it with a standard BCP 47 language code.
-3. Translate values only.
-4. Keep JSON keys unchanged.
+1. Create `locales/<tag>.json`, named by a canonical BCP 47 language tag.
+2. Translate values only and keep the JSON keys from `en.json`. Leave out anything not yet translated; it falls back to English.
+3. Run `pnpm check:contracts`.
+
+The app discovers the file automatically. See the [translation guide](locales/README.md) for markers and placeholders.
 
 ## Security
 
