@@ -214,6 +214,26 @@ keeping every JSON key from `locales/en.json`. The app picks it up automatically
 The [translation guide](locales/README.md) explains translation markers,
 parameterized strings, validation, and pull request naming.
 
+<!-- TRANSLATION_STATUS_START -->
+
+<div align="center">
+
+<!-- prettier-ignore -->
+| Language | Translation | Contributors |
+| --- | --- | --- |
+| [English (en)](locales/en.json) | <img src="assets/i18n/status/en.svg" alt="English source: 1274 valid strings."> Complete | - |
+| [Українська (uk)](locales/uk.json) | <img src="assets/i18n/status/uk.svg" alt="Українська (uk): 965 accepted, 0 review, 309 missing; 75.7%."> 75.7% | - |
+| [中文（中国） (zh-CN)](locales/zh-CN.json) | <img src="assets/i18n/status/zh-CN.svg" alt="中文（中国） (zh-CN): 1269 accepted, 0 review, 5 missing; 99.6%."> 99.6% | - |
+
+<div class="i18n-status-legend"><img src="assets/i18n/status/legend/accepted.svg" alt=""> Accepted <img src="assets/i18n/status/legend/review.svg" alt=""> Review <img src="assets/i18n/status/legend/missing.svg" alt=""> Missing</div>
+
+</div>
+
+To improve an existing language or add a new one, follow the
+[translation guide](locales/README.md).
+
+<!-- TRANSLATION_STATUS_END -->
+
 ## Community and support
 
 * Report reproducible bugs through [GitHub Issues](https://github.com/RefractMC/Refract_MC/issues).
