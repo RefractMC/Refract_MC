@@ -67,6 +67,21 @@ This entry has four keys for different Java version ranges. Translate each label
 ### `ramGb` / `ramMb`
 Memory labels used in instance forms. `{{gb}}` and `{{mb}}` are the numeric values. Usually these don't need translation unless your language uses different unit abbreviations.
 
+## Commands
+
+Run these from the repository root after `pnpm install`:
+
+| Command | What it does |
+| --- | --- |
+| `pnpm i18n:status` | Coverage for every language |
+| `pnpm i18n:missing <tag>` | List the keys a language is missing, with their English text |
+| `pnpm i18n:create <tag>` | Start a new language filled with marked English |
+| `pnpm i18n:fill <tag>` | Add marked English for keys a language is missing |
+| `pnpm i18n:translate <tag>` | Translate a language interactively |
+| `pnpm i18n:review <tag>` | Keep or edit translations whose English changed |
+| `pnpm i18n:check [tag]` | Validate English or one language |
+| `pnpm i18n:help` | Show the translator workflow |
+
 ## Translation markers
 
 Refract reads locale files with [lexmit](https://github.com/ShulhaOleh/lexmit), which can mark a translated string with a prefix:
