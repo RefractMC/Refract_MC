@@ -1,1 +1,3 @@
 *.nix text eol=lf
+# lexmit compares locale files byte for byte with Git history, so keep them LF on every OS.
+locales/*.json text eol=lf

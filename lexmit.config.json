@@ -1,0 +1,8 @@
+{
+  "historyBaseline": "5de1dfd249e625930861d61ab3259642f6c2a25c",
+  "localeDir": "locales",
+  "readme": "README.md",
+  "statusAssetDir": "assets/i18n/status",
+  "contributorsFile": "translation-contributors.generated.json",
+  "translationGuide": "locales/README.md"
+}
