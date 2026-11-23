@@ -22,6 +22,9 @@ importers:
 
   .:
     devDependencies:
+      '@shulha/lexmit':
+        specifier: ^0.1.0
+        version: 0.1.0
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.71.1
         version: 8.71.1(@typescript-eslint/parser@8.71.1(eslint@8.57.1(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3))(eslint@8.57.1(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
@@ -70,6 +73,9 @@ importers:
       '@refract/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api
+      '@shulha/lexmit':
+        specifier: ^0.1.0
+        version: 0.1.0
       '@tanstack/react-query':
         specifier: ^5.104.2
         version: 5.104.2(react@19.3.1)
@@ -724,6 +730,11 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@shulha/lexmit@0.1.0':
+    resolution: {integrity: sha512-BHEfh3eXZEuBcb4dnd5Q9Sl2sV2x07afjf6L7DeHfZcQRAzlXfk8FkNO7rY6ym4G1eES8bRDiBiJSKbW7WyALA==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   '@tailwindcss/node@4.3.3':
     resolution: {integrity: sha512-/T8IKEsf9VTU6tLjgC7+sv2mOPtQxzE2jMw7u4Tt40Tx+QSZxpzh95/H6cMKoja9XuW7iMdLJYBB0o9G1CaAgg==}
@@ -3083,6 +3094,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@shulha/lexmit@0.1.0': {}
 
   '@tailwindcss/node@4.3.3':
     dependencies:
