@@ -10,6 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  translations:
+    name: Translations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # lexmit reconstructs translation state from locale history since historyBaseline.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm i18n:verify
+
   regression:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
