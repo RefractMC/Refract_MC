@@ -295,15 +295,15 @@
     "playtime": "Playtime",
     "playtimeEmpty": "No playtime recorded yet",
     "last7Days": "LAST 7 DAYS",
-    "dayAbbr": [
-      "S",
-      "M",
-      "T",
-      "W",
-      "T",
-      "F",
-      "S"
-    ],
+    "dayAbbr": {
+      "sun": "S",
+      "mon": "M",
+      "tue": "T",
+      "wed": "W",
+      "thu": "T",
+      "fri": "F",
+      "sat": "S"
+    },
     "dayStreak": "day streak",
     "saveAvailable": "Save available",
     "saveUsed": "Save used",

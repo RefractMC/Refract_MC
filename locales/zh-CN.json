@@ -295,15 +295,15 @@
     "playtime": "游戏时长",
     "playtimeEmpty": "暂无时长记录",
     "last7Days": "最近 7 天",
-    "dayAbbr": [
-      "日",
-      "一",
-      "二",
-      "三",
-      "四",
-      "五",
-      "六"
-    ],
+    "dayAbbr": {
+      "sun": "日",
+      "mon": "一",
+      "tue": "二",
+      "wed": "三",
+      "thu": "四",
+      "fri": "五",
+      "sat": "六"
+    },
     "dayStreak": "连续天数",
     "saveAvailable": "补签可用",
     "saveUsed": "补签已用",
