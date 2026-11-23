@@ -249,7 +249,7 @@ declare global {
       }
       window: {
         quit: (skipUpdate?: boolean) => Promise<void>
-        setLanguage: (language: 'en' | 'uk' | 'zh-CN') => Promise<void>
+        setTrayLabels: (labels: { show: string; quit: string }) => Promise<void>
         onError: (callback: (kind: 'window' | 'tray' | 'settings' | 'busy' | 'updater') => void) => () => void
         minimize: () => void
         maximize: () => void
