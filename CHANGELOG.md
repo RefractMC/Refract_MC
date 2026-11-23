@@ -3,9 +3,7 @@
 ## Unreleased
 ### Changed
 
-* The language setting is now a list that includes every available translation, and a Translation status window shows how much of each language is translated.
-* A new translation is a single file in `locales`; it appears in Settings without code changes.
-* Text that is untranslated, or whose translation no longer matches the English placeholders, is shown in English.
+* The language setting is now a list of every available translation, with a Translation status window showing how complete each one is. Adding a language only requires a new file in `locales`.
 
 ### Fixes
 
