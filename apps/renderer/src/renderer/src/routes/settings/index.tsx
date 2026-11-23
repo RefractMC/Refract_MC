@@ -9,12 +9,14 @@ import { analyticsAvailable, api, supportsWindowTransparency, type AppConfig, ty
 import { Button } from '@/components/ui/Button'
 import { ThemesDialog } from '@/components/settings/ThemesDialog'
 import { ResetLauncherButton } from '@/components/settings/ResetLauncherButton'
+import { TranslationStatusDialog } from '@/components/settings/TranslationStatusDialog'
 import { useThemeStore, type ThemePreference } from '@/stores/theme'
 import { useAvatarStore } from '@/stores/avatar'
 import { compressImage } from '@/lib/image'
 import type { JavaInstallation } from '@refract/core'
 import { useT } from '@/i18n'
-import { useLanguageStore } from '@/stores/language'
+import { effectivePreference, useLanguageStore } from '@/stores/language'
+import { LOCALE_IDS, localeNativeName } from '@/i18n/locales'
 import { Check, ChevronDown } from '@/components/ui/Icon'
 
 export const Route = createFileRoute('/settings/')({
@@ -243,6 +245,9 @@ function Settings() {
   const analyticsDisabled = !analyticsAvailable
   const languagePreference = useLanguageStore((s) => s.languagePreference)
   const setLanguagePreference = useLanguageStore((s) => s.setLanguagePreference)
+  const lang = useLanguageStore((s) => s.lang)
+  const [translationStatusOpen, setTranslationStatusOpen] = useState(false)
+  const translationStatusTrigger = useRef<HTMLButtonElement>(null)
   const activeThemeId = useThemeStore((state) => state.activeThemeId)
   const themePreference = useThemeStore((state) => state.themePreference)
   const setThemePreference = useThemeStore((state) => state.setThemePreference)
@@ -713,20 +718,40 @@ function Settings() {
               </Field>
 
               <Field label={t.settings.language} note={t.settings.languageNote}>
-                <Segmented>
-                  <SegmentButton active={languagePreference === 'system'} disabled={false} onClick={() => setLanguagePreference('system')}>
-                    {t.settings.system}
-                  </SegmentButton>
-                  <SegmentButton active={languagePreference === 'en'} disabled={false} onClick={() => setLanguagePreference('en')}>
-                    {t.settings.langEn}
-                  </SegmentButton>
-                  <SegmentButton active={languagePreference === 'uk'} disabled={false} onClick={() => setLanguagePreference('uk')}>
-                    {t.settings.langUk}
-                  </SegmentButton>
-                  <SegmentButton active={languagePreference === 'zh-CN'} disabled={false} onClick={() => setLanguagePreference('zh-CN')}>
-                    {t.settings.langZhCN}
-                  </SegmentButton>
-                </Segmented>
+                <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:8 }}>
+                  <div style={{ position:'relative', width:260, maxWidth:'100%' }}>
+                    <select
+                      className="ni-input"
+                      aria-label={t.settings.language}
+                      value={effectivePreference(languagePreference)}
+                      onChange={(event) => setLanguagePreference(event.target.value)}
+                      style={{ fontSize:13, padding:'8px 38px 8px 12px' }}
+                    >
+                      <option value="system">{`${t.settings.system} (${localeNativeName(lang)})`}</option>
+                      {LOCALE_IDS.map((id) => (
+                        <option key={id} value={id} lang={id}>{localeNativeName(id)}</option>
+                      ))}
+                    </select>
+                    <span style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'var(--ink-3)', display:'flex' }}>
+                      <ChevronDown size={14} strokeWidth={2} />
+                    </span>
+                  </div>
+                  <Button
+                    ref={translationStatusTrigger}
+                    variant="ghost"
+                    size="sm"
+                    aria-haspopup="dialog"
+                    onClick={() => setTranslationStatusOpen(true)}
+                  >
+                    {t.settings.languageStatus}
+                  </Button>
+                </div>
+                {translationStatusOpen && (
+                  <TranslationStatusDialog
+                    onClose={() => setTranslationStatusOpen(false)}
+                    onReturnFocus={() => translationStatusTrigger.current?.focus()}
+                  />
+                )}
               </Field>
 
               <Field label={t.settings.interfaceFont} note={t.settings.interfaceFontNote}>

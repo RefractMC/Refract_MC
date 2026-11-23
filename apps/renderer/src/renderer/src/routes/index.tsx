@@ -26,7 +26,8 @@ import { logger } from '@/lib/logger'
 import { authErrorMessage, authRecoveryAction } from '@/lib/auth-errors'
 import { applyFileImportResult, FileImportResultError, type FileImportState } from '@/lib/file-import'
 import { useThemeStore } from '@/stores/theme'
-import { useLanguageStore } from '@/stores/language'
+import { effectivePreference, useLanguageStore } from '@/stores/language'
+import { localeNativeName } from '@/i18n/locales'
 import { consumeSocialJoin, createSocialInvite, createSocialInviteLink, findE4mcAddress, onSocialJoin, prepareE4mc, type SocialJoinTarget } from '@/lib/social-invites'
 
 
@@ -349,11 +350,7 @@ function OnboardingModal({
   ]
   const current = steps[step]
   if (!current) return null
-  const languageName = lang === 'uk'
-    ? t.settings.langUk
-    : lang === 'zh-CN'
-      ? t.settings.langZhCN
-      : t.settings.langEn
+  const languageName = localeNativeName(lang)
   const appearanceName = themePreference === 'system'
     ? `${t.settings.system} (${activeThemeId === 'light' ? t.settings.light : t.settings.dark})`
     : activeThemeId === 'light'
@@ -375,7 +372,7 @@ function OnboardingModal({
     [t.home.personalizedAppearance, appearanceName],
     [
       t.home.personalizedLanguage,
-      languagePreference === 'system' ? `${t.settings.system} (${languageName})` : languageName,
+      effectivePreference(languagePreference) === 'system' ? `${t.settings.system} (${languageName})` : languageName,
     ],
     [t.home.personalizedAccent, accentName],
     [t.home.personalizedFont, fontName],
