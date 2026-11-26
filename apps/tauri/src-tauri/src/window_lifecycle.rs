@@ -254,7 +254,8 @@ fn tray_label(value: &str) -> Result<String, String> {
     {
         return Err("Invalid tray label.".into());
     }
-    Ok(label.to_owned())
+    // The native menu reads a single & as a mnemonic marker, and && as a literal &.
+    Ok(label.replace('&', "&&"))
 }
 
 // The tray exists before the renderer has chosen a language, so it starts in English, the
@@ -684,6 +685,7 @@ mod tests {
         assert!(!labels.show.is_empty());
         assert!(!labels.quit.is_empty());
         assert_eq!(tray_label("  Show  ").as_deref(), Ok("Show"));
+        assert_eq!(tray_label("Show & hide").as_deref(), Ok("Show && hide"));
         assert!(tray_label("").is_err());
         assert!(tray_label("   ").is_err());
         assert!(tray_label("Show\nlauncher").is_err());
