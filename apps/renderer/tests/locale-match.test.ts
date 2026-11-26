@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   detectLocale,
-  intlLanguageName,
   isCanonicalLocaleTag,
   matchLocale,
 } from '../src/renderer/src/lib/locale-match.js'
@@ -47,23 +46,4 @@ test('only canonical BCP 47 file names count as languages', () => {
   for (const id of ['pt-br', 'zh_CN', 'README', 'en.json', '']) {
     assert.equal(isCanonicalLocaleTag(id), false, id)
   }
-})
-
-test('languages are named in their own language, capitalized', () => {
-  assert.equal(intlLanguageName('en'), 'English')
-  assert.equal(intlLanguageName('uk'), 'Українська')
-  assert.equal(intlLanguageName('fr'), 'Français')
-})
-
-test('a region tag is named by its script where the locale data has a name for it', () => {
-  assert.equal(intlLanguageName('zh-CN'), '简体中文')
-  assert.equal(intlLanguageName('zh-SG'), '简体中文')
-  assert.equal(intlLanguageName('zh-TW'), '繁體中文')
-  // No dedicated script name, so the regional form stays.
-  assert.equal(intlLanguageName('pt-BR'), 'Português (Brasil)')
-})
-
-test('a tag the locale data cannot name is shown as the tag', () => {
-  assert.equal(intlLanguageName('zz'), 'zz')
-  assert.equal(intlLanguageName('not a tag'), 'not a tag')
 })

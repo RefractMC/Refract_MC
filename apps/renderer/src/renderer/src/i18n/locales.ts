@@ -6,7 +6,7 @@ import {
   type TargetValue,
 } from '@shulha/lexmit/runtime'
 import enJson from '@locales/en.json'
-import { intlLanguageName, isCanonicalLocaleTag } from '@/lib/locale-match'
+import { isCanonicalLocaleTag } from '@/lib/locale-match'
 
 // Every JSON file in /locales is a language, so adding one needs no registry edit. Each
 // file is named by its BCP 47 tag, and English is the source every other file follows.
@@ -111,8 +111,5 @@ export function localeCoverage(id: string): LocaleCoverage {
   return { translated, total }
 }
 
-// lexmit 0.2.0 is planned to export this from its runtime. Switch the import then.
 /** The language's name in that language, for the picker and the status dialog. */
-export function localeNativeName(id: string): string {
-  return intlLanguageName(id)
-}
+export { localeNativeName } from '@shulha/lexmit/runtime'
