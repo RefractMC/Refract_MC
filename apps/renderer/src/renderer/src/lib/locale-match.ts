@@ -31,8 +31,10 @@ export function matchLocale(tag: string, available: readonly string[]): string |
   const requested = canonicalTag(tag)
   if (!requested) return null
 
-  const lower = requested.toLowerCase()
-  const exact = available.find((id) => id.toLowerCase() === lower)
+  // A Unicode extension (en-US-u-hc-h23) only tunes formatting, so en-US still matches exactly.
+  const base = new Intl.Locale(requested).baseName.toLowerCase()
+  const exact = available.find((id) => id.toLowerCase() === requested.toLowerCase())
+    ?? available.find((id) => id.toLowerCase() === base)
   if (exact) return exact
 
   const wanted = maximized(requested)

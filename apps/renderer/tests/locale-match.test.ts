@@ -30,6 +30,11 @@ test('a same-script locale with the same region is preferred', () => {
   assert.equal(matchLocale('pt-BR', ['en', 'pt-PT']), 'pt-PT')
 })
 
+test('a Unicode extension does not stop an exact match', () => {
+  assert.equal(matchLocale('en-US-u-hc-h23', ['en', 'en-US']), 'en-US')
+  assert.equal(matchLocale('zh-CN-u-nu-hanidec', available), 'zh-CN')
+})
+
 test('unsupported and malformed tags fall through to English', () => {
   for (const tag of ['', '  ', 'C', 'POSIX', 'ru', 'not a tag']) {
     assert.equal(matchLocale(tag, available), null, tag)
