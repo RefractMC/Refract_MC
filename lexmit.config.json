@@ -1,4 +1,5 @@
 {
+  "maintainers": ["Ruslan4234"],
   "localeDir": "locales",
   "readme": "README.md",
   "statusAssetDir": "assets/i18n/status",
