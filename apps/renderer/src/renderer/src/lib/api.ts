@@ -403,7 +403,7 @@ function createBrowserApi(): RefractAPI {
     },
     window: {
       quit: async () => {},
-      setLanguage: async () => {},
+      setTrayLabels: async () => {},
       onError: () => () => {},
       minimize: () => undefined,
       maximize: () => undefined,
@@ -1374,7 +1374,7 @@ function createTauriApi(): RefractAPI {
     window: {
       ...base.window,
       quit: async (skipUpdate = false) => { await tinvoke('window_request_quit', { skipUpdate }) },
-      setLanguage: async (language) => { await tinvoke('window_set_language', { language }) },
+      setTrayLabels: async ({ show, quit }) => { await tinvoke('window_set_tray_labels', { show, quit }) },
       onError: (callback) => subscribeNative('window://error', callback),
       minimize: () => { void getCurrentWindow().minimize() },
       maximize: () => { void getCurrentWindow().toggleMaximize() },

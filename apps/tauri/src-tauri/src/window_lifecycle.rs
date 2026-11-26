@@ -239,22 +239,47 @@ pub fn show(app: &AppHandle) {
     }
 }
 
-fn menu(app: &AppHandle, language: &str) -> Result<Menu<tauri::Wry>, String> {
-    let source = match language {
-        "en" => include_str!("../../../../locales/en.json"),
-        "uk" => include_str!("../../../../locales/uk.json"),
-        "zh-CN" => include_str!("../../../../locales/zh-CN.json"),
-        _ => return Err("Unsupported menu language.".into()),
-    };
-    let locale: Value = serde_json::from_str(source).map_err(|e| e.to_string())?;
+const TRAY_LABEL_MAX_CHARS: usize = 128;
+
+struct TrayLabels {
+    show: String,
+    quit: String,
+}
+
+fn tray_label(value: &str) -> Result<String, String> {
+    let label = value.trim();
+    if label.is_empty()
+        || label.chars().count() > TRAY_LABEL_MAX_CHARS
+        || label.chars().any(char::is_control)
+    {
+        return Err("Invalid tray label.".into());
+    }
+    // The native menu reads a single & as a mnemonic marker, and && as a literal &.
+    Ok(label.replace('&', "&&"))
+}
+
+// The tray exists before the renderer has chosen a language, so it starts in English, the
+// source locale, which never carries translation markers. The renderer then sends labels
+// already resolved for the selected language.
+fn english_tray_labels() -> Result<TrayLabels, String> {
+    let locale: Value = serde_json::from_str(include_str!("../../../../locales/en.json"))
+        .map_err(|e| e.to_string())?;
     let label = |key: &str| {
         locale["windowLifecycle"][key]
             .as_str()
-            .ok_or("Missing tray label.")
+            .ok_or_else(|| "Missing tray label.".to_string())
+            .and_then(tray_label)
     };
-    let show = MenuItem::with_id(app, "show", label("showLauncher")?, true, None::<&str>)
+    Ok(TrayLabels {
+        show: label("showLauncher")?,
+        quit: label("quitLauncher")?,
+    })
+}
+
+fn menu(app: &AppHandle, labels: &TrayLabels) -> Result<Menu<tauri::Wry>, String> {
+    let show = MenuItem::with_id(app, "show", &labels.show, true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let quit = MenuItem::with_id(app, "quit", label("quitLauncher")?, true, None::<&str>)
+    let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)
         .map_err(|e| e.to_string())?;
     Menu::with_items(app, &[&show, &quit]).map_err(|e| e.to_string())
 }
@@ -269,7 +294,7 @@ pub fn init(app: &AppHandle) {
         TrayIconBuilder::with_id(TRAY_ID)
             .icon(icon)
             .tooltip("Refract")
-            .menu(&menu(app, "en")?)
+            .menu(&menu(app, &english_tray_labels()?)?)
             .show_menu_on_left_click(false)
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show(app),
@@ -638,8 +663,12 @@ pub fn exit_requested(app: &AppHandle, code: Option<i32>) -> bool {
 }
 
 #[tauri::command]
-pub fn window_set_language(app: AppHandle, language: String) -> Result<(), String> {
-    let menu = menu(&app, &language)?;
+pub fn window_set_tray_labels(app: AppHandle, show: String, quit: String) -> Result<(), String> {
+    let labels = TrayLabels {
+        show: tray_label(&show)?,
+        quit: tray_label(&quit)?,
+    };
+    let menu = menu(&app, &labels)?;
     let tray = app
         .tray_by_id(TRAY_ID)
         .ok_or("System tray is unavailable.")?;
@@ -650,6 +679,20 @@ pub fn window_set_language(app: AppHandle, language: String) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tray_starts_with_english_labels_and_rejects_unusable_ones() {
+        let labels = english_tray_labels().expect("English tray labels");
+        assert!(!labels.show.is_empty());
+        assert!(!labels.quit.is_empty());
+        assert_eq!(tray_label("  Show  ").as_deref(), Ok("Show"));
+        assert_eq!(tray_label("Show & hide").as_deref(), Ok("Show && hide"));
+        assert!(tray_label("").is_err());
+        assert!(tray_label("   ").is_err());
+        assert!(tray_label("Show\nlauncher").is_err());
+        assert!(tray_label(&"x".repeat(TRAY_LABEL_MAX_CHARS + 1)).is_err());
+        assert!(tray_label(&"ї".repeat(TRAY_LABEL_MAX_CHARS)).is_ok());
+    }
+
     #[test]
     fn close_respects_preference_and_keeps_a_taskbar_without_tray_support() {
         assert_eq!(close_action(false, false), CloseAction::Quit);

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseTargetValue, PENDING_PREFIX, UNTRANSLATED_PREFIX } from '@shulha/lexmit/runtime'
 import ts from 'typescript'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -21,37 +22,77 @@ function leaves(value, prefix = '', result = new Map()) {
   return result
 }
 
+// Every file in /locales is a language named by its BCP 47 tag, discovered as the renderer
+// discovers it. lexmit requires every value to be a string, so arrays are rejected.
 const placeholders = (text) => [...text.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]).sort()
 function checkShape(fallback, value, path) {
   if (value === undefined) return
-  assert.equal(Array.isArray(value), Array.isArray(fallback), `${path}: incorrect array shape`)
+  assert.ok(!Array.isArray(value), `${path}: locale values must be strings or objects, not arrays`)
   assert.equal(typeof value, typeof fallback, `${path}: incorrect translation type`)
   if (fallback !== null && typeof fallback === 'object') {
     assert.notEqual(value, null, `${path}: translation cannot be null`)
-    if (Array.isArray(fallback))
-      assert.equal(value.length, fallback.length, `${path}: incomplete array translation`)
     for (const [key, entry] of Object.entries(fallback))
       checkShape(entry, value[key], `${path}.${key}`)
   }
 }
 const englishJson = JSON.parse(read('locales/en.json'))
 const english = leaves(englishJson)
-for (const locale of ['uk', 'zh-CN']) {
+
+// The same rule as tray_label in window_lifecycle.rs. The tray rejects the whole pair when
+// one label breaks it and keeps the previous labels, so a bad translation must fail here.
+const TRAY_KEYS = ['windowLifecycle.showLauncher', 'windowLifecycle.quitLauncher']
+function checkTrayLabel(text, where) {
+  const label = text.trim()
+  assert.ok(
+    label !== '' && [...label].length <= 128 && !/\p{Cc}/u.test(label),
+    `${where} must be one line of at most 128 characters for the system tray`
+  )
+}
+for (const key of TRAY_KEYS) checkTrayLabel(english.get(key), `en:${key}`)
+for (const [key, text] of english) {
+  // English is the source: a marker there would be read as a workflow state in every language.
+  assert.ok(
+    !text.startsWith(PENDING_PREFIX) && !text.startsWith(UNTRANSLATED_PREFIX),
+    `en:${key} must not begin with a translation marker`
+  )
+}
+const locales = readdirSync(join(root, 'locales'))
+  .filter((name) => name.endsWith('.json'))
+  .map((name) => name.slice(0, -'.json'.length))
+for (const locale of locales) {
+  assert.equal(
+    Intl.getCanonicalLocales(locale)[0],
+    locale,
+    `locales/${locale}.json must be named by a canonical BCP 47 tag`
+  )
+}
+for (const locale of locales.filter((id) => id !== 'en').sort()) {
   const translation = JSON.parse(read(`locales/${locale}.json`))
   checkShape(englishJson, translation, locale)
   const translated = leaves(translation)
+  const counts = { accepted: 0, pending: 0, 'untranslated-scaffold': 0 }
+  let stalePending = 0
   for (const [key, text] of translated) {
-    if (english.has(key)) {
-      assert.deepEqual(
-        placeholders(text),
-        placeholders(english.get(key)),
-        `${locale}:${key} placeholders differ`
-      )
-    }
+    if (!english.has(key)) continue
+    // Throws for a marker with nothing after it, which lexmit would also reject.
+    const value = parseTargetValue(text)
+    counts[value.kind]++
+    if (TRAY_KEYS.includes(key) && value.kind !== 'untranslated-scaffold')
+      checkTrayLabel(value.targetText, `${locale}:${key}`)
+    // A pending translation may predate an English placeholder change, and a scaffold is
+    // English; the runtime shows English for both whenever placeholders disagree.
+    const matches = placeholders(text).join() === placeholders(english.get(key)).join()
+    if (value.kind === 'pending' && !matches) stalePending++
+    if (value.kind !== 'accepted') continue
+    assert.deepEqual(
+      placeholders(text),
+      placeholders(english.get(key)),
+      `${locale}:${key} placeholders differ`
+    )
   }
-  const missing = [...english.keys()].filter((key) => !translated.has(key))
+  const missing = [...english.keys()].filter((key) => !translated.has(key)).length
   console.log(
-    `${locale}: JSON and interpolation valid; ${missing.length} keys use English fallback`
+    `${locale}: JSON and interpolation valid; ${counts.accepted} accepted, ${counts.pending} to review, ${missing + counts['untranslated-scaffold'] + stalePending} use English fallback`
   )
 }
 

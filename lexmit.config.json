@@ -1,0 +1,8 @@
+{
+  "maintainers": ["Ruslan4234"],
+  "localeDir": "locales",
+  "readme": "README.md",
+  "statusAssetDir": "assets/i18n/status",
+  "contributorsFile": "translation-contributors.generated.json",
+  "translationGuide": "locales/README.md"
+}

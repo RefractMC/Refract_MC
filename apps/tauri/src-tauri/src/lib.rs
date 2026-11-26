@@ -129,7 +129,7 @@ pub fn run() {
             window_lifecycle::window_quit_ack,
             window_lifecycle::window_quit_finish,
             window_lifecycle::window_cancel_exit,
-            window_lifecycle::window_set_language,
+            window_lifecycle::window_set_tray_labels,
             window_appearance::window_set_backdrop,
             operations::operations_list,
             operations::operations_get,

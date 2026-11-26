@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { useT } from '@/i18n'
-import { useLanguageStore } from '@/stores/language'
 import { Button } from '@/components/ui/Button'
 import { useAppUpdate } from '@/hooks/use-app-update'
 
 export function WindowNotice() {
   const t = useT()
-  const language = useLanguageStore((state) => state.lang)
   const [error, setError] = useState<'window' | 'tray' | 'settings' | 'busy' | 'updater' | null>(
     null
   )
@@ -15,15 +13,19 @@ export function WindowNotice() {
   const { status } = useAppUpdate()
   const installing = status.phase === 'installing' || status.phase === 'restarting'
   useEffect(() => api.window.onError(setError), [])
+  // The labels arrive already resolved for the selected language, so the tray follows every
+  // locale file, including the English fallback for strings that are not translated yet.
+  const show = t.windowLifecycle.showLauncher
+  const quit = t.windowLifecycle.quitLauncher
   useEffect(() => {
     let alive = true
-    void api.window.setLanguage(language).catch(() => {
+    void api.window.setTrayLabels({ show, quit }).catch(() => {
       if (alive) setError('tray')
     })
     return () => {
       alive = false
     }
-  }, [language])
+  }, [show, quit])
   if (!error) return null
   return (
     <div

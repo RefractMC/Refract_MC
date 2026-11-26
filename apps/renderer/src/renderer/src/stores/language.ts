@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { api } from '@/lib/api'
+import { LOCALE_IDS, isLocaleId } from '@/i18n/locales'
+import { detectLocale } from '@/lib/locale-match'
 
-export type Lang = 'en' | 'uk' | 'zh-CN'
+/** A BCP 47 tag with a matching file in /locales. */
+export type Lang = string
 export type LanguagePreference = 'system' | Lang
 
 interface LanguageStore {
@@ -13,21 +16,6 @@ interface LanguageStore {
   initialize: () => void
 }
 
-function matchSupportedLanguage(tag: string): Lang | null {
-  const normalized = tag.trim().split(/[.@]/, 1)[0].replace(/_/g, '-').toLowerCase()
-  if (normalized === 'uk' || normalized.startsWith('uk-')) return 'uk'
-  if (
-    normalized === 'zh-cn'
-    || normalized.startsWith('zh-cn-')
-    || normalized === 'zh-sg'
-    || normalized.startsWith('zh-sg-')
-    || normalized === 'zh-hans'
-    || normalized.startsWith('zh-hans-')
-  ) return 'zh-CN'
-  if (normalized === 'en' || normalized.startsWith('en-')) return 'en'
-  return null
-}
-
 export function detectSystemLanguage(languages?: readonly string[]): Lang {
   const candidates = languages
     ?? (typeof navigator === 'undefined'
@@ -36,15 +24,20 @@ export function detectSystemLanguage(languages?: readonly string[]): Lang {
         ? navigator.languages
         : [navigator.language])
 
-  for (const tag of candidates) {
-    const match = matchSupportedLanguage(tag)
-    if (match) return match
-  }
-  return 'en'
+  return detectLocale(candidates, LOCALE_IDS)
+}
+
+/**
+ * Whether a stored preference can still be honoured. A language whose file was removed
+ * keeps its stored value, in case a later version brings it back, but behaves as System.
+ */
+export function effectivePreference(preference: LanguagePreference): LanguagePreference {
+  return preference === 'system' || isLocaleId(preference) ? preference : 'system'
 }
 
 function resolveLanguage(preference: LanguagePreference): Lang {
-  return preference === 'system' ? detectSystemLanguage() : preference
+  const effective = effectivePreference(preference)
+  return effective === 'system' ? detectSystemLanguage() : effective
 }
 
 function applyDocumentLanguage(lang: Lang): void {
@@ -63,7 +56,7 @@ function refreshSystemLanguage(): void {
   const request = ++systemLanguageRequest
   void api.system.localeTags().then((languages) => {
     const state = useLanguageStore.getState()
-    if (request !== systemLanguageRequest || state.languagePreference !== 'system') return
+    if (request !== systemLanguageRequest || effectivePreference(state.languagePreference) !== 'system') return
     applyResolvedLanguage(detectSystemLanguage(languages.length ? languages : undefined))
   }).catch(() => {})
 }
@@ -73,7 +66,7 @@ function installLanguageListener(): void {
   languageListenerInstalled = true
   const refresh = () => {
     const state = useLanguageStore.getState()
-    if (state.languagePreference === 'system') refreshSystemLanguage()
+    if (effectivePreference(state.languagePreference) === 'system') refreshSystemLanguage()
   }
   window.addEventListener('languagechange', refresh)
   window.addEventListener('focus', refresh)
@@ -89,12 +82,13 @@ export const useLanguageStore = create<LanguageStore>()(
         const lang = resolveLanguage(preference)
         applyDocumentLanguage(lang)
         set({ languagePreference: preference, lang })
-        if (preference === 'system') refreshSystemLanguage()
+        if (effectivePreference(preference) === 'system') refreshSystemLanguage()
       },
-      setLang: (lang) => {
+      setLang: (preference) => {
         systemLanguageRequest++
+        const lang = resolveLanguage(preference)
         applyDocumentLanguage(lang)
-        set({ languagePreference: lang, lang })
+        set({ languagePreference: preference, lang })
       },
       initialize: () => {
         installLanguageListener()
@@ -103,7 +97,7 @@ export const useLanguageStore = create<LanguageStore>()(
           applyDocumentLanguage(lang)
           return { lang }
         })
-        if (useLanguageStore.getState().languagePreference === 'system') refreshSystemLanguage()
+        if (effectivePreference(useLanguageStore.getState().languagePreference) === 'system') refreshSystemLanguage()
       },
     }),
     {

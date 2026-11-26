@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+### Changed
+
+* The language setting is now a list of every available translation, with a Translation status window showing how complete each one is. Adding a language only requires a new file in `locales`.
+
 ### Fixes
 
 * Remove unused legacy TypeScript authentication, Java detection and launch implementations left after the Tauri migration.

@@ -1,27 +1,5 @@
 import { useLanguageStore } from '@/stores/language'
-import enJson from '@locales/en.json'
-import ukJson from '@locales/uk.json'
-import zhCNJson from '@locales/zh-CN.json'
-
-type Locale = typeof enJson
-
-function mergeLocale<T>(fallback: T, overrides: unknown): T {
-  if (Array.isArray(fallback)) {
-    return (Array.isArray(overrides) ? overrides : fallback) as T
-  }
-
-  if (fallback !== null && typeof fallback === 'object') {
-    const source = overrides !== null && typeof overrides === 'object'
-      ? overrides as Record<string, unknown>
-      : {}
-
-    return Object.fromEntries(
-      Object.entries(fallback).map(([key, value]) => [key, mergeLocale(value, source[key])]),
-    ) as T
-  }
-
-  return (typeof overrides === typeof fallback ? overrides : fallback) as T
-}
+import { resolveLocale, type Locale } from './locales'
 
 /** Replace {{param}} placeholders with values from a params map. */
 function i(template: string, params: Record<string, string | number>): string {
@@ -63,6 +41,16 @@ function build(l: Locale) {
 
     home: {
       ...l.home,
+      // Indexed by Date.getDay(), so Sunday comes first.
+      dayAbbr: [
+        l.home.dayAbbr.sun,
+        l.home.dayAbbr.mon,
+        l.home.dayAbbr.tue,
+        l.home.dayAbbr.wed,
+        l.home.dayAbbr.thu,
+        l.home.dayAbbr.fri,
+        l.home.dayAbbr.sat,
+      ],
       licenseBody:   (name: string) => i(l.home.licenseBody, { name }),
       importFailed:  (e: string)    => i(l.home.importFailed, { e }),
       javaWarning:   (v: number)    => i(l.home.javaWarning, { v }),
@@ -259,26 +247,19 @@ function build(l: Locale) {
 
 export type T = ReturnType<typeof build>
 
-const locales: Record<string, Locale> = {
-  en: enJson,
-  uk: mergeLocale(enJson, ukJson),
-  'zh-CN': mergeLocale(enJson, zhCNJson),
-}
+// Built on first use, so only languages someone actually selects are resolved.
+const built = new Map<string, T>()
 
-export const translations: Record<string, T> = {
-  en: build(locales.en),
-  uk: build(locales.uk),
-  'zh-CN': build(locales['zh-CN']),
+export function translationsFor(lang: string): T {
+  let translation = built.get(lang)
+  if (!translation) {
+    translation = build(resolveLocale(lang))
+    built.set(lang, translation)
+  }
+  return translation
 }
 
 export function useT(): T {
   const lang = useLanguageStore((s) => s.lang)
-  return translations[lang] ?? translations.en
-}
-
-/** Register a new locale at runtime (for community translation bundles). */
-export function registerLocale(code: string, data: Locale): void {
-  const locale = mergeLocale(enJson, data)
-  locales[code] = locale
-  translations[code] = build(locale)
+  return translationsFor(lang)
 }
