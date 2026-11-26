@@ -20,3 +20,4 @@ allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
   - postcss@8.5.23
+  - '@shulha/lexmit'
