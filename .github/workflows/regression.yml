@@ -16,7 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # lexmit reconstructs translation state from locale history since historyBaseline.
+          # lexmit reconstructs translation state from locale history since the commit that
+          # added lexmit.config.json.
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
         with:
