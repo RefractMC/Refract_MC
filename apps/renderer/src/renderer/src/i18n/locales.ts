@@ -1,7 +1,6 @@
 import {
   parseSourceValue,
   parseTargetValue,
-  resolveTargetValue,
   usableTargetText,
   type TargetValue,
 } from '@shulha/lexmit/runtime'
@@ -51,15 +50,23 @@ function targetValue(stored: unknown): TargetValue {
   }
 }
 
+const placeholders = (text: string) =>
+  [...text.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]).sort().join()
+
+// lexmit also reads {name} as a placeholder, but only {{name}} is filled in here, so a pending
+// translation lexmit accepts could still show a literal {name}. Such a string shows English.
+function usableText(sourceText: string, stored: unknown): string | undefined {
+  const text = usableTargetText(parseSourceValue(sourceText), targetValue(stored))
+  if (text === undefined || placeholders(text) !== placeholders(sourceText)) return undefined
+  return text
+}
+
 function resolveTree(source: Record<string, unknown>, target: unknown): Record<string, unknown> {
   const translated = isRecord(target) ? target : {}
   return Object.fromEntries(
     Object.entries(source).map(([key, sourceValue]) => {
       if (typeof sourceValue === 'string') {
-        return [
-          key,
-          resolveTargetValue(parseSourceValue(sourceValue), targetValue(translated[key])),
-        ]
+        return [key, usableText(sourceValue, translated[key]) ?? sourceValue]
       }
       return [key, resolveTree(sourceValue as Record<string, unknown>, translated[key])]
     })
@@ -85,8 +92,7 @@ function countTree(source: Record<string, unknown>, target: unknown): [number, n
   for (const [key, sourceValue] of Object.entries(source)) {
     if (typeof sourceValue === 'string') {
       total++
-      const text = usableTargetText(parseSourceValue(sourceValue), targetValue(translated[key]))
-      if (text !== undefined) usable++
+      if (usableText(sourceValue, translated[key]) !== undefined) usable++
     } else {
       const [nestedUsable, nestedTotal] = countTree(
         sourceValue as Record<string, unknown>,

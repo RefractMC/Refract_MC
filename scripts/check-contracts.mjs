@@ -59,6 +59,7 @@ for (const locale of locales.filter((id) => id !== 'en').sort()) {
   checkShape(englishJson, translation, locale)
   const translated = leaves(translation)
   const counts = { accepted: 0, pending: 0, 'untranslated-scaffold': 0 }
+  let stalePending = 0
   for (const [key, text] of translated) {
     if (!english.has(key)) continue
     // Throws for a marker with nothing after it, which lexmit would also reject.
@@ -66,6 +67,8 @@ for (const locale of locales.filter((id) => id !== 'en').sort()) {
     counts[value.kind]++
     // A pending translation may predate an English placeholder change, and a scaffold is
     // English; the runtime shows English for both whenever placeholders disagree.
+    const matches = placeholders(text).join() === placeholders(english.get(key)).join()
+    if (value.kind === 'pending' && !matches) stalePending++
     if (value.kind !== 'accepted') continue
     assert.deepEqual(
       placeholders(text),
@@ -75,7 +78,7 @@ for (const locale of locales.filter((id) => id !== 'en').sort()) {
   }
   const missing = [...english.keys()].filter((key) => !translated.has(key)).length
   console.log(
-    `${locale}: JSON and interpolation valid; ${counts.accepted} accepted, ${counts.pending} to review, ${missing + counts['untranslated-scaffold']} use English fallback`
+    `${locale}: JSON and interpolation valid; ${counts.accepted} accepted, ${counts.pending} to review, ${missing + counts['untranslated-scaffold'] + stalePending} use English fallback`
   )
 }
 
