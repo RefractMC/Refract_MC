@@ -37,6 +37,18 @@ function checkShape(fallback, value, path) {
 }
 const englishJson = JSON.parse(read('locales/en.json'))
 const english = leaves(englishJson)
+
+// The same rule as tray_label in window_lifecycle.rs. The tray rejects the whole pair when
+// one label breaks it and keeps the previous labels, so a bad translation must fail here.
+const TRAY_KEYS = ['windowLifecycle.showLauncher', 'windowLifecycle.quitLauncher']
+function checkTrayLabel(text, where) {
+  const label = text.trim()
+  assert.ok(
+    label !== '' && [...label].length <= 128 && !/\p{Cc}/u.test(label),
+    `${where} must be one line of at most 128 characters for the system tray`
+  )
+}
+for (const key of TRAY_KEYS) checkTrayLabel(english.get(key), `en:${key}`)
 for (const [key, text] of english) {
   // English is the source: a marker there would be read as a workflow state in every language.
   assert.ok(
@@ -65,6 +77,8 @@ for (const locale of locales.filter((id) => id !== 'en').sort()) {
     // Throws for a marker with nothing after it, which lexmit would also reject.
     const value = parseTargetValue(text)
     counts[value.kind]++
+    if (TRAY_KEYS.includes(key) && value.kind !== 'untranslated-scaffold')
+      checkTrayLabel(value.targetText, `${locale}:${key}`)
     // A pending translation may predate an English placeholder change, and a scaffold is
     // English; the runtime shows English for both whenever placeholders disagree.
     const matches = placeholders(text).join() === placeholders(english.get(key)).join()
